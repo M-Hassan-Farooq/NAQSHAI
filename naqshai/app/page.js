@@ -340,23 +340,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="flex flex-col items-center md:items-end gap-2">
-            <span className="font-semibold text-slate-800">Core Technology Stack</span>
-            <div className="flex flex-wrap gap-2 justify-center md:justify-end">
-              <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-mono text-[10px]">
-                Next.js App Router
-              </span>
-              <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-mono text-[10px]">
-                Tailwind CSS
-              </span>
-              <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-mono text-[10px]">
-                Google Maps API
-              </span>
-              <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-mono text-[10px]">
-                Google Gen AI SDK
-              </span>
-            </div>
-          </div>
+          {/* Core Technology Stack removed as requested */}
         </div>
 
         <div className="max-w-7xl mx-auto border-t border-slate-100 mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between text-slate-400 gap-4">
