@@ -75,7 +75,7 @@ const MOCK_INVENTORY = [
 
 export async function POST(req) {
     try {
-        const { messages } = await req.json();
+        const { messages, language } = await req.json();
 
         if (!messages || !Array.isArray(messages)) {
             return NextResponse.json(
@@ -95,7 +95,13 @@ export async function POST(req) {
 
         const ai = new GoogleGenAI({ apiKey });
 
-        const systemInstruction = `You are NAQSHAI AI - an expert land recommendation chatbot for real estate in Pakistan.
+        const LANG_MAP = {
+            'EN': 'English',
+            'UR': 'Nastaliq Urdu script (اردو)',
+            'RO': 'Roman Urdu'
+        };
+
+        const baseSystemInstruction = `You are NAQSHAI AI - an expert land recommendation chatbot for real estate in Pakistan.
 
 REAL ESTATE INVENTORY AVAILABLE FOR RECOMMENDATION:
 ${JSON.stringify(MOCK_INVENTORY, null, 2)}
@@ -110,18 +116,27 @@ CORE GUIDELINES:
    - Include any matching plot objects inside the 'recommendedPlots' array.
    - In the 'reply' text, clearly explain why these plots match the user's needs, explicitly highlighting environmental factors: Flood Risk and Noise Level.
 
-3. LANGUAGE & SCRIPT ADAPTATION (CRITICAL):
+3. CONVERSATIONAL DIRECTNESS:
+   - DO NOT start responses with conversational pleasantries like 'I am doing well, thank you!' unless the user explicitly asks about your well-being. Jump straight to answering the user's real estate requirement.
+
+4. LANGUAGE & SCRIPT ADAPTATION (CRITICAL):
    - Detect the language and script used in the user's latest prompt.
    - STRICTLY respond in the exact same language and script:
      a) English: If user writes in English, reply in natural English.
      b) Urdu Script (اردو): If user writes in Urdu script, reply in fluent Urdu script.
      c) Roman Urdu: If user writes in Roman Urdu (e.g., "Muje Islamabad me 10 Marla plot chahiye"), reply in natural Roman Urdu.
+   - CLEAN TEXT CONSTRAINT: Ensure the JSON 'reply' field contains only clean English, Roman Urdu, or Urdu script. Never output random Chinese characters, CJK artifacts, or unmapped Unicode symbols.
 
-4. STRUCTURED JSON OUTPUT:
+5. STRUCTURED JSON OUTPUT:
    - You MUST return a valid JSON object with:
      - 'reply': A comprehensive text response (incorporating flood risk and noise level analysis).
      - 'recommendedPlots': An array of plot objects selected from the inventory. Each object MUST have keys: id, title, society, city, size, price, floodRisk, noiseLevel.
      - If asking follow-up questions or no plots match, set 'recommendedPlots' to [].`;
+
+        let finalSystemInstruction = baseSystemInstruction;
+        if (language && language !== 'Auto' && LANG_MAP[language]) {
+            finalSystemInstruction += `\n\nCRITICAL INSTRUCTION OVERRIDE: The user interface is set to ${LANG_MAP[language]}. You MUST write your 'reply' field ENTIRELY in ${LANG_MAP[language]}. DO NOT mirror the language of the user's prompt. Even if they type in Roman Urdu, you must respond strictly in ${LANG_MAP[language]}.`;
+        }
 
         // Format history for Gemini SDK
         const contents = messages.map((msg) => {
@@ -150,7 +165,7 @@ CORE GUIDELINES:
                     model: modelName,
                     contents: contents,
                     config: {
-                        systemInstruction,
+                        systemInstruction: finalSystemInstruction,
                         responseMimeType: 'application/json',
                         responseSchema: {
                             type: Type.OBJECT,
@@ -194,25 +209,43 @@ CORE GUIDELINES:
             throw lastError || new Error('Failed to generate content with available Gemini models');
         }
 
-        let cleanedText = responseText.trim();
-        if (cleanedText.startsWith('```')) {
-            cleanedText = cleanedText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-        }
+        let cleanText = responseText.trim();
+        cleanText = cleanText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
-        let parsed;
+        let parsedData;
         try {
-            parsed = JSON.parse(cleanedText);
+            parsedData = JSON.parse(cleanText);
+            if (typeof parsedData === 'string') {
+                parsedData = JSON.parse(parsedData);
+            }
         } catch (e) {
             console.error("JSON parse failed. Raw text:", responseText);
-            parsed = {
-                reply: responseText,
+            parsedData = {
+                reply: cleanText,
                 recommendedPlots: []
             };
         }
 
+        if (typeof parsedData?.reply === 'string' && parsedData.reply.trim().startsWith('{')) {
+            try {
+                const nested = JSON.parse(parsedData.reply.trim());
+                if (nested && nested.reply) {
+                    parsedData.reply = nested.reply;
+                    if (Array.isArray(nested.recommendedPlots) && (!parsedData.recommendedPlots || parsedData.recommendedPlots.length === 0)) {
+                        parsedData.recommendedPlots = nested.recommendedPlots;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        let replyText = parsedData.reply || cleanText || '';
+        if (typeof replyText === 'string') {
+            replyText = replyText.replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, '').trim();
+        }
+
         return NextResponse.json({
-            reply: parsed.reply || '',
-            recommendedPlots: parsed.recommendedPlots || []
+            reply: replyText,
+            recommendedPlots: parsedData.recommendedPlots || []
         });
 
     } catch (error) {
@@ -220,8 +253,7 @@ CORE GUIDELINES:
         return NextResponse.json(
             {
                 reply: 'Maazrat, AI recommendation server me masla agaya. Dobara koshish karein.',
-                recommendedPlots: [],
-                error: error.message
+                recommendedPlots: []
             },
             { status: 500 }
         );
