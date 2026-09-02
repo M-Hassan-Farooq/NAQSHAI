@@ -24,7 +24,8 @@ import {
   Maximize2,
   Compass,
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  X
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
@@ -110,6 +111,16 @@ export default function SellPlotPage() {
         [field]: file.name,
       }));
     }
+    // Reset the native input value so the same file can be re-selected after removal
+    e.target.value = '';
+  };
+
+  // Remove a previously selected document
+  const handleRemoveFile = (field) => {
+    setUploadedFiles((prev) => ({
+      ...prev,
+      [field]: null,
+    }));
   };
 
   // Form Validation & Step Navigation
@@ -699,9 +710,19 @@ export default function SellPlotPage() {
                     </label>
 
                     {uploadedFiles.allotmentLetter && (
-                      <span className="mt-2 text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-md max-w-full truncate">
-                        ✓ {uploadedFiles.allotmentLetter}
-                      </span>
+                      <div className="mt-2 flex items-center gap-1.5 max-w-full">
+                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-md truncate">
+                          ✓ {uploadedFiles.allotmentLetter}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile('allotmentLetter')}
+                          className="p-1 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition shrink-0"
+                          title="Remove file"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -737,14 +758,34 @@ export default function SellPlotPage() {
 
                     <div className="flex flex-col gap-1 mt-2">
                       {uploadedFiles.cnicFront && (
-                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate max-w-full">
-                          ✓ Front: {uploadedFiles.cnicFront}
-                        </span>
+                        <div className="flex items-center gap-1.5 max-w-full">
+                          <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate">
+                            ✓ Front: {uploadedFiles.cnicFront}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile('cnicFront')}
+                            className="p-0.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded transition shrink-0"
+                            title="Remove CNIC front"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
                       {uploadedFiles.cnicBack && (
-                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate max-w-full">
-                          ✓ Back: {uploadedFiles.cnicBack}
-                        </span>
+                        <div className="flex items-center gap-1.5 max-w-full">
+                          <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate">
+                            ✓ Back: {uploadedFiles.cnicBack}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile('cnicBack')}
+                            className="p-0.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded transition shrink-0"
+                            title="Remove CNIC back"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
