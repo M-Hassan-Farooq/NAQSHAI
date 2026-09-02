@@ -156,6 +156,13 @@ export default function RecommendPage() {
                     </div>
 
                     <button
+                        onClick={() => router.push('/sell')}
+                        className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3 py-2 rounded-xl text-xs font-medium transition shrink-0 shadow-sm"
+                    >
+                        List Your Plot
+                    </button>
+
+                    <button
                         onClick={() => router.push('/explore')}
                         className="flex items-center gap-2 text-xs font-medium text-slate-700 hover:text-slate-900 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 transition shrink-0 shadow-sm"
                     >

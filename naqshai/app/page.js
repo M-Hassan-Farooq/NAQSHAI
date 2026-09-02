@@ -43,6 +43,12 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <Link
+              href="/sell"
+              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"
+            >
+              List Your Plot
+            </Link>
+            <Link
               href="/explore"
               className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm transition"
             >

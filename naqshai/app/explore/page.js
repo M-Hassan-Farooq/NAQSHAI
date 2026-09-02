@@ -2,7 +2,8 @@
 
 import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { GoogleMap, useJsApiLoader, Polygon, Marker, StreetViewPanorama } from '@react-google-maps/api';
+import { GoogleMap, Polygon, Marker, StreetViewPanorama } from '@react-google-maps/api';
+import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home } from 'lucide-react';
 
 const mapContainerStyle = {
@@ -153,18 +154,10 @@ const MOCK_PLOTS = [
   }
 ];
 
-const libraries = ['places'];
-
 function ExploreContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const plotParam = searchParams ? searchParams.get('plot') : null;
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
-    libraries,
-  });
 
   const [map, setMap] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -191,8 +184,9 @@ function ExploreContent() {
     setIs3DMode(false);
   }, []);
 
-  // When plotParam URL changes, set selectedPlot
-  useEffect(() => {
+  const [syncedPlotParam, setSyncedPlotParam] = useState(null);
+  if (plotParam !== syncedPlotParam) {
+    setSyncedPlotParam(plotParam);
     if (plotParam) {
       const match = MOCK_PLOTS.find(
         (p) => p.id.toLowerCase() === plotParam.toLowerCase()
@@ -202,7 +196,7 @@ function ExploreContent() {
         setSearchQuery(match.name);
       }
     }
-  }, [plotParam]);
+  }
 
   // When selectedPlot OR map changes, pan and zoom into selected plot
   useEffect(() => {
@@ -231,14 +225,23 @@ function ExploreContent() {
     plot.details.floodRisk.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loadError) return <div className="p-4 text-red-500">Error loading maps. Check your API key.</div>;
-  if (!isLoaded) return <div className="p-4 text-slate-500">Loading Map...</div>;
-
   return (
-    <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800">
+    <GoogleMapsSafeLoader>
+      {({ isLoaded, loadError }) => {
+        if (loadError) return <div className="p-4 text-red-500">Error loading maps. Check your API key.</div>;
+        if (!isLoaded) return <div className="p-4 text-slate-500">Loading Map...</div>;
+
+        return (
+          <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800">
       
-      {/* 2. Navigation Bridge (Home & Back to AI Advisor) */}
+      {/* 2. Navigation Bridge (Home, Sell Plot & Back to AI Advisor) */}
       <div className="absolute top-3 right-6 z-20 flex items-center gap-3">
+        <button
+          onClick={() => router.push('/sell')}
+          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
+        >
+          <span>List Your Plot</span>
+        </button>
         <button
           onClick={() => router.push('/')}
           className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
@@ -528,6 +531,9 @@ function ExploreContent() {
       </div>
 
     </div>
+        );
+      }}
+    </GoogleMapsSafeLoader>
   );
 }
 
