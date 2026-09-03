@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { GoogleMap, Polygon, Marker, Autocomplete } from '@react-google-maps/api';
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
+import { useListingDraft } from '@/lib/useListingDraft';
 import UserNav from '@/components/UserNav';
 import {
   Sparkles,
@@ -21,10 +22,12 @@ import {
   Building2,
   User,
   AlertCircle,
-  HelpCircle,
   X,
   Loader2,
-  LogOut
+  Check,
+  CloudOff,
+  RefreshCw,
+  ClipboardList,
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
@@ -41,12 +44,56 @@ function formatPkr(num) {
   return `PKR ${val.toLocaleString('en-PK')}`;
 }
 
+// Honest autosave status — never shows "Saved" unless the server confirmed it.
+function SaveIndicator({ state, lastSavedAt, onRetry }) {
+  if (state === 'saving') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Saving…
+      </span>
+    );
+  }
+  if (state === 'saved') {
+    const t = lastSavedAt
+      ? new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+        <Check className="w-3.5 h-3.5" />
+        Saved{t ? ` · ${t}` : ''}
+      </span>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+        <CloudOff className="w-3.5 h-3.5" />
+        Unable to save
+        <button
+          type="button"
+          onClick={onRetry}
+          className="ml-1 inline-flex items-center gap-1 text-amber-800 underline hover:text-amber-900"
+        >
+          <RefreshCw className="w-3 h-3" />
+          Retry
+        </button>
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function SellPlotPage() {
   const router = useRouter();
 
   // Authentication State
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Draft resume target (parsed from ?draft=<id>) — resolved once auth is known.
+  const [resumeId, setResumeId] = useState(null);
+  const [paramResolved, setParamResolved] = useState(false);
 
   // Step state: 1 = Details, 2 = Boundary Map, 3 = Documents, 4 = Success
   const [currentStep, setCurrentStep] = useState(1);
@@ -73,17 +120,50 @@ export default function SellPlotPage() {
   const mapRef = useRef(null);
   const autocompleteRef = useRef(null);
 
-  // Step 3 State: Uploaded File Names
+  // Step 3 State: Uploaded documents — each is { path, name, size } once stored.
   const [uploadedFiles, setUploadedFiles] = useState({
     allotmentLetter: null,
     cnicFront: null,
     cnicBack: null,
   });
+  const [docUploading, setDocUploading] = useState({});
+  const [docError, setDocError] = useState('');
 
   // Loading & Submission State
   const [submitting, setSubmitting] = useState(false);
   const [submittedPlotId, setSubmittedPlotId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // ---- Rehydrate the form from a resumed draft (runs after the draft is fetched).
+  const handleHydrate = useCallback((formData, meta) => {
+    if (!formData || meta?.isNew) return;
+    if (formData.sellerInfo) setSellerInfo((prev) => ({ ...prev, ...formData.sellerInfo }));
+    if (formData.plotDetails) setPlotDetails((prev) => ({ ...prev, ...formData.plotDetails }));
+    if (Array.isArray(formData.polygonCoordinates)) setPolygonCoordinates(formData.polygonCoordinates);
+    if (formData.uploadedFiles) setUploadedFiles((prev) => ({ ...prev, ...formData.uploadedFiles }));
+    const step = meta?.currentStep;
+    if (step) setCurrentStep(Math.min(Math.max(step, 1), 3));
+  }, []);
+
+  const draftEnabled = !checkingAuth && !!session && paramResolved;
+  const draft = useListingDraft({ enabled: draftEnabled, resumeId, onHydrate: handleHydrate });
+  const {
+    ready: draftReady,
+    status: draftStatus,
+    scheduleSave,
+    saveNow,
+    getDraftId,
+    markSubmitted,
+  } = draft;
+
+  // Snapshot the form for the save layer. `form_data` shape is stable across the app.
+  const buildSnapshot = useCallback(
+    (step) => ({
+      current_step: step ?? currentStep,
+      form_data: { sellerInfo, plotDetails, polygonCoordinates, uploadedFiles },
+    }),
+    [currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]
+  );
 
   // Route Protection: Check active user session
   useEffect(() => {
@@ -102,6 +182,14 @@ export default function SellPlotPage() {
             fullName: prev.fullName || userMeta.full_name || userMeta.name || activeSession.user?.email?.split('@')[0] || '',
             phoneNumber: prev.phoneNumber || userMeta.phone_number || '',
           }));
+          // Resolve the resume target from the URL (client-only; avoids useSearchParams/Suspense).
+          try {
+            const dParam = new URLSearchParams(window.location.search).get('draft');
+            setResumeId(dParam || null);
+          } catch {
+            setResumeId(null);
+          }
+          setParamResolved(true);
         }
       } catch (err) {
         console.error('Session verification error:', err);
@@ -129,6 +217,15 @@ export default function SellPlotPage() {
     };
   }, [router]);
 
+  // ---- Debounced autosave: persist to the DB whenever the form changes.
+  useEffect(() => {
+    if (!draftReady || draftStatus !== 'draft') return;
+    scheduleSave({
+      current_step: currentStep,
+      form_data: { sellerInfo, plotDetails, polygonCoordinates, uploadedFiles },
+    });
+  }, [draftReady, draftStatus, scheduleSave, currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]);
+
   const handleSignOut = async () => {
     const confirmed = window.confirm('Are you sure you want to sign out?');
     if (!confirmed) return;
@@ -152,7 +249,7 @@ export default function SellPlotPage() {
       if (place.geometry && place.geometry.location) {
         const lat = place.geometry.location.lat();
         const lng = place.geometry.location.lng();
-        
+
         if (mapRef.current) {
           mapRef.current.panTo({ lat, lng });
           mapRef.current.setZoom(18);
@@ -176,19 +273,48 @@ export default function SellPlotPage() {
     setPolygonCoordinates([]);
   }, []);
 
+  // Upload a document to Storage and record only its reference in the draft, so
+  // autosave persists a path (not the bytes) and never re-uploads the file.
+  const uploadDocument = async (field, file) => {
+    setDocError('');
+    const uid = session?.user?.id;
+    if (!uid) {
+      setDocError('Your session has expired. Please sign in again.');
+      return;
+    }
+    // Ensure a draft row exists first so the file is filed under this draft's folder.
+    let id = getDraftId();
+    if (!id) {
+      await saveNow(buildSnapshot(currentStep));
+      id = getDraftId();
+    }
+    const folder = id || 'unsaved';
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${uid}/${folder}/${field}-${Date.now()}-${safeName}`;
+
+    setDocUploading((p) => ({ ...p, [field]: true }));
+    try {
+      const { error } = await supabase.storage
+        .from('plot-documents')
+        .upload(path, file, { cacheControl: '3600', upsert: true });
+      if (error) throw error;
+      setUploadedFiles((prev) => ({ ...prev, [field]: { path, name: file.name, size: file.size } }));
+    } catch (err) {
+      setDocError(`Could not upload ${file.name}: ${err?.message || 'please try again.'}`);
+    } finally {
+      setDocUploading((p) => ({ ...p, [field]: false }));
+    }
+  };
+
   // Handle File Input Change
   const handleFileChange = (field, e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFiles((prev) => ({
-        ...prev,
-        [field]: file.name,
-      }));
-    }
+    if (file) uploadDocument(field, file);
     e.target.value = '';
   };
 
-  // Remove a previously selected document
+  // Remove a previously selected document (drops the reference; the file stays in
+  // owner-scoped Storage and is simply no longer linked to the draft).
   const handleRemoveFile = (field) => {
     setUploadedFiles((prev) => ({
       ...prev,
@@ -209,45 +335,49 @@ export default function SellPlotPage() {
         return;
       }
     }
-    setCurrentStep((prev) => Math.min(prev + 1, 3));
+    const next = Math.min(currentStep + 1, 3);
+    saveNow(buildSnapshot(next)); // persist progress on navigation
+    setCurrentStep(next);
   };
 
   const handlePrevStep = () => {
     setErrorMessage('');
-    setCurrentStep((prev) => Math.max(prev - 1, 1));
+    const prev = Math.max(currentStep - 1, 1);
+    saveNow(buildSnapshot(prev));
+    setCurrentStep(prev);
   };
 
-  // Final Ingestion Submission
+  // Final Ingestion Submission — flush the draft, then publish from server-side data.
   const handleSubmitListing = async () => {
     setSubmitting(true);
     setErrorMessage('');
 
     try {
-      const payload = {
-        sellerId: session?.user?.id,
-        seller: {
-          ...sellerInfo,
-          userId: session?.user?.id,
-        },
-        plot: plotDetails,
-        polygonCoordinates: polygonCoordinates,
-        documents: [
-          uploadedFiles.allotmentLetter ? `allotment_letters/${uploadedFiles.allotmentLetter}` : 'allotment_letter_pending.pdf',
-          uploadedFiles.cnicFront ? `cnic/${uploadedFiles.cnicFront}` : 'cnic_front_pending.jpg',
-          uploadedFiles.cnicBack ? `cnic/${uploadedFiles.cnicBack}` : 'cnic_back_pending.jpg',
-        ].filter(Boolean),
-      };
+      // Make sure the newest form state is persisted and a draft row exists.
+      await saveNow(buildSnapshot(currentStep));
+      const id = getDraftId();
+      if (!id) {
+        setErrorMessage('We could not save your listing before submitting. Please check your connection and try again.');
+        setSubmitting(false);
+        return;
+      }
 
-      const res = await fetch('/api/sell', {
+      const { data: { session: current } } = await supabase.auth.getSession();
+      const token = current?.access_token;
+
+      const res = await fetch(`/api/drafts/${id}/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
 
       const data = await res.json();
 
       if (data.success) {
-        setSubmittedPlotId(data.plotId || 'Plot-101');
+        markSubmitted();
+        setSubmittedPlotId(data.plotId || id);
         setCurrentStep(4);
       } else {
         setErrorMessage(data.error || 'Failed to submit plot listing. Please try again.');
@@ -271,9 +401,11 @@ export default function SellPlotPage() {
     );
   }
 
+  const isReadOnly = draftStatus !== 'draft';
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
-      
+
       {/* 1. Header Navigation Bar */}
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -290,18 +422,27 @@ export default function SellPlotPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {session?.user && !isReadOnly && (
+              <div className="hidden md:flex items-center pr-1">
+                <SaveIndicator
+                  state={draft.saveState}
+                  lastSavedAt={draft.lastSavedAt}
+                  onRetry={() => saveNow(buildSnapshot(currentStep))}
+                />
+              </div>
+            )}
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center gap-1.5"
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">My Listings</span>
+            </button>
             <button
               onClick={() => router.push('/explore')}
               className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"
             >
               Explore 3D Map
-            </button>
-            <button
-              onClick={() => router.push('/recommend')}
-              className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-              <span>AI Advisor</span>
             </button>
             {session?.user && (
               <UserNav
@@ -316,7 +457,68 @@ export default function SellPlotPage() {
 
       {/* Main Form Container */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8">
-        
+
+        {/* Draft status banners */}
+        {draft.initializing && (
+          <div className="mb-6 p-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs flex items-center gap-2 shadow-sm">
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-700" />
+            Restoring your saved progress…
+          </div>
+        )}
+
+        {draft.loadError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+            <div>
+              <p className="font-semibold">Could not open this draft</p>
+              <p className="text-xs text-red-600 mt-0.5">{draft.loadError}</p>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="mt-2 text-xs font-semibold text-red-700 underline hover:text-red-800"
+              >
+                Back to My Listings
+              </button>
+            </div>
+          </div>
+        )}
+
+        {draft.conflict && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
+            <div>
+              <p className="font-semibold">This draft was updated on another device</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                To avoid overwriting newer changes, reload to fetch the latest version before continuing.
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 underline hover:text-amber-900"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Reload latest version
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isReadOnly && currentStep <= 3 && (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-sm flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-700 mt-0.5" />
+            <div>
+              <p className="font-semibold">This listing has already been submitted</p>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                It is under review and can no longer be edited as a draft. You can track it from My Listings.
+              </p>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="mt-2 text-xs font-semibold text-emerald-800 underline hover:text-emerald-900"
+              >
+                Go to My Listings
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Title & Introduction */}
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -325,13 +527,16 @@ export default function SellPlotPage() {
           <p className="text-sm text-slate-600 mt-2 max-w-xl mx-auto">
             Submit plot metadata, draw interactive polygon coordinates on satellite maps, and upload ownership documents for AI risk verification.
           </p>
+          <p className="text-xs text-slate-500 mt-2">
+            Your progress saves automatically — you can leave and pick up right where you left off.
+          </p>
         </div>
 
         {/* 2. Step Progress Bar */}
         {currentStep <= 3 && (
           <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4 mb-8">
             <div className="flex items-center justify-between max-w-2xl mx-auto">
-              
+
               <div className="flex flex-col items-center gap-1.5 flex-1">
                 <div
                   className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
@@ -418,7 +623,7 @@ export default function SellPlotPage() {
 
         {/* 3. Multi-Step Form Card */}
         <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 sm:p-8">
-          
+
           {/* STEP 1: Plot & Seller Details */}
           {currentStep === 1 && (
             <div className="space-y-8">
@@ -783,6 +988,13 @@ export default function SellPlotPage() {
                 </div>
               </div>
 
+              {docError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                  <span>{docError}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {/* Allotment Letter Upload */}
                 <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
@@ -801,10 +1013,14 @@ export default function SellPlotPage() {
                       />
                     </label>
 
-                    {uploadedFiles.allotmentLetter && (
+                    {docUploading.allotmentLetter ? (
+                      <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading…
+                      </div>
+                    ) : uploadedFiles.allotmentLetter && (
                       <div className="mt-2 flex items-center gap-1.5 max-w-full">
                         <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-md truncate">
-                          ✓ {uploadedFiles.allotmentLetter}
+                          ✓ {uploadedFiles.allotmentLetter.name}
                         </span>
                         <button
                           type="button"
@@ -849,10 +1065,15 @@ export default function SellPlotPage() {
                     </div>
 
                     <div className="mt-2 space-y-1 w-full flex flex-col items-center">
-                      {uploadedFiles.cnicFront && (
+                      {docUploading.cnicFront && (
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Uploading front…
+                        </div>
+                      )}
+                      {!docUploading.cnicFront && uploadedFiles.cnicFront && (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded truncate">
-                            Front: {uploadedFiles.cnicFront}
+                            Front: {uploadedFiles.cnicFront.name}
                           </span>
                           <button
                             type="button"
@@ -863,10 +1084,15 @@ export default function SellPlotPage() {
                           </button>
                         </div>
                       )}
-                      {uploadedFiles.cnicBack && (
+                      {docUploading.cnicBack && (
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Uploading back…
+                        </div>
+                      )}
+                      {!docUploading.cnicBack && uploadedFiles.cnicBack && (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded truncate">
-                            Back: {uploadedFiles.cnicBack}
+                            Back: {uploadedFiles.cnicBack.name}
                           </span>
                           <button
                             type="button"
@@ -896,7 +1122,7 @@ export default function SellPlotPage() {
                 <button
                   type="button"
                   onClick={handleSubmitListing}
-                  disabled={submitting}
+                  disabled={submitting || isReadOnly}
                   className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2 disabled:opacity-50"
                 >
                   {submitting ? (
@@ -928,7 +1154,7 @@ export default function SellPlotPage() {
                   Plot Reference ID: {submittedPlotId}
                 </p>
                 <p className="text-sm text-slate-600 mt-3 max-w-md mx-auto leading-relaxed">
-                  Your plot has been saved to the live database. It will immediately appear on the 3D Map and be available for AI recommendations.
+                  Your plot has been saved to the live database and appears on the 3D Map. It stays under review until our AI verification completes — you can track its status any time from My Listings.
                 </p>
               </div>
 
@@ -941,10 +1167,10 @@ export default function SellPlotPage() {
                 </button>
 
                 <button
-                  onClick={() => router.push('/recommend')}
+                  onClick={() => router.push('/dashboard')}
                   className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm"
                 >
-                  Ask AI Advisor About Plot
+                  Go to My Listings
                 </button>
               </div>
             </div>
