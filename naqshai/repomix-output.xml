@@ -1,0 +1,3414 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+app/
+  api/
+    plots/
+      route.js
+    recommend/
+      route.js
+    sell/
+      route.js
+  explore/
+    page.js
+  recommend/
+    page.js
+  sell/
+    page.js
+  favicon.ico
+  globals.css
+  layout.js
+  page.js
+lib/
+  supabaseClient.js
+  useGoogleMapsLoader.js
+public/
+  file.svg
+  globe.svg
+  mascot.svg
+  next.svg
+  vercel.svg
+  window.svg
+supabase/
+  migrations/
+    01_schema.sql
+.gitignore
+AGENTS.md
+CLAUDE.md
+eslint.config.mjs
+jsconfig.json
+next.config.mjs
+package.json
+postcss.config.mjs
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="app/api/plots/route.js">
+import { NextResponse } from 'next/server';
+import { supabaseAdmin, supabase } from '@/lib/supabaseClient';
+
+// Always read fresh data from the database (never statically cached).
+export const dynamic = 'force-dynamic';
+
+// Format a raw PKR number into a friendly display string (e.g. "1.85 Crore").
+function formatPkr(num) {
+  const val = Number(num);
+  if (!val || Number.isNaN(val)) return 'Price on request';
+  if (val >= 10000000) return `${(val / 10000000).toFixed(2)} Crore`;
+  if (val >= 100000) return `${(val / 100000).toFixed(2)} Lakh`;
+  return `PKR ${val.toLocaleString('en-PK')}`;
+}
+
+// Validate + normalize polygon coordinates coming from the JSONB column.
+// Returns only well-formed {lat, lng} points so one bad record can't crash the map.
+function normalizePaths(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((pt) => {
+      if (!pt || typeof pt !== 'object') return null;
+      const lat = Number(pt.lat);
+      const lng = Number(pt.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+      return { lat, lng };
+    })
+    .filter(Boolean);
+}
+
+// Centroid of a set of points, used for the marker + pan-to target.
+function centroid(paths) {
+  if (!paths.length) return null;
+  const sum = paths.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
+    { lat: 0, lng: 0 }
+  );
+  return { lat: sum.lat / paths.length, lng: sum.lng / paths.length };
+}
+
+// Society isn't a dedicated column; the sell flow bakes it into the title as
+// "Plot 101 - Gulberg Greens, Islamabad". Parse it back out, best-effort.
+function parseSociety(title) {
+  if (typeof title !== 'string') return '';
+  const afterDash = title.split(' - ')[1];
+  if (!afterDash) return '';
+  return (afterDash.split(',')[0] || '').trim();
+}
+
+export async function GET() {
+  try {
+    const db = supabaseAdmin || supabase;
+
+    // Single query. Registered = the row exists in `plots`. Seller phone is
+    // embedded via the plots.seller_id -> sellers.id foreign key for the
+    // existing "Contact Owner via WhatsApp" action.
+    const { data, error } = await db
+      .from('plots')
+      .select(
+        'id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, sellers ( phone_number, full_name )'
+      )
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching plots:', error.message || error);
+      return NextResponse.json({ error: 'Failed to load plots.' }, { status: 500 });
+    }
+
+    const plots = (data || []).map((row) => {
+      const paths = normalizePaths(row.polygon_coordinates);
+      const hasGeometry = paths.length >= 3;
+
+      if (!hasGeometry && process.env.NODE_ENV !== 'production') {
+        console.warn(
+          `[api/plots] Plot "${row.id}" has no renderable boundary (${paths.length} valid point(s)); it will load without map geometry.`
+        );
+      }
+
+      const seller = row.sellers || null;
+
+      return {
+        id: row.id,
+        name: row.title || row.id,
+        society: parseSociety(row.title),
+        city: row.city || '',
+        price: formatPkr(row.price_pkr),
+        priceValue: Number(row.price_pkr) || 0,
+        center: centroid(paths),
+        paths,
+        hasGeometry,
+        details: {
+          size: row.size_dimensions || '—',
+          category: row.category || 'Residential',
+          elevation: row.elevation_profile || 'Pending Survey',
+          floodRisk: row.flood_risk || 'Assessment Pending',
+          noiseLevel: row.noise_level || 'Assessment Pending',
+          landmarks: row.proximity_notes || 'No proximity data provided.',
+        },
+        ownerContact: seller && seller.phone_number ? seller.phone_number : '',
+        isVerified: !!row.is_verified,
+      };
+    });
+
+    return NextResponse.json({ plots }, { status: 200 });
+  } catch (err) {
+    console.error('API Error in /api/plots:', err);
+    return NextResponse.json(
+      { error: err.message || 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/recommend/route.js">
+import { NextResponse } from 'next/server';
+import { GoogleGenAI, Type } from '@google/genai';
+
+const apiKey = process.env.GEMINI_API_KEY;
+const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+
+const MOCK_INVENTORY = [
+    {
+        id: "plot-101",
+        title: "Plot 101 - Block A, Gulberg Greens",
+        society: "Gulberg Greens",
+        city: "Islamabad",
+        size: "1 Kanal",
+        price: "PKR 3.8 Crore",
+        floodRisk: "Low (Elevated Ridge)",
+        noiseLevel: "Low (Residential Zone)",
+        description: "Prime 1 Kanal residential plot in Gulberg Greens Islamabad. High elevation with excellent drainage and 0% flood history."
+    },
+    {
+        id: "plot-204",
+        title: "Plot 204 - Phase 8, Bahria Town",
+        society: "Bahria Town",
+        city: "Rawalpindi",
+        size: "10 Marla",
+        price: "PKR 1.85 Crore",
+        floodRisk: "Moderate (Near Natural Drain)",
+        noiseLevel: "Medium (Commercial Proximity)",
+        description: "10 Marla plot under 2 Crore in Bahria Town Phase 8. Convenient location close to markets."
+    },
+    {
+        id: "plot-309",
+        title: "Plot 309 - Sector F, DHA Phase 1",
+        society: "DHA Phase 1",
+        city: "Islamabad",
+        size: "5 Marla",
+        price: "PKR 1.4 Crore",
+        floodRisk: "Very Low (High Plateau)",
+        noiseLevel: "Low (Park Facing)",
+        description: "5 Marla plot in DHA Phase 1 Islamabad, facing green park with top security and infrastructure."
+    },
+    {
+        id: "plot-402",
+        title: "Plot 402 - Sector B, Park View City",
+        society: "Park View City",
+        city: "Islamabad",
+        size: "10 Marla",
+        price: "PKR 1.95 Crore",
+        floodRisk: "Low (Hilly Terrain)",
+        noiseLevel: "Very Low (Peaceful Hillside)",
+        description: "Scenic 10 Marla residential plot in Park View City Islamabad under 2 Crore with Margalla hills view."
+    },
+    {
+        id: "plot-510",
+        title: "Plot 510 - Phase 6, DHA",
+        society: "DHA Phase 6",
+        city: "Lahore",
+        size: "1 Kanal",
+        price: "PKR 4.2 Crore",
+        floodRisk: "Low",
+        noiseLevel: "Low",
+        description: "1 Kanal luxury residential plot in DHA Lahore Phase 6 with underground electrical infrastructure."
+    },
+    {
+        id: "plot-615",
+        title: "Plot 615 - Block 5, Clifton",
+        society: "Clifton",
+        city: "Karachi",
+        size: "10 Marla",
+        price: "PKR 5.5 Crore",
+        floodRisk: "Low (Coastal Plain)",
+        noiseLevel: "Medium",
+        description: "10 Marla prime plot in Clifton Karachi near seaside commercial and diplomatic zone."
+    }
+];
+
+export async function POST(req) {
+    try {
+        const { messages, language } = await req.json();
+
+        if (!messages || !Array.isArray(messages)) {
+            return NextResponse.json(
+                { error: 'Messages array is required' },
+                { status: 400 }
+            );
+        }
+
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            console.error("GEMINI_API_KEY is not set in environment variables.");
+            return NextResponse.json({
+                reply: "API Key configure nahi hai. Meharbani karke GEMINI_API_KEY check karein.",
+                recommendedPlots: []
+            });
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
+
+        const LANG_MAP = {
+            'EN': 'English',
+            'UR': 'Nastaliq Urdu script (اردو)',
+            'RO': 'Roman Urdu'
+        };
+
+        const baseSystemInstruction = `You are NAQSHAI AI - an expert land recommendation chatbot for real estate in Pakistan.
+
+REAL ESTATE INVENTORY AVAILABLE FOR RECOMMENDATION:
+${JSON.stringify(MOCK_INVENTORY, null, 2)}
+
+CORE GUIDELINES:
+1. REQUIREMENTS CHECK:
+   - If the user's city, budget, or preferred plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) are unknown or missing, ask friendly clarifying questions to get their city, budget, and size preferences.
+   - Do not recommend plots if key criteria are missing unless user asks for all available options.
+
+2. MATCHING & RECOMMENDATION:
+   - Match user requirements (city, budget, plot size) against the inventory above.
+   - Include any matching plot objects inside the 'recommendedPlots' array.
+   - In the 'reply' text, clearly explain why these plots match the user's needs, explicitly highlighting environmental factors: Flood Risk and Noise Level.
+
+3. CONVERSATIONAL DIRECTNESS:
+   - DO NOT start responses with conversational pleasantries like 'I am doing well, thank you!' unless the user explicitly asks about your well-being. Jump straight to answering the user's real estate requirement.
+
+4. LANGUAGE & SCRIPT ADAPTATION (CRITICAL):
+   - Detect the language and script used in the user's latest prompt.
+   - STRICTLY respond in the exact same language and script:
+     a) English: If user writes in English, reply in natural English.
+     b) Urdu Script (اردو): If user writes in Urdu script, reply in fluent Urdu script.
+     c) Roman Urdu: If user writes in Roman Urdu (e.g., "Muje Islamabad me 10 Marla plot chahiye"), reply in natural Roman Urdu.
+   - CLEAN TEXT CONSTRAINT: Ensure the JSON 'reply' field contains only clean English, Roman Urdu, or Urdu script. Never output random Chinese characters, CJK artifacts, or unmapped Unicode symbols.
+
+5. STRUCTURED JSON OUTPUT:
+   - You MUST return a valid JSON object with:
+     - 'reply': A comprehensive text response (incorporating flood risk and noise level analysis).
+     - 'recommendedPlots': An array of plot objects selected from the inventory. Each object MUST have keys: id, title, society, city, size, price, floodRisk, noiseLevel.
+     - If asking follow-up questions or no plots match, set 'recommendedPlots' to [].`;
+
+        let finalSystemInstruction = baseSystemInstruction;
+        if (language && language !== 'Auto' && LANG_MAP[language]) {
+            finalSystemInstruction += `\n\nCRITICAL INSTRUCTION OVERRIDE: The user interface is set to ${LANG_MAP[language]}. You MUST write your 'reply' field ENTIRELY in ${LANG_MAP[language]}. DO NOT mirror the language of the user's prompt. Even if they type in Roman Urdu, you must respond strictly in ${LANG_MAP[language]}.`;
+        }
+
+        // Format history for Gemini SDK
+        const contents = messages.map((msg) => {
+            const role = msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user';
+            const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+            return {
+                role,
+                parts: [{ text: textContent }],
+            };
+        });
+
+        const modelsToTry = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemma-4-31b-it',
+            'gemini-2.5-pro'
+        ];
+
+        let responseText = null;
+        let lastError = null;
+
+        for (const modelName of modelsToTry) {
+            try {
+                const response = await ai.models.generateContent({
+                    model: modelName,
+                    contents: contents,
+                    config: {
+                        systemInstruction: finalSystemInstruction,
+                        responseMimeType: 'application/json',
+                        responseSchema: {
+                            type: Type.OBJECT,
+                            properties: {
+                                reply: { type: Type.STRING },
+                                recommendedPlots: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            id: { type: Type.STRING },
+                                            title: { type: Type.STRING },
+                                            society: { type: Type.STRING },
+                                            city: { type: Type.STRING },
+                                            size: { type: Type.STRING },
+                                            price: { type: Type.STRING },
+                                            floodRisk: { type: Type.STRING },
+                                            noiseLevel: { type: Type.STRING }
+                                        },
+                                        required: ['id', 'title', 'society', 'city', 'size', 'price', 'floodRisk', 'noiseLevel']
+                                    }
+                                }
+                            },
+                            required: ['reply', 'recommendedPlots']
+                        }
+                    }
+                });
+
+                if (response && response.text) {
+                    responseText = response.text;
+                    break;
+                }
+            } catch (err) {
+                console.warn(`Model ${modelName} failed:`, err.message);
+                lastError = err;
+            }
+        }
+
+        if (!responseText) {
+            console.error("All Gemini models failed. Last error:", lastError);
+            throw lastError || new Error('Failed to generate content with available Gemini models');
+        }
+
+        let cleanText = responseText.trim();
+        cleanText = cleanText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+        let parsedData;
+        try {
+            parsedData = JSON.parse(cleanText);
+            if (typeof parsedData === 'string') {
+                parsedData = JSON.parse(parsedData);
+            }
+        } catch (e) {
+            console.error("JSON parse failed. Raw text:", responseText);
+            parsedData = {
+                reply: cleanText,
+                recommendedPlots: []
+            };
+        }
+
+        if (typeof parsedData?.reply === 'string' && parsedData.reply.trim().startsWith('{')) {
+            try {
+                const nested = JSON.parse(parsedData.reply.trim());
+                if (nested && nested.reply) {
+                    parsedData.reply = nested.reply;
+                    if (Array.isArray(nested.recommendedPlots) && (!parsedData.recommendedPlots || parsedData.recommendedPlots.length === 0)) {
+                        parsedData.recommendedPlots = nested.recommendedPlots;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        let replyText = parsedData.reply || cleanText || '';
+        if (typeof replyText === 'string') {
+            replyText = replyText.replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, '').trim();
+        }
+
+        return NextResponse.json({
+            reply: replyText,
+            recommendedPlots: parsedData.recommendedPlots || []
+        });
+
+    } catch (error) {
+        console.error('Error in /api/recommend:', error);
+        return NextResponse.json(
+            {
+                reply: 'Maazrat, AI recommendation server me masla agaya. Dobara koshish karein.',
+                recommendedPlots: []
+            },
+            { status: 500 }
+        );
+    }
+}
+</file>
+
+<file path="app/api/sell/route.js">
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin, supabase } from '@/lib/supabaseClient';
+import crypto from 'crypto';
+
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const { seller, plot, polygonCoordinates, documents } = body || {};
+
+    // 1. Inspect & validate incoming request payload
+    if (!plot || !plot.city || !plot.society || !plot.pricePkr) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required plot details (City, Society, and Price PKR).' },
+        { status: 400 }
+      );
+    }
+
+    if (!seller || (!seller.fullName && !seller.full_name)) {
+      return NextResponse.json(
+        { success: false, error: 'Missing seller full name.' },
+        { status: 400 }
+      );
+    }
+
+    // Instantiate Supabase Admin Client with Service Role Key
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    let dbClient;
+    if (serviceKey && supabaseUrl) {
+      dbClient = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
+    } else {
+      dbClient = supabaseAdmin || supabase;
+    }
+
+    // Parse Seller details from payload
+    const sellerName = (seller.fullName || seller.full_name || seller.name || '').trim();
+    const sellerPhone = (seller.phoneNumber || seller.phone_number || seller.phone || '').trim();
+    const sellerRole = seller.sellerRole || seller.seller_role || seller.role || 'Direct Owner';
+
+    // 2. Create Auth User identity in auth.users FIRST (satisfies foreign key constraint on sellers.id)
+    const sanitizedPhone = sellerPhone.replace(/[^0-9]/g, '') || Math.floor(Date.now() % 1000000000);
+    const sellerEmail = `seller_${sanitizedPhone}_${Date.now()}@naqshai.internal`;
+
+    let userId = null;
+    try {
+      const { data: authUser, error: authErr } = await dbClient.auth.admin.createUser({
+        email: sellerEmail,
+        email_confirm: true,
+        user_metadata: { full_name: sellerName, phone_number: sellerPhone },
+      });
+
+      if (authErr) {
+        console.error('Supabase Auth User Creation Error:', authErr.message || authErr);
+      } else if (authUser && authUser.user) {
+        userId = authUser.user.id;
+      }
+    } catch (authException) {
+      console.error('Supabase Auth Exception:', authException.message);
+    }
+
+    // Fallback UUID if auth user creation failed
+    if (!userId) {
+      userId = crypto.randomUUID();
+    }
+
+    // 3. Insert seller into 'sellers' table FIRST
+    const sellerRecord = {
+      id: userId,
+      full_name: sellerName,
+      phone_number: sellerPhone,
+      seller_role: sellerRole,
+      is_identity_verified: false,
+    };
+
+    const { data: sellerData, error: sErr } = await dbClient
+      .from('sellers')
+      .insert([sellerRecord])
+      .select();
+
+    if (sErr) {
+      console.error('Supabase Sellers Insert Error:', sErr.message || sErr);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Seller profile creation failed: ${sErr.message}`,
+          sellerError: sErr.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    // 4. Capture generated UUID `id` returned from successful seller insertion
+    const capturedSellerId = (sellerData && sellerData[0] && sellerData[0].id) ? sellerData[0].id : userId;
+    console.log('Successfully created seller profile in sellers table with ID:', capturedSellerId);
+
+    // 5. Cleanly format unique Plot ID and title
+    const rawPlotNum = (plot.plotNumber || '').trim();
+    let cleanPlotNum = rawPlotNum.replace(/^plot[\s-_]*/i, '');
+    if (!cleanPlotNum) {
+      cleanPlotNum = Math.floor(100 + Math.random() * 900).toString();
+    }
+    const plotId = `Plot-${cleanPlotNum}`;
+    const title = `Plot ${cleanPlotNum} - ${plot.society}, ${plot.city}`;
+
+    // 6. Pass captured `id` into seller_id when inserting into 'plots' table (NEVER NULL)
+    const plotRecord = {
+      id: plotId,
+      seller_id: capturedSellerId,
+      title: title,
+      city: plot.city,
+      price_pkr: Number(plot.pricePkr),
+      size_dimensions: plot.sizeDimensions || '10 Marla (35x70)',
+      category: plot.category || 'Residential',
+      flood_risk: 'Assessment Pending',
+      noise_level: 'Assessment Pending',
+      elevation_profile: 'Pending Survey',
+      proximity_notes: plot.proximityNotes || 'Proximity data under verification',
+      polygon_coordinates: polygonCoordinates || [],
+      documents: documents || [],
+      is_verified: false,
+    };
+
+    const { data: plotDataResult, error: pErr } = await dbClient
+      .from('plots')
+      .insert([plotRecord])
+      .select();
+
+    if (pErr) {
+      console.error('Supabase Plots Insert Error:', pErr.message || pErr);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Plot insert failed: ${pErr.message}`,
+          plotError: pErr.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log('Successfully inserted plot record, ID:', plotId, 'linked to Seller ID:', capturedSellerId);
+
+    return NextResponse.json(
+      {
+        success: true,
+        plotId: plotId,
+        sellerId: capturedSellerId,
+        message: 'Plot listing and seller profile created successfully.',
+        plot: plotRecord,
+        data: plotDataResult,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('API Error in /api/sell/route.js:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/explore/page.js">
+'use client';
+
+import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { GoogleMap, Polygon, Marker, StreetViewPanorama, GoogleMapsMarkerClusterer } from '@react-google-maps/api';
+import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
+import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home, Loader2, RefreshCw } from 'lucide-react';
+
+const mapContainerStyle = {
+  width: '100%',
+  height: '100vh',
+};
+
+// Fallback camera only — used before plots load or when no plot has geometry.
+const defaultCenter = { lat: 33.6844, lng: 73.0479 };
+const DEFAULT_ZOOM = 12;
+const MAX_AUTO_ZOOM = 18;
+
+// Below this zoom, show the green availability-marker layer (clustered). At/above it,
+// individual plot polygons take over. Clustering stops just under this level so the
+// markers fully separate into individual pins before the boundaries appear.
+const POLYGON_MIN_ZOOM = 16;
+
+// Programmatically generated green "availability" pin (SVG data URI — no image asset).
+function availabilityPinDataUri() {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52">' +
+    '<path d="M20 1C9.5 1 1 9.5 1 20c0 13.5 19 31 19 31s19-17.5 19-31C39 9.5 30.5 1 20 1z" fill="#059669" stroke="#ffffff" stroke-width="2.5"/>' +
+    '<circle cx="20" cy="20" r="7.5" fill="#ffffff"/>' +
+    '<circle cx="20" cy="20" r="3.5" fill="#059669"/>' +
+    '</svg>';
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+}
+
+// Green cluster bubble; the plot count is drawn as the marker label on top.
+function clusterBubbleDataUri(size) {
+  const c = size / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+    `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="#059669" fill-opacity="0.22"/>` +
+    `<circle cx="${c}" cy="${c}" r="${c - 9}" fill="#059669" stroke="#ffffff" stroke-width="3"/>` +
+    '</svg>';
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+}
+
+function ExploreContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const plotParam = searchParams ? searchParams.get('plot') : null;
+
+  const [map, setMap] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedPlot, setSelectedPlot] = useState(null);
+  const [is3DMode, setIs3DMode] = useState(false);
+  const [hoveredPlotId, setHoveredPlotId] = useState(null);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM); // drives the marker-layer ↔ polygon transition
+
+  // Database-backed plot data.
+  const [plots, setPlots] = useState([]);
+  const [plotsLoading, setPlotsLoading] = useState(true);
+  const [plotsError, setPlotsError] = useState(null);
+
+  const mapRef = useRef(null);
+  const didFitRef = useRef(false); // ensures we auto-fit the camera only once
+  const plotParamRef = useRef(plotParam); // latest deep-link param, read without re-fetching
+  const clustererRef = useRef(null); // active MarkerClusterer instance (marker layer)
+  const markersRef = useRef([]); // google.maps.Marker instances backing the clusterer
+
+  const [reloadKey, setReloadKey] = useState(0); // bump to re-run the fetch (retry)
+
+  // Keep the deep-link ref current without triggering re-fetches.
+  useEffect(() => {
+    plotParamRef.current = plotParam;
+  }, [plotParam]);
+
+  // --- Data fetching -------------------------------------------------------
+  // The fetch lives inside the effect as an async callback, so state is only set in
+  // the awaited continuation — never synchronously in the effect body. `reloadKey`
+  // re-runs it for retry; `cancelled` guards against setState-after-unmount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/plots', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        const list = Array.isArray(data.plots) ? data.plots : [];
+        setPlots(list);
+        setPlotsError(null);
+        didFitRef.current = false; // re-fit after a fresh load / retry
+
+        // Deep-link: open ?plot=<id> once its data is available.
+        const param = plotParamRef.current;
+        if (param) {
+          const match = list.find((p) => p.id.toLowerCase() === param.toLowerCase());
+          if (match) {
+            setSelectedPlot(match);
+            setSearchQuery(match.name);
+            didFitRef.current = true; // focusing a specific plot; skip auto-fit
+          }
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load registered plots:', err);
+        setPlotsError('We couldn’t load the registered plots. Please try again.');
+        setPlots([]);
+      } finally {
+        if (!cancelled) setPlotsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  // Retry from the error state — reset to loading and re-run the fetch effect.
+  const handleRetry = useCallback(() => {
+    setPlotsLoading(true);
+    setPlotsError(null);
+    setReloadKey((k) => k + 1);
+  }, []);
+
+  // --- Map lifecycle -------------------------------------------------------
+  const onLoad = useCallback((mapInstance) => {
+    mapRef.current = mapInstance;
+    setMap(mapInstance);
+  }, []);
+
+  const onUnmount = useCallback(() => {
+    setMap(null);
+    mapRef.current = null;
+  }, []);
+
+  // Track zoom (event-driven, not an effect) so the map can switch between the green
+  // availability-marker layer and the individual plot polygons.
+  const handleZoomChanged = useCallback(() => {
+    const z = mapRef.current?.getZoom?.();
+    if (typeof z === 'number') setZoom(z);
+  }, []);
+
+  // Fit the viewport to every plot that has valid geometry. Returns whether it did.
+  const fitToPlots = useCallback((mapInstance, plotList) => {
+    if (!mapInstance || typeof window === 'undefined' || !window.google?.maps) return false;
+    const withGeo = plotList.filter((p) => p.hasGeometry && p.paths.length);
+    if (!withGeo.length) return false;
+    try {
+      const bounds = new window.google.maps.LatLngBounds();
+      withGeo.forEach((p) => p.paths.forEach((pt) => bounds.extend(pt)));
+      mapInstance.fitBounds(bounds);
+      // Prevent over-zoom when there's a single small plot.
+      window.google.maps.event.addListenerOnce(mapInstance, 'idle', () => {
+        if (mapInstance.getZoom() > MAX_AUTO_ZOOM) mapInstance.setZoom(MAX_AUTO_ZOOM);
+      });
+      return true;
+    } catch (e) {
+      console.warn('fitBounds failed:', e);
+      return false;
+    }
+  }, []);
+
+  const handleSelectPlot = useCallback((plot) => {
+    setSelectedPlot(plot);
+    setSearchQuery(plot.name);
+    setIsDropdownOpen(false);
+    setIs3DMode(false);
+  }, []);
+
+  // Auto-fit the camera once, after the map + plots are ready (unless a plot is selected).
+  useEffect(() => {
+    if (!map || plotsLoading || didFitRef.current || selectedPlot) return;
+    if (fitToPlots(map, plots)) {
+      didFitRef.current = true;
+    }
+  }, [map, plots, plotsLoading, selectedPlot, fitToPlots]);
+
+  // Pan/zoom into the selected plot.
+  useEffect(() => {
+    if (selectedPlot?.center && map) {
+      map.panTo(selectedPlot.center);
+      map.setZoom(MAX_AUTO_ZOOM);
+    }
+  }, [selectedPlot, map]);
+
+  // --- Availability marker layer (green markers + clustering) --------------
+  // Built imperatively from the same DB-backed `plots` (marker at each plot's centroid).
+  // Shown only when zoomed out; polygons take over past POLYGON_MIN_ZOOM. This effect
+  // only syncs the map (an external system) and sets no React state.
+  const showMarkerLayer = zoom < POLYGON_MIN_ZOOM;
+
+  useEffect(() => {
+    if (!map || typeof window === 'undefined' || !window.google?.maps) return undefined;
+    if (!showMarkerLayer) return undefined;
+
+    const g = window.google;
+    const markerPlots = plots.filter((p) => p.center); // center exists only with valid geometry
+    if (!markerPlots.length) return undefined;
+
+    const { MarkerClusterer, SuperClusterAlgorithm } = GoogleMapsMarkerClusterer;
+
+    const pinIcon = {
+      url: availabilityPinDataUri(),
+      scaledSize: new g.maps.Size(36, 47),
+      anchor: new g.maps.Point(18, 47),
+      labelOrigin: new g.maps.Point(18, 18),
+    };
+
+    // One green marker per registered plot; click reuses the existing details flow.
+    const markers = markerPlots.map((plot) => {
+      const marker = new g.maps.Marker({ position: plot.center, icon: pinIcon, title: plot.name });
+      marker.addListener('click', () => handleSelectPlot(plot));
+      return marker;
+    });
+
+    // Green cluster bubble with the count of available plots in that area.
+    const renderer = {
+      render: ({ count, position }) => {
+        const size = count < 10 ? 46 : count < 50 ? 54 : 62;
+        return new g.maps.Marker({
+          position,
+          icon: {
+            url: clusterBubbleDataUri(size),
+            scaledSize: new g.maps.Size(size, size),
+            anchor: new g.maps.Point(size / 2, size / 2),
+            labelOrigin: new g.maps.Point(size / 2, size / 2),
+          },
+          label: { text: String(count), color: '#ffffff', fontSize: '13px', fontWeight: '700' },
+          zIndex: 1000 + count,
+        });
+      },
+    };
+
+    const clusterer = new MarkerClusterer({
+      map,
+      markers,
+      renderer,
+      // Stop clustering just below the polygon threshold so pins fully separate first.
+      algorithm: new SuperClusterAlgorithm({ radius: 130, maxZoom: POLYGON_MIN_ZOOM - 1 }),
+    });
+
+    clustererRef.current = clusterer;
+    markersRef.current = markers;
+
+    return () => {
+      try {
+        clusterer.clearMarkers();
+        clusterer.setMap(null);
+      } catch (e) {
+        /* clusterer teardown is best-effort */
+      }
+      markers.forEach((m) => {
+        g.maps.event.clearInstanceListeners(m);
+        m.setMap(null);
+      });
+      clustererRef.current = null;
+      markersRef.current = [];
+    };
+  }, [map, plots, showMarkerLayer, handleSelectPlot]);
+
+  const handleResetSearch = useCallback(() => {
+    setSearchQuery('');
+    setSelectedPlot(null);
+    setIsDropdownOpen(false);
+    setIs3DMode(false);
+    if (map) {
+      const fitted = fitToPlots(map, plots);
+      if (!fitted) {
+        map.panTo(defaultCenter);
+        map.setZoom(DEFAULT_ZOOM);
+      }
+      didFitRef.current = true;
+    }
+  }, [map, plots, fitToPlots]);
+
+  // Search filters the dropdown list only; the map always shows all registered plots.
+  const filteredPlots = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return plots;
+    return plots.filter((plot) =>
+      (plot.name || '').toLowerCase().includes(q) ||
+      (plot.society || '').toLowerCase().includes(q) ||
+      (plot.id || '').toLowerCase().includes(q) ||
+      (plot.city || '').toLowerCase().includes(q) ||
+      (plot.price || '').toLowerCase().includes(q) ||
+      (plot.details?.size || '').toLowerCase().includes(q) ||
+      (plot.details?.floodRisk || '').toLowerCase().includes(q)
+    );
+  }, [plots, searchQuery]);
+
+  const showEmptyState = !plotsLoading && !plotsError && plots.length === 0;
+
+  return (
+    <GoogleMapsSafeLoader>
+      {({ isLoaded, loadError }) => {
+        if (loadError) return <div className="p-4 text-red-500">Error loading maps. Check your API key.</div>;
+        if (!isLoaded) return <div className="p-4 text-slate-500">Loading Map...</div>;
+
+        return (
+          <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800">
+
+      {/* 2. Navigation Bridge (Home, Sell Plot & Back to AI Advisor) */}
+      <div className="absolute top-3 right-6 z-20 flex items-center gap-3">
+        <button
+          onClick={() => router.push('/sell')}
+          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
+        >
+          <span>List Your Plot</span>
+        </button>
+        <button
+          onClick={() => router.push('/')}
+          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
+        >
+          <Home className="w-4 h-4 text-emerald-700" />
+          <span>Home</span>
+        </button>
+        <button
+          onClick={() => router.push('/recommend')}
+          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4 text-emerald-700" />
+          <span>Back to AI Advisor</span>
+        </button>
+      </div>
+
+      {/* 3. Floating Command Center (Search & Filters) */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-md px-4 sm:px-0">
+        <div className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-3 space-y-2">
+
+          {/* Search Bar Input */}
+          <div className="relative">
+            <div className="relative flex items-center bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-8 py-1.5">
+              <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+              <input
+                type="text"
+                placeholder="Search plot, society, or ID..."
+                className="w-full outline-none text-sm text-slate-800 placeholder:text-slate-400 bg-transparent"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsDropdownOpen(true);
+                }}
+                onFocus={() => setIsDropdownOpen(true)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={handleResetSearch}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Clear search and reset map"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Dropdown Results */}
+            {isDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-30 max-h-60 overflow-y-auto">
+                {plotsLoading ? (
+                  <div className="p-3 text-xs text-slate-500 text-center flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" /> Loading registered plots…
+                  </div>
+                ) : filteredPlots.length > 0 ? (
+                  filteredPlots.map((plot) => (
+                    <button
+                      key={plot.id}
+                      onClick={() => handleSelectPlot(plot)}
+                      className="w-full text-left px-4 py-3 hover:bg-emerald-50/70 transition border-b border-slate-100 last:border-0 flex items-start space-x-2.5"
+                    >
+                      <MapPin className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm font-semibold text-slate-800">{plot.name}</p>
+                          <span className="text-xs font-bold text-emerald-700">{plot.price}</span>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {plot.society ? `${plot.society}, ` : ''}{plot.city} • {plot.id}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="p-3 text-xs text-slate-500 text-center">No matching plots found</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Filter Pills Row */}
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pt-0.5">
+            <button
+              onClick={() => {
+                setSearchQuery('Low');
+                setIsDropdownOpen(true);
+              }}
+              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
+            >
+              Low Flood Risk
+            </button>
+            <button
+              onClick={() => {
+                setSearchQuery('10 Marla');
+                setIsDropdownOpen(true);
+              }}
+              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
+            >
+              10 Marla
+            </button>
+            <button
+              onClick={() => {
+                setSearchQuery('Crore');
+                setIsDropdownOpen(true);
+              }}
+              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
+            >
+              Priced in Crore
+            </button>
+          </div>
+
+          {/* Registered plot count / reset */}
+          <div className="pt-1 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-400 font-mono">
+              {plotsLoading
+                ? 'Loading…'
+                : `${plots.length} registered plot${plots.length === 1 ? '' : 's'}`}
+            </span>
+            {selectedPlot && (
+              <button
+                onClick={handleResetSearch}
+                className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 py-1 px-2 rounded-lg transition"
+              >
+                Reset view
+              </button>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* 1. Google Map Container (3D terrain) */}
+      <GoogleMap
+        mapContainerStyle={mapContainerStyle}
+        center={defaultCenter}
+        zoom={DEFAULT_ZOOM}
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        onZoomChanged={handleZoomChanged}
+        onIdle={handleZoomChanged}
+        options={{
+          mapTypeId: 'terrain',
+          disableDefaultUI: false,
+          zoomControl: true,
+        }}
+      >
+        {/* Render real plot boundary polygons from the database.
+            Hidden while zoomed out (the green marker layer represents them there);
+            the selected plot's polygon always renders so its highlight stays visible. */}
+        {plots.map((plot) => {
+          if (!plot.hasGeometry) return null;
+          const isSelected = selectedPlot?.id?.toLowerCase() === plot.id.toLowerCase();
+          if (zoom < POLYGON_MIN_ZOOM && !isSelected) return null;
+          const isHovered = hoveredPlotId === plot.id;
+          return (
+            <Polygon
+              key={plot.id}
+              paths={plot.paths}
+              onClick={() => handleSelectPlot(plot)}
+              onMouseOver={() => setHoveredPlotId(plot.id)}
+              onMouseOut={() => setHoveredPlotId((cur) => (cur === plot.id ? null : cur))}
+              options={{
+                fillColor: isSelected ? '#10b981' : isHovered ? '#34d399' : '#94a3b8',
+                fillOpacity: isSelected ? 0.25 : isHovered ? 0.22 : 0.15,
+                strokeColor: isSelected ? '#047857' : isHovered ? '#059669' : '#64748b',
+                strokeWeight: isSelected ? 4 : isHovered ? 3 : 2,
+                zIndex: isSelected ? 99 : isHovered ? 50 : 1,
+                clickable: true,
+              }}
+            />
+          );
+        })}
+
+        {/* Selected Plot Marker Pin */}
+        {selectedPlot && selectedPlot.center && (
+          <Marker
+            position={selectedPlot.center}
+            title={selectedPlot.name}
+          />
+        )}
+
+        {/* 3D Walkthrough View */}
+        {is3DMode && selectedPlot && selectedPlot.center && (
+          <StreetViewPanorama
+            position={selectedPlot.center}
+            visible={is3DMode}
+            options={{
+              pov: { heading: 100, pitch: 0 },
+              zoom: 1,
+            }}
+          />
+        )}
+      </GoogleMap>
+
+      {/* Data status overlays: loading / error / empty (non-blocking card) */}
+      {(plotsLoading || plotsError || showEmptyState) && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-4">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg rounded-2xl px-6 py-5 max-w-sm w-full text-center">
+            {plotsLoading ? (
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-6 h-6 text-emerald-700 animate-spin" />
+                <p className="text-sm font-semibold text-slate-800">Loading registered plots…</p>
+                <p className="text-xs text-slate-500">Fetching the latest properties from the database.</p>
+              </div>
+            ) : plotsError ? (
+              <div className="flex flex-col items-center gap-3">
+                <ShieldAlert className="w-6 h-6 text-red-500" />
+                <p className="text-sm font-semibold text-slate-800">Couldn’t load plots</p>
+                <p className="text-xs text-slate-500">{plotsError}</p>
+                <button
+                  onClick={handleRetry}
+                  className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Retry
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <MapPin className="w-6 h-6 text-slate-400" />
+                <p className="text-sm font-semibold text-slate-800">No registered plots found</p>
+                <p className="text-xs text-slate-500">Once plots are registered, they’ll appear here on the map.</p>
+                <button
+                  onClick={() => router.push('/sell')}
+                  className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
+                >
+                  List a Plot
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Availability legend (bottom-left) — explains the green markers and current mode */}
+      {!plotsLoading && !plotsError && plots.length > 0 && (
+        <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2.5">
+          <span className="w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow shrink-0" />
+          <div className="leading-tight">
+            <p className="text-xs font-semibold text-slate-700">Available plots</p>
+            <p className="text-[11px] text-slate-400">
+              {showMarkerLayer ? 'Zoom in to see plot boundaries' : 'Showing plot boundaries'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Slide-Out Property Inspector (Sidebar) */}
+      <div
+        className={`absolute top-0 right-0 h-full w-96 max-w-full bg-white shadow-2xl border-l border-slate-200 z-30 transform transition-transform duration-300 flex flex-col ${
+          selectedPlot ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {selectedPlot && (
+          <>
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <span className="font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700 text-xs font-bold">
+                  {selectedPlot.id}
+                </span>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                  {selectedPlot.price}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedPlot(null)}
+                className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Sidebar Content (Scrollable) */}
+            <div className="p-5 flex-1 overflow-y-auto space-y-5 text-slate-800">
+
+              {/* Title & Location */}
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 leading-snug">{selectedPlot.name}</h2>
+                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>{selectedPlot.society ? `${selectedPlot.society}, ` : ''}{selectedPlot.city}</span>
+                </p>
+              </div>
+
+              {/* 3D Walkthrough Toggle */}
+              <button
+                onClick={() => setIs3DMode(!is3DMode)}
+                disabled={!selectedPlot.center}
+                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 font-medium py-2.5 px-4 rounded-xl border border-slate-200 transition text-xs shadow-sm"
+              >
+                <Eye className="w-4 h-4 text-emerald-700" />
+                <span>
+                  {!selectedPlot.center
+                    ? 'Walkthrough Unavailable (No Boundary)'
+                    : is3DMode
+                    ? 'Exit 3D Walkthrough'
+                    : 'Launch 3D Walkthrough'}
+                </span>
+              </button>
+
+              {/* Architectural Breakdown */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Architectural Breakdown</h3>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block text-[11px]">Plot Size</span>
+                    <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.size}</span>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block text-[11px]">Category</span>
+                    <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.category || 'Residential'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Intelligence Badges */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                    <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                    Flood: {selectedPlot.details.floodRisk}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                    Noise: {selectedPlot.details.noiseLevel}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                    Elevation: {selectedPlot.details.elevation}
+                  </span>
+                </div>
+              </div>
+
+              {/* Landmarks & Proximity */}
+              <div className="space-y-1.5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Landmarks & Proximity</h3>
+                <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
+                  {selectedPlot.details.landmarks}
+                </p>
+              </div>
+
+              {/* WhatsApp Secondary Link */}
+              <div className="pt-2">
+                {selectedPlot.ownerContact ? (
+                  <a
+                    href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 px-4 rounded-xl transition text-xs shadow-sm"
+                  >
+                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Contact Owner via WhatsApp</span>
+                  </a>
+                ) : (
+                  <div className="w-full text-center text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-xl py-2.5">
+                    Owner contact not available
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Sidebar Footer / CTA */}
+            <div className="p-4 border-t border-slate-200 bg-white">
+              <button
+                onClick={() => router.push(`/recommend?context=${selectedPlot.id}`)}
+                className="bg-emerald-700 hover:bg-emerald-600 text-white w-full py-3 rounded-xl font-semibold flex justify-center items-center gap-2 text-sm shadow-sm transition"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Discuss with AI</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+    </div>
+        );
+      }}
+    </GoogleMapsSafeLoader>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-slate-400">Loading Map...</div>}>
+      <ExploreContent />
+    </Suspense>
+  );
+}
+</file>
+
+<file path="app/recommend/page.js">
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+    Bot,
+    Send,
+    Sparkles,
+    MapPin,
+    ShieldCheck,
+    ExternalLink,
+    ArrowRight,
+    RefreshCw
+} from 'lucide-react';
+
+const QUICK_QUESTIONS = {
+    Auto: [
+        "I need a 10 Marla plot in Islamabad under 2 Crore",
+        "Looking for 1 Kanal in Gulberg Greens for investment",
+        "Show me residential plots in DHA Phase 1",
+        "I want a plot with low flood risk in Rawalpindi"
+    ],
+    EN: [
+        "I need a 10 Marla plot in Islamabad under 2 Crore",
+        "Looking for 1 Kanal in Gulberg Greens for investment",
+        "Show me residential plots in DHA Phase 1",
+        "I want a plot with low flood risk in Rawalpindi"
+    ],
+    RO: [
+        "Islamabad me 10 Marla ka plot chahiye under 2 Crore",
+        "Gulberg Greens me 1 Kanal investment ke liye dikhayen",
+        "DHA Phase 1 me residential plot dikhayen",
+        "Rawalpindi me low flood risk wala plot chahiye"
+    ],
+    UR: [
+        "مجھے اسلام آباد میں 2 کروڑ کے اندر 10 مرلہ کا پلاٹ چاہیے",
+        "گلبرگ گرینز میں انویسٹمنٹ کے لیے 1 کنال کا پلاٹ دکھائیں",
+        "ڈی ایچ اے فیز 1 میں رہائشی پلاٹ دکھائیں",
+        "راولپنڈی میں کم سیلاب کے خطرے والا پلاٹ چاہیے"
+    ]
+};
+
+const GREETINGS = {
+    Auto: "Hello! I am NAQSHAI AI, your expert land recommendation chatbot for real estate in Pakistan. To provide you with the best plot recommendations, could you please tell me which city you are interested in, your budget, and your preferred plot size (e.g., 5 Marla, 10 Marla, or 1 Kanal)?",
+    EN: "Hello! I am NAQSHAI AI, your expert land recommendation chatbot for real estate in Pakistan. To provide you with the best plot recommendations, could you please tell me which city you are interested in, your budget, and your preferred plot size (e.g., 5 Marla, 10 Marla, or 1 Kanal)?",
+    RO: "Assalam-o-Alaikum! Main NAQSHAI AI Advisor hoon. Main aapko aapki zaroorat aur budget ke mutabiq best plot dhoondne me madad karunga.\n\nAap kis city/society me, kitne budget aur size (Marla/Kanal) ka plot dekh rahe hain?",
+    UR: "السلام علیکم! میں نقشئی اے آئی ایڈوائزر ہوں۔ میں آپ کو آپ کی ضرورت اور بجٹ کے مطابق بہترین پلاٹ تلاش کرنے میں مدد کروں گا۔\n\nآپ کس شہر/سوسائٹی میں، کتنے بجٹ اور سائز (مرلہ/کنال) کا پلاٹ دیکھ رہے ہیں؟"
+};
+
+export default function RecommendPage() {
+    const router = useRouter();
+    const [language, setLanguage] = useState('Auto');
+    const [messages, setMessages] = useState([
+        {
+            role: 'assistant',
+            content: GREETINGS.Auto,
+            recommendedPlots: []
+        }
+    ]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const chatEndRef = useRef(null);
+
+    const handleLanguageChange = (langOption) => {
+        setLanguage(langOption);
+        setMessages((prev) => {
+            if (prev.length === 1) {
+                return [
+                    {
+                        ...prev[0],
+                        content: GREETINGS[langOption] || GREETINGS.Auto
+                    }
+                ];
+            }
+            return prev;
+        });
+    };
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, loading]);
+
+    const handleSend = async (textToSend) => {
+        const query = textToSend || input;
+        if (!query.trim() || loading) return;
+
+        const userMsg = { role: 'user', content: query };
+        const updatedMessages = [...messages, userMsg];
+        setMessages(updatedMessages);
+        setInput('');
+        setLoading(true);
+
+        try {
+            const res = await fetch('/api/recommend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: updatedMessages, language: language }),
+            });
+
+            const data = await res.json();
+
+            setMessages((prev) => [
+                ...prev,
+                {
+                    role: 'assistant',
+                    content: data.reply || 'Maazrat, koi reply nahi mil saka.',
+                    recommendedPlots: data.recommendedPlots || []
+                }
+            ]);
+        } catch (err) {
+            console.error(err);
+            setMessages((prev) => [
+                ...prev,
+                {
+                    role: 'assistant',
+                    content: 'Maazrat, request process karne me masla aya. Dobara koshish karein.',
+                    recommendedPlots: []
+                }
+            ]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-200 text-slate-800">
+            {/* Top Navbar */}
+            <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700">
+                        <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h1 className="font-semibold text-base text-slate-900">NAQSHAI Smart Match</h1>
+                        <p className="text-xs text-slate-500">Multilingual AI Plot Discovery (English / اردو / Roman Urdu)</p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    {/* Language Toggle Group */}
+                    <div className="flex items-center p-1 bg-slate-200/80 border border-slate-300/80 rounded-xl text-xs font-medium">
+                        {['Auto', 'EN', 'UR', 'RO'].map((langOption) => (
+                            <button
+                                key={langOption}
+                                type="button"
+                                onClick={() => handleLanguageChange(langOption)}
+                                className={`px-2.5 py-1 rounded-lg transition-all ${
+                                    language === langOption
+                                        ? 'bg-emerald-700 text-white shadow-sm font-semibold'
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/50'
+                                }`}
+                            >
+                                {langOption}
+                            </button>
+                        ))}
+                    </div>
+
+                    <button
+                        onClick={() => router.push('/sell')}
+                        className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3 py-2 rounded-xl text-xs font-medium transition shrink-0 shadow-sm"
+                    >
+                        List Your Plot
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/explore')}
+                        className="flex items-center gap-2 text-xs font-medium text-slate-700 hover:text-slate-900 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 transition shrink-0 shadow-sm"
+                    >
+                        Explore Full Map <ArrowRight className="w-4 h-4 text-emerald-700" />
+                    </button>
+                </div>
+            </header>
+
+            {/* Chat Canvas */}
+            <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 max-w-4xl mx-auto w-full">
+                {messages.map((msg, idx) => (
+                    <div
+                        key={idx}
+                        className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                        {msg.role === 'assistant' && (
+                            <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 text-emerald-700 shadow-sm">
+                                <Bot className="w-4 h-4" />
+                            </div>
+                        )}
+
+                        <div className={`max-w-[85%] md:max-w-[75%] space-y-3`}>
+                            <div
+                                dir="auto"
+                                className={`p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${msg.role === 'user'
+                                        ? 'bg-emerald-700 text-white rounded-br-none shadow-sm'
+                                        : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'
+                                    }`}
+                            >
+                                {msg.content}
+                            </div>
+
+                            {/* Recommended Plot Cards */}
+                            {msg.recommendedPlots?.length > 0 && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                    {msg.recommendedPlots.map((plot) => {
+                                        const isLowRisk = plot.floodRisk?.toLowerCase().includes('low');
+                                        const isModerateRisk = plot.floodRisk?.toLowerCase().includes('moderate') || plot.floodRisk?.toLowerCase().includes('medium');
+
+                                        return (
+                                            <div
+                                                key={plot.id}
+                                                className="p-4 bg-white border border-slate-200 rounded-xl space-y-3 hover:border-emerald-300 transition shadow-sm flex flex-col justify-between"
+                                            >
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                                                {plot.id}
+                                                            </span>
+                                                            <h4 className="font-semibold text-sm mt-1 text-slate-900">{plot.title}</h4>
+                                                        </div>
+                                                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                                            {plot.price}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="text-xs text-slate-500 space-y-1.5 pt-1">
+                                                        <p className="flex items-center gap-1 text-slate-600">
+                                                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                            <span>{plot.society}, {plot.city} • <strong className="text-slate-800">{plot.size}</strong></span>
+                                                        </p>
+                                                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                                                            <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${
+                                                                isLowRisk
+                                                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                                                    : isModerateRisk
+                                                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                                            }`}>
+                                                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                                                Flood Risk: {plot.floodRisk}
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                                                Noise: {plot.noiseLevel}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => router.push(`/explore?plot=${plot.id}`)}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 px-3 mt-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-medium transition shadow-sm"
+                                                >
+                                                    Inspect on 3D Map <ExternalLink className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
+
+                {/* Conditional Quick Questions cluster (only show when messages.length === 1) */}
+                {messages.length === 1 && (
+                    <div className="flex flex-wrap gap-2 mt-4 ml-11 max-w-[85%] md:max-w-[75%]">
+                        {(QUICK_QUESTIONS[language] || QUICK_QUESTIONS.Auto).map((item, i) => (
+                            <button
+                                key={i}
+                                type="button"
+                                onClick={() => handleSend(item)}
+                                className="text-xs shrink-0 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 hover:border-emerald-500 hover:text-emerald-700 transition shadow-sm"
+                            >
+                                {item}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {loading && (
+                    <div className="flex items-center gap-3 text-slate-500 text-xs italic ml-11">
+                        <RefreshCw className="w-4 h-4 animate-spin text-emerald-700" />
+                        NAQSHAI is analyzing land data & risk metrics...
+                    </div>
+                )}
+                <div ref={chatEndRef} />
+            </main>
+
+            {/* Input Form */}
+            <footer className="p-4 border-t border-slate-200 bg-white">
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSend();
+                    }}
+                    className="max-w-4xl mx-auto flex items-center gap-2"
+                >
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Type in English, Roman Urdu (e.g. 10 Marla plot chahiye), or اردو..."
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-slate-800 placeholder:text-slate-400"
+                    />
+                    <button
+                        type="submit"
+                        disabled={loading || !input.trim()}
+                        className="p-3 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl transition shadow-sm"
+                    >
+                        <Send className="w-4 h-4" />
+                    </button>
+                </form>
+            </footer>
+        </div>
+    );
+}
+</file>
+
+<file path="app/sell/page.js">
+'use client';
+
+import React, { useState, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { GoogleMap, Polygon, Marker } from '@react-google-maps/api';
+import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
+import {
+  Sparkles,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  MapPin,
+  FileText,
+  UploadCloud,
+  Trash2,
+  RotateCcw,
+  ShieldCheck,
+  Building2,
+  User,
+  Phone,
+  Tag,
+  DollarSign,
+  Maximize2,
+  Compass,
+  AlertCircle,
+  HelpCircle,
+  X
+} from 'lucide-react';
+
+const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
+const DEFAULT_CENTER = { lat: 33.6844, lng: 73.0479 };
+
+function formatPkr(num) {
+  if (!num || isNaN(num)) return '';
+  const val = Number(num);
+  if (val >= 10000000) {
+    return `${(val / 10000000).toFixed(2)} Crore PKR`;
+  } else if (val >= 100000) {
+    return `${(val / 100000).toFixed(2)} Lakh PKR`;
+  }
+  return `PKR ${val.toLocaleString('en-PK')}`;
+}
+
+export default function SellPlotPage() {
+  const router = useRouter();
+
+  // Step state: 1 = Details, 2 = Boundary Map, 3 = Documents, 4 = Success
+  const [currentStep, setCurrentStep] = useState(1);
+
+  // Step 1 State: Seller & Plot Details
+  const [sellerInfo, setSellerInfo] = useState({
+    fullName: '',
+    phoneNumber: '',
+    sellerRole: 'Direct Owner',
+  });
+
+  const [plotDetails, setPlotDetails] = useState({
+    city: 'Islamabad',
+    society: 'Gulberg Greens',
+    plotNumber: '',
+    sizeDimensions: '10 Marla (35x70)',
+    category: 'Residential',
+    pricePkr: '',
+    proximityNotes: '',
+  });
+
+  // Step 2 State: Polygon Boundary Coordinates
+  const [polygonCoordinates, setPolygonCoordinates] = useState([]);
+  const polygonRef = useRef(null);
+  const mapRef = useRef(null);
+
+  // Step 3 State: Uploaded File Names
+  const [uploadedFiles, setUploadedFiles] = useState({
+    allotmentLetter: null,
+    cnicFront: null,
+    cnicBack: null,
+  });
+
+  // Loading & Submission State
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedPlotId, setSubmittedPlotId] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Map callbacks
+  const onMapLoad = useCallback((mapInstance) => {
+    mapRef.current = mapInstance;
+  }, []);
+
+  const handleMapClick = useCallback((e) => {
+    if (!e.latLng) return;
+    const lat = Number(e.latLng.lat().toFixed(6));
+    const lng = Number(e.latLng.lng().toFixed(6));
+    setPolygonCoordinates((prev) => [...prev, { lat, lng }]);
+  }, []);
+
+  const handleRemoveLastPoint = useCallback(() => {
+    setPolygonCoordinates((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleClearPolygon = useCallback(() => {
+    setPolygonCoordinates([]);
+  }, []);
+
+  // Handle File Input Change
+  const handleFileChange = (field, e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedFiles((prev) => ({
+        ...prev,
+        [field]: file.name,
+      }));
+    }
+    // Reset the native input value so the same file can be re-selected after removal
+    e.target.value = '';
+  };
+
+  // Remove a previously selected document
+  const handleRemoveFile = (field) => {
+    setUploadedFiles((prev) => ({
+      ...prev,
+      [field]: null,
+    }));
+  };
+
+  // Form Validation & Step Navigation
+  const handleNextStep = () => {
+    setErrorMessage('');
+    if (currentStep === 1) {
+      if (!sellerInfo.fullName || !sellerInfo.phoneNumber) {
+        setErrorMessage('Please provide your full name and WhatsApp phone number.');
+        return;
+      }
+      if (!plotDetails.society || !plotDetails.plotNumber || !plotDetails.pricePkr) {
+        setErrorMessage('Please fill in society name, plot number, and demand price.');
+        return;
+      }
+    }
+    setCurrentStep((prev) => Math.min(prev + 1, 3));
+  };
+
+  const handlePrevStep = () => {
+    setErrorMessage('');
+    setCurrentStep((prev) => Math.max(prev - 1, 1));
+  };
+
+  // Final Ingestion Submission
+  const handleSubmitListing = async () => {
+    setSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const payload = {
+        seller: sellerInfo,
+        plot: plotDetails,
+        polygonCoordinates: polygonCoordinates,
+        documents: [
+          uploadedFiles.allotmentLetter ? `allotment_letters/${uploadedFiles.allotmentLetter}` : 'allotment_letter_pending.pdf',
+          uploadedFiles.cnicFront ? `cnic/${uploadedFiles.cnicFront}` : 'cnic_front_pending.jpg',
+          uploadedFiles.cnicBack ? `cnic/${uploadedFiles.cnicBack}` : 'cnic_back_pending.jpg',
+        ].filter(Boolean),
+      };
+
+      const res = await fetch('/api/sell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setSubmittedPlotId(data.plotId || 'Plot-101');
+        setCurrentStep(4); // Move to Success Step
+      } else {
+        setErrorMessage(data.error || 'Failed to submit plot listing. Please try again.');
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Network error occurred while submitting listing.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
+      
+      {/* 1. Header Navigation Bar */}
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2 group">
+              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-sm group-hover:bg-emerald-100 transition">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-lg text-slate-900 tracking-tight">NAQSHAI</span>
+            </Link>
+            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full hidden sm:inline-block">
+              Seller Portal
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push('/explore')}
+              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"
+            >
+              Explore 3D Map
+            </button>
+            <button
+              onClick={() => router.push('/recommend')}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+              <span>AI Advisor</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Form Container */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8">
+        
+        {/* Title & Introduction */}
+        <div className="text-center mb-8">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            List Your Plot on NAQSHAI
+          </h1>
+          <p className="text-sm text-slate-600 mt-2 max-w-xl mx-auto">
+            Submit plot metadata, draw interactive 4-corner polygon coordinates on HD satellite maps, and upload ownership documents for AI risk verification.
+          </p>
+        </div>
+
+        {/* 2. Step Progress Bar */}
+        {currentStep <= 3 && (
+          <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4 mb-8">
+            <div className="flex items-center justify-between max-w-2xl mx-auto">
+              
+              {/* Step 1 Indicator */}
+              <div className="flex flex-col items-center gap-1.5 flex-1">
+                <div
+                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                    currentStep >= 1
+                      ? 'bg-emerald-700 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200'
+                  }`}
+                >
+                  {currentStep > 1 ? <CheckCircle2 className="w-5 h-5" /> : '1'}
+                </div>
+                <span
+                  className={`text-xs font-semibold ${
+                    currentStep >= 1 ? 'text-emerald-800' : 'text-slate-400'
+                  }`}
+                >
+                  Plot Details
+                </span>
+              </div>
+
+              <div
+                className={`h-0.5 flex-1 transition-all ${
+                  currentStep >= 2 ? 'bg-emerald-600' : 'bg-slate-200'
+                }`}
+              />
+
+              {/* Step 2 Indicator */}
+              <div className="flex flex-col items-center gap-1.5 flex-1">
+                <div
+                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                    currentStep >= 2
+                      ? 'bg-emerald-700 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200'
+                  }`}
+                >
+                  {currentStep > 2 ? <CheckCircle2 className="w-5 h-5" /> : '2'}
+                </div>
+                <span
+                  className={`text-xs font-semibold ${
+                    currentStep >= 2 ? 'text-emerald-800' : 'text-slate-400'
+                  }`}
+                >
+                  Boundary Map
+                </span>
+              </div>
+
+              <div
+                className={`h-0.5 flex-1 transition-all ${
+                  currentStep >= 3 ? 'bg-emerald-600' : 'bg-slate-200'
+                }`}
+              />
+
+              {/* Step 3 Indicator */}
+              <div className="flex flex-col items-center gap-1.5 flex-1">
+                <div
+                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                    currentStep >= 3
+                      ? 'bg-emerald-700 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200'
+                  }`}
+                >
+                  3
+                </div>
+                <span
+                  className={`text-xs font-semibold ${
+                    currentStep >= 3 ? 'text-emerald-800' : 'text-slate-400'
+                  }`}
+                >
+                  Documents
+                </span>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* Error Alert Message */}
+        {errorMessage && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+            <div>
+              <p className="font-semibold">Action Required</p>
+              <p className="text-xs text-red-600 mt-0.5">{errorMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Multi-Step Form Card */}
+        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 sm:p-8">
+          
+          {/* STEP 1: Plot & Seller Details */}
+          {currentStep === 1 && (
+            <div className="space-y-8">
+              
+              {/* Seller Profile Section */}
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 pb-3 border-b border-slate-100">
+                  <User className="w-5 h-5 text-emerald-700" />
+                  <span>1. Seller & Contact Profile</span>
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Ahsan Khan"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={sellerInfo.fullName}
+                      onChange={(e) => setSellerInfo({ ...sellerInfo, fullName: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      WhatsApp Phone Number *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. +923001234567"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={sellerInfo.phoneNumber}
+                      onChange={(e) => setSellerInfo({ ...sellerInfo, phoneNumber: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Seller Role
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={sellerInfo.sellerRole}
+                      onChange={(e) => setSellerInfo({ ...sellerInfo, sellerRole: e.target.value })}
+                    >
+                      <option value="Direct Owner">Direct Owner</option>
+                      <option value="Family Representative">Family Representative</option>
+                      <option value="Real Estate Agency">Real Estate Agency</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plot Details Section */}
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 pb-3 border-b border-slate-100">
+                  <Building2 className="w-5 h-5 text-emerald-700" />
+                  <span>2. Plot Location & Specifications</span>
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      City *
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.city}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, city: e.target.value })}
+                    >
+                      <option value="Islamabad">Islamabad</option>
+                      <option value="Rawalpindi">Rawalpindi</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Society / Housing Scheme *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Gulberg Greens"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.society}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, society: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Plot Number / ID *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Plot-101"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.plotNumber}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, plotNumber: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Size & Dimensions *
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.sizeDimensions}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, sizeDimensions: e.target.value })}
+                    >
+                      <option value="5 Marla (25x50)">5 Marla (25x50)</option>
+                      <option value="10 Marla (35x70)">10 Marla (35x70)</option>
+                      <option value="1 Kanal (50x90)">1 Kanal (50x90)</option>
+                      <option value="2 Kanal (75x120)">2 Kanal (75x120)</option>
+                      <option value="Commercial 4 Marla (30x30)">Commercial 4 Marla (30x30)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Category
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.category}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, category: e.target.value })}
+                    >
+                      <option value="Residential">Residential</option>
+                      <option value="Commercial">Commercial</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Demand Price (PKR) *
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 18500000"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      value={plotDetails.pricePkr}
+                      onChange={(e) => setPlotDetails({ ...plotDetails, pricePkr: e.target.value })}
+                    />
+                    {plotDetails.pricePkr && (
+                      <p className="text-xs font-medium text-emerald-700 mt-1 font-mono">
+                        {formatPkr(plotDetails.pricePkr)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Proximity Notes & Nearby Landmarks
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="e.g. 200m from Main Expressway, 500m from Mosque, 30ft wide front road"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                    value={plotDetails.proximityNotes}
+                    onChange={(e) => setPlotDetails({ ...plotDetails, proximityNotes: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Step 1 Action Controls */}
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2"
+                >
+                  <span>Continue to Boundary Map</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* STEP 2: Interactive Boundary Drawing Map */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-emerald-700" />
+                    <span>2. Draw Interactive Plot Boundary</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Click anywhere on the satellite map below to place 4 corner points for your plot boundary.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleRemoveLastPoint}
+                    disabled={polygonCoordinates.length === 0}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Undo Point</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearPolygon}
+                    disabled={polygonCoordinates.length === 0}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear & Redraw</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Google Map Canvas */}
+              <GoogleMapsSafeLoader>
+                {({ isLoaded, loadError }) => (
+                  <>
+                    {loadError ? (
+                      <div className="p-8 text-center bg-red-50 border border-red-200 text-red-700 rounded-xl">
+                        Failed to load Google Maps. Please check your API key setup.
+                      </div>
+                    ) : !isLoaded ? (
+                      <div className="h-96 flex items-center justify-center bg-slate-100 rounded-xl text-slate-500 text-sm">
+                        Initializing Interactive Map Canvas...
+                      </div>
+                    ) : (
+                      <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+                        <GoogleMap
+                          mapContainerStyle={MAP_CONTAINER_STYLE}
+                          center={DEFAULT_CENTER}
+                          zoom={15}
+                          onLoad={onMapLoad}
+                          onClick={handleMapClick}
+                          options={{
+                            mapTypeId: 'hybrid',
+                            streetViewControl: false,
+                            mapTypeControl: true,
+                          }}
+                        >
+                          {polygonCoordinates.length > 0 && (
+                            <Polygon
+                              paths={polygonCoordinates}
+                              options={{
+                                strokeColor: '#047857',
+                                strokeWeight: 2,
+                                fillColor: '#10b981',
+                                fillOpacity: 0.35,
+                                editable: true,
+                              }}
+                            />
+                          )}
+
+                          {polygonCoordinates.map((pt, idx) => (
+                            <Marker
+                              key={`${pt.lat}-${pt.lng}-${idx}`}
+                              position={pt}
+                              label={{
+                                text: `${idx + 1}`,
+                                color: '#ffffff',
+                                fontWeight: 'bold',
+                                fontSize: '11px',
+                              }}
+                            />
+                          ))}
+                        </GoogleMap>
+                      </div>
+                    )}
+                  </>
+                )}
+              </GoogleMapsSafeLoader>
+
+              {/* Coordinates Preview Panel */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Captured Boundary Coordinates ({polygonCoordinates.length} Points)
+                  </span>
+                  {polygonCoordinates.length >= 3 ? (
+                    <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full">
+                      Polygon Sealed
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
+                      Draw at least 3 points
+                    </span>
+                  )}
+                </div>
+
+                {polygonCoordinates.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 font-mono text-xs text-slate-600">
+                    {polygonCoordinates.map((pt, idx) => (
+                      <div key={idx} className="bg-white border border-slate-200 p-2 rounded-lg text-center">
+                        <span className="text-emerald-700 font-bold mr-1">P{idx + 1}:</span>
+                        {pt.lat}, {pt.lng}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic mt-2">
+                    No coordinates drawn yet. Click the polygon icon on the top map bar and click points on the map.
+                  </p>
+                )}
+              </div>
+
+              {/* Step 2 Action Controls */}
+              <div className="flex justify-between pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition flex items-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2"
+                >
+                  <span>Continue to Documents</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* STEP 3: Document Uploads */}
+          {currentStep === 3 && (
+            <div className="space-y-6">
+              
+              <div className="pb-3 border-b border-slate-100">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-emerald-700" />
+                  <span>3. Upload Verification Documents</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload plot ownership papers and national identity card scans for automated risk intelligence check.
+                </p>
+              </div>
+
+              {/* Informative Review Notice */}
+              <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Asynchronous AI Verification Notice</p>
+                  <p className="mt-0.5 text-emerald-800">
+                    Verification is performed asynchronously. Your listing will appear with an <strong>&apos;Under Review&apos;</strong> status until validated.
+                  </p>
+                </div>
+              </div>
+
+              {/* File Dropzone Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                
+                {/* Allotment Letter Upload */}
+                <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
+                  <div className="flex flex-col items-center text-center">
+                    <UploadCloud className="w-8 h-8 text-emerald-700 group-hover:scale-110 transition-transform mb-2" />
+                    <span className="text-xs font-bold text-slate-800">Allotment / Transfer Letter *</span>
+                    <span className="text-xs text-slate-400 mt-0.5">PDF or High-res Image (Max 10MB)</span>
+
+                    <label className="mt-4 px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
+                      Browse File
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        className="hidden"
+                        onChange={(e) => handleFileChange('allotmentLetter', e)}
+                      />
+                    </label>
+
+                    {uploadedFiles.allotmentLetter && (
+                      <div className="mt-2 flex items-center gap-1.5 max-w-full">
+                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-md truncate">
+                          ✓ {uploadedFiles.allotmentLetter}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile('allotmentLetter')}
+                          className="p-1 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition shrink-0"
+                          title="Remove file"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* CNIC Front & Back Upload */}
+                <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
+                  <div className="flex flex-col items-center text-center">
+                    <FileText className="w-8 h-8 text-emerald-700 group-hover:scale-110 transition-transform mb-2" />
+                    <span className="text-xs font-bold text-slate-800">CNIC (Front & Back) *</span>
+                    <span className="text-xs text-slate-400 mt-0.5">National ID Card Scans</span>
+
+                    <div className="flex gap-2 mt-4">
+                      <label className="px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
+                        CNIC Front
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          onChange={(e) => handleFileChange('cnicFront', e)}
+                        />
+                      </label>
+
+                      <label className="px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
+                        CNIC Back
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          onChange={(e) => handleFileChange('cnicBack', e)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col gap-1 mt-2">
+                      {uploadedFiles.cnicFront && (
+                        <div className="flex items-center gap-1.5 max-w-full">
+                          <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate">
+                            ✓ Front: {uploadedFiles.cnicFront}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile('cnicFront')}
+                            className="p-0.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded transition shrink-0"
+                            title="Remove CNIC front"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      {uploadedFiles.cnicBack && (
+                        <div className="flex items-center gap-1.5 max-w-full">
+                          <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md truncate">
+                            ✓ Back: {uploadedFiles.cnicBack}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile('cnicBack')}
+                            className="p-0.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded transition shrink-0"
+                            title="Remove CNIC back"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Step 3 Action Controls */}
+              <div className="flex justify-between pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition flex items-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitListing}
+                  disabled={submitting}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-8 py-2.5 rounded-xl text-sm transition shadow-md flex items-center gap-2 disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <span>Submitting Listing...</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Submit Plot Listing</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* STEP 4: Success Confirmation Screen */}
+          {currentStep === 4 && (
+            <div className="text-center py-8 space-y-6">
+              
+              <div className="w-16 h-16 bg-emerald-100 border border-emerald-300 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                  Plot Listing Submitted Successfully!
+                </h2>
+                <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
+                  Your plot metadata and satellite boundary drawings have been registered into the NAQSHAI database.
+                </p>
+              </div>
+
+              <div className="max-w-md mx-auto p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-left">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 font-semibold">Assigned Plot ID:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+                    {submittedPlotId}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 font-semibold">Society & City:</span>
+                  <span className="font-medium text-slate-800">{plotDetails.society}, {plotDetails.city}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 font-semibold">Demand Price:</span>
+                  <span className="font-medium text-emerald-700">{formatPkr(plotDetails.pricePkr)}</span>
+                </div>
+                <div className="flex justify-between text-xs pt-2 border-t border-slate-200">
+                  <span className="text-slate-500 font-semibold">Verification Status:</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
+                    Under Review (Pending Async Check)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+                <button
+                  onClick={() => router.push('/explore')}
+                  className="w-full sm:w-auto bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  <span>Explore All Plots on 3D Map</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCurrentStep(1);
+                    setSubmittedPlotId(null);
+                    setPolygonCoordinates([]);
+                  }}
+                  className="w-full sm:w-auto bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-5 py-2.5 rounded-xl text-sm transition"
+                >
+                  Submit Another Plot
+                </button>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+
+      </main>
+    </div>
+  );
+}
+</file>
+
+<file path="app/globals.css">
+@import "tailwindcss";
+
+:root {
+  --background: #f1f5f9;
+  --foreground: #475569;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+</file>
+
+<file path="app/layout.js">
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata = {
+  title: "Create Next App",
+  description: "Generated by create next app",
+};
+
+export default function RootLayout({ children }) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased scroll-smooth`}
+    >
+      <body className="bg-slate-100 text-slate-600 antialiased min-h-full flex flex-col">{children}</body>
+    </html>
+  );
+}
+</file>
+
+<file path="app/page.js">
+import Link from 'next/link';
+import {
+  Sparkles,
+  ArrowRight,
+  MapPin,
+  Waves,
+  Mountain,
+  Volume2,
+  Languages,
+  ShieldCheck,
+  Bot,
+  Eye,
+  CheckCircle2,
+  HelpCircle,
+  ExternalLink,
+  ChevronRight,
+  ChevronDown
+} from 'lucide-react';
+
+export default function Home() {
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900">
+      
+      {/* 1. Top Navigation Bar */}
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+        <div className="w-full pl-4 pr-6 md:pl-6 md:pr-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2 group">
+              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-sm group-hover:bg-emerald-100 transition">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-lg text-slate-900 tracking-tight">NAQSHAI</span>
+            </Link>
+          </div>
+
+          {/* Anchor Navigation Links */}
+          <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
+            <a href="#overview" className="hover:text-emerald-700 transition">Overview</a>
+            <a href="#risk-intelligence" className="hover:text-emerald-700 transition">Risk Intelligence</a>
+            <a href="#how-it-works" className="hover:text-emerald-700 transition">How It Works</a>
+            <a href="#faqs" className="hover:text-emerald-700 transition">FAQs</a>
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/sell"
+              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"
+            >
+              List Your Plot
+            </Link>
+            <Link
+              href="/explore"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm transition"
+            >
+              <MapPin className="w-3.5 h-3.5 text-emerald-700" />
+              <span>3D Map</span>
+            </Link>
+            <Link
+              href="/recommend"
+              className="flex items-center gap-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded-lg shadow-sm transition"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Launch AI Advisor</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* 2. Hero Section with Cartographic Topographic Watermark */}
+      <section id="overview" className="relative bg-slate-100 py-20 md:py-28 px-4 overflow-hidden border-b border-slate-200 scroll-mt-28">
+        {/* Subtle Topographic Contour Lines SVG Watermark */}
+        <svg
+          className="absolute inset-0 w-full h-full text-slate-200/60 pointer-events-none stroke-current fill-none"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 1000 600"
+          preserveAspectRatio="none"
+        >
+          <path d="M-100,100 Q200,50 400,200 T900,150 T1100,300" strokeWidth="1.5" />
+          <path d="M-100,180 Q250,120 450,280 T950,220 T1100,380" strokeWidth="1.5" />
+          <path d="M-100,260 Q300,200 500,360 T1000,300 T1100,460" strokeWidth="1.5" />
+          <path d="M-100,340 Q350,280 550,440 T1050,380 T1100,540" strokeWidth="1.5" />
+          <path d="M-100,420 Q400,360 600,520 T1100,460" strokeWidth="1.5" />
+          <circle cx="500" cy="280" r="140" strokeWidth="1" strokeDasharray="4 4" />
+          <circle cx="500" cy="280" r="220" strokeWidth="1" strokeDasharray="6 6" />
+        </svg>
+
+        <div className="relative max-w-5xl mx-auto text-center flex flex-col items-center">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-semibold text-emerald-800 shadow-sm mb-6">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+            AI-Driven Geospatial Land Intelligence
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15] max-w-4xl">
+            Geospatial Intelligence for <span className="text-emerald-700">Pakistan&apos;s Real Estate</span>.
+          </h1>
+
+          <p className="mt-5 text-base sm:text-lg md:text-xl text-slate-600 max-w-2xl leading-relaxed">
+            AI-powered land advisory, automated flood risk analysis, and interactive 3D terrain inspection designed for smart plot discovery.
+          </p>
+
+          <div className="mt-8 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <Link
+              href="/recommend"
+              className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl shadow-md transition text-sm"
+            >
+              <span>Launch AI Plot Advisor</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/explore"
+              className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-semibold px-6 py-3.5 rounded-xl shadow-sm transition text-sm"
+            >
+              <MapPin className="w-4 h-4 text-emerald-700" />
+              <span>Inspect 3D Map</span>
+            </Link>
+          </div>
+
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 border-t border-slate-200/80 pt-6 max-w-2xl w-full">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Multilingual Gemini AI</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Flood Plain & Noise Metrics</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>3D Plot Polygons</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Risk Intelligence Value Proposition (Core Showcase) */}
+      <section id="risk-intelligence" className="py-20 px-4 max-w-7xl mx-auto w-full scroll-mt-28">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+            Geospatial Risk Intelligence & Analysis
+          </h2>
+          <p className="text-slate-600 text-sm sm:text-base mt-3 leading-relaxed">
+            Going beyond traditional listing portals by evaluating land suitability, environmental exposure, and natural hazards before you invest.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Card 1 */}
+          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-emerald-300 transition flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-cyan-50 border border-cyan-200 flex items-center justify-center text-cyan-700 mb-4 shadow-sm">
+                <Waves className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900">Flood Risk Analysis</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Evaluates proximity to natural rainwater drains, historical monsoon floodplains, and ridge elevations.
+              </p>
+            </div>
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              <span className="text-[11px] font-semibold text-cyan-800 bg-cyan-50 px-2.5 py-1 rounded-md border border-cyan-200">
+                Low/Moderate Hazard Mapping
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2 */}
+          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-emerald-300 transition flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 mb-4 shadow-sm">
+                <Mountain className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900">Elevation & Topography</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Determines hill slope, ridge contours, and soil elevation levels to ensure safe, cost-effective construction.
+              </p>
+            </div>
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+                Contour & Slope Profiling
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3 */}
+          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-emerald-300 transition flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 mb-4 shadow-sm">
+                <Volume2 className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900">Ambient Noise Index</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Calculates proximity distance buffers from main expressways, commercial hubs, and quiet residential park zones.
+              </p>
+            </div>
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                Acoustic Proximity Index
+              </span>
+            </div>
+          </div>
+
+          {/* Card 4 */}
+          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-emerald-300 transition flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-4 shadow-sm">
+                <Languages className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900">Multilingual AI Advisor</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Powered by Gemini 2.5 to converse fluently in English, Roman Urdu, or Nastaliq Urdu script (اردو).
+              </p>
+            </div>
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                Gemini 2.5 Multi-Script
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. "How NAQSHAI Works" (3-Step Flow) */}
+      <section id="how-it-works" className="py-20 px-4 bg-white border-y border-slate-200 scroll-mt-28">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">How NAQSHAI Works</h2>
+            <p className="text-slate-600 text-sm sm:text-base mt-2">
+              Three seamless steps from initial plot requirement to 3D land verification.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+            {/* Step 1 */}
+            <div className="flex flex-col items-center text-center p-6 bg-slate-50 border border-slate-200 rounded-2xl relative">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-bold text-lg shadow-md mb-5">
+                <Bot className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-800 mb-1">Step 1</span>
+              <h3 className="font-bold text-lg text-slate-900">State Your Criteria</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Chat naturally with NAQSHAI AI regarding your preferred city, society, budget limit, and plot size in Marla or Kanal.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex flex-col items-center text-center p-6 bg-slate-50 border border-slate-200 rounded-2xl relative">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-bold text-lg shadow-md mb-5">
+                <ShieldCheck className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-800 mb-1">Step 2</span>
+              <h3 className="font-bold text-lg text-slate-900">Automated Risk Analysis</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                The recommendation engine evaluates matching inventory against flood risk histories, noise buffers, and elevation ridge maps.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex flex-col items-center text-center p-6 bg-slate-50 border border-slate-200 rounded-2xl relative">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-bold text-lg shadow-md mb-5">
+                <Eye className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-800 mb-1">Step 3</span>
+              <h3 className="font-bold text-lg text-slate-900">3D Map Inspection</h3>
+              <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+                Inspect plot boundary polygons on the interactive 3D terrain map and directly contact verified owners via WhatsApp.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-12 text-center">
+            <Link
+              href="/recommend"
+              className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-6 py-3 rounded-xl shadow-md transition text-sm"
+            >
+              <span>Try NAQSHAI AI Advisor Now</span>
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. FAQ Section */}
+      <section id="faqs" className="py-20 px-4 max-w-5xl mx-auto w-full scroll-mt-28">
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 mb-3">
+            <HelpCircle className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Got Questions?</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+            Frequently Asked Questions
+          </h2>
+        </div>
+
+        <div className="max-w-3xl mx-auto space-y-4">
+          <details className="group bg-white border border-slate-200 rounded-2xl shadow-sm">
+            <summary className="flex justify-between items-center p-5 font-semibold text-slate-800 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span>What makes NAQSHAI different from standard real estate portals?</span>
+              <ChevronDown className="w-5 h-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 mt-1">
+              Standard portals only display static prices and unverified seller claims. NAQSHAI integrates geospatial risk analysis, automated flood risk metrics, terrain elevation profiles, and interactive 3D polygon mapping paired with a conversational AI advisor.
+            </div>
+          </details>
+
+          <details className="group bg-white border border-slate-200 rounded-2xl shadow-sm">
+            <summary className="flex justify-between items-center p-5 font-semibold text-slate-800 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span>How are flood risk and elevation metrics calculated?</span>
+              <ChevronDown className="w-5 h-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 mt-1">
+              NAQSHAI analyzes topographically mapped ridge elevations, natural rainwater drainage channels, and historical flood hazard data for premier residential developments across Pakistan.
+            </div>
+          </details>
+
+          <details className="group bg-white border border-slate-200 rounded-2xl shadow-sm">
+            <summary className="flex justify-between items-center p-5 font-semibold text-slate-800 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span>Which cities and societies are supported?</span>
+              <ChevronDown className="w-5 h-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 mt-1">
+              Currently, NAQSHAI features verified inventory across Islamabad, Rawalpindi, Lahore, and Karachi — including DHA, Bahria Town, Gulberg Greens, Park View City, and Clifton.
+            </div>
+          </details>
+
+          <details className="group bg-white border border-slate-200 rounded-2xl shadow-sm">
+            <summary className="flex justify-between items-center p-5 font-semibold text-slate-800 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span>Can I chat with the AI in Urdu or Roman Urdu?</span>
+              <ChevronDown className="w-5 h-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 mt-1">
+              Yes! NAQSHAI includes a manual language toggle (Auto, EN, UR, RO) enabling seamless conversation in English, Roman Urdu (e.g. &quot;10 Marla plot chahiye&quot;), or fluent Nastaliq Urdu script (اردو).
+            </div>
+          </details>
+        </div>
+      </section>
+
+      {/* 6. Footer */}
+      <footer className="mt-auto bg-white border-t border-slate-200 py-12 px-4 text-slate-600 text-xs">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
+          <div className="space-y-2 max-w-md">
+            <div className="flex items-center justify-center md:justify-start gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-700" />
+              <span className="font-bold text-sm text-slate-900 tracking-tight">NAQSHAI</span>
+            </div>
+            <p className="text-slate-500 leading-relaxed">
+              NAQSHAI is a geospatial land intelligence and real estate advisory platform.
+            </p>
+          </div>
+
+          {/* Core Technology Stack removed as requested */}
+        </div>
+
+        <div className="max-w-7xl mx-auto border-t border-slate-100 mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between text-slate-400 gap-4">
+          <p>© 2026 NAQSHAI. All rights reserved.</p>
+          <div className="flex items-center gap-4">
+            <Link href="/recommend" className="hover:text-slate-600 transition">AI Advisor</Link>
+            <Link href="/explore" className="hover:text-slate-600 transition">3D Map</Link>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+  );
+}
+</file>
+
+<file path="lib/supabaseClient.js">
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase URL or Anon Key missing. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.');
+}
+
+// Standard client for public frontend requests
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Server-side admin client (uses service role key if provided, fallback to anon key)
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: { persistSession: false },
+});
+</file>
+
+<file path="lib/useGoogleMapsLoader.js">
+'use client';
+
+import React from 'react';
+import { useJsApiLoader } from '@react-google-maps/api';
+
+const MAP_LIBRARIES = ['places'];
+const SCRIPT_ID = 'google-map-script';
+
+// Clean up stale script tags from previous hot reloads if google object isn't fully ready
+if (typeof window !== 'undefined') {
+  try {
+    const scripts = document.querySelectorAll('script[src*="maps.googleapis.com"]');
+    scripts.forEach((s) => {
+      if (s.id && s.id !== SCRIPT_ID) {
+        s.remove();
+      }
+    });
+  } catch (e) {
+    // Ignore DOM cleanup errors
+  }
+}
+
+function InternalLoader({ children }) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: SCRIPT_ID,
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+    libraries: MAP_LIBRARIES,
+  });
+
+  return children({ isLoaded, loadError });
+}
+
+export function GoogleMapsSafeLoader({ children }) {
+  const isReady = typeof window !== 'undefined' && Boolean(window.google && window.google.maps);
+
+  if (isReady) {
+    return children({ isLoaded: true, loadError: null });
+  }
+
+  return <InternalLoader>{children}</InternalLoader>;
+}
+
+export function useGoogleMaps() {
+  const isAvailable = typeof window !== 'undefined' && Boolean(window.google && window.google.maps);
+
+  if (isAvailable) {
+    return { isLoaded: true, loadError: null };
+  }
+
+  return { isLoaded: false, loadError: null };
+}
+</file>
+
+<file path="public/file.svg">
+<svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
+</file>
+
+<file path="public/globe.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.27 14.1a6.5 6.5 0 0 0 3.67-3.45q-1.24.21-2.7.34-.31 1.83-.97 3.1M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.48-1.52a7 7 0 0 1-.96 0H7.5a4 4 0 0 1-.84-1.32q-.38-.89-.63-2.08a40 40 0 0 0 3.92 0q-.25 1.2-.63 2.08a4 4 0 0 1-.84 1.31zm2.94-4.76q1.66-.15 2.95-.43a7 7 0 0 0 0-2.58q-1.3-.27-2.95-.43a18 18 0 0 1 0 3.44m-1.27-3.54a17 17 0 0 1 0 3.64 39 39 0 0 1-4.3 0 17 17 0 0 1 0-3.64 39 39 0 0 1 4.3 0m1.1-1.17q1.45.13 2.69.34a6.5 6.5 0 0 0-3.67-3.44q.65 1.26.98 3.1M8.48 1.5l.01.02q.41.37.84 1.31.38.89.63 2.08a40 40 0 0 0-3.92 0q.25-1.2.63-2.08a4 4 0 0 1 .85-1.32 7 7 0 0 1 .96 0m-2.75.4a6.5 6.5 0 0 0-3.67 3.44 29 29 0 0 1 2.7-.34q.31-1.83.97-3.1M4.58 6.28q-1.66.16-2.95.43a7 7 0 0 0 0 2.58q1.3.27 2.95.43a18 18 0 0 1 0-3.44m.17 4.71q-1.45-.12-2.69-.34a6.5 6.5 0 0 0 3.67 3.44q-.65-1.27-.98-3.1" fill="#666"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
+</file>
+
+<file path="public/mascot.svg">
+<?xml version="1.0" encoding="utf-8" ?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns:c2pa="http://c2pa.org/manifest"><metadata><c2pa:manifest>AAAgRWp1bWIAAAAeanVtZGMycGEAEQAQgAAAqgA4m3EDYzJwYQAAAAxBanVtYgAAAEdqdW1kYzJtYQARABCAAACqADibcQN1cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYAAAAB4mp1bWIAAAApanVtZGMyYXMAEQAQgAAAqgA4m3EDYzJwYS5hc3NlcnRpb25zAAAAAO1qdW1iAAAAQWp1bWRjYm9yABEAEIAAAKoAOJtxE2MycGEuYWN0aW9ucy52MgAAAAAYYzJzaALpEO+RI9nt06DoYyWMehUAAACkY2JvcqFnYWN0aW9uc4GjZmFjdGlvbmxjMnBhLmNyZWF0ZWRxZGlnaXRhbFNvdXJjZVR5cGV4Rmh0dHA6Ly9jdi5pcHRjLm9yZy9uZXdzY29kZXMvZGlnaXRhbHNvdXJjZXR5cGUvdHJhaW5lZEFsZ29yaXRobWljTWVkaWFrZGVzY3JpcHRpb252Q3JlYXRlZCBieSBSZWNyYWZ0IEFJLgAAAMRqdW1iAAAAQGp1bWRjYm9yABEAEIAAAKoAOJtxE2MycGEuaGFzaC5kYXRhAAAAABhjMnNonmmihGY4A0dFXhAw6QtNogAAAHxjYm9ypWpleGNsdXNpb25zgaJlc3RhcnQY22ZsZW5ndGgZEIxkbmFtZW5qdW1iZiBtYW5pZmVzdGNhbGdmc2hhMjU2ZGhhc2hYIOHKYEizaWbtQmvMbkGql6o1ZAPa+skELtqbEWoLg00ZY3BhZEkAAAAAAAAAAAAAAAI0anVtYgAAACdqdW1kYzJjbAARABCAAACqADibcQNjMnBhLmNsYWltLnYyAAAAAgVjYm9ypmppbnN0YW5jZUlEeCx4bXA6aWlkOmQyY2Q2MTE0LWQ3MWQtNGVkMy1hZWE1LTIzNmJkNmU0NWI5ZHRjbGFpbV9nZW5lcmF0b3JfaW5mb6NkbmFtZWpyZWNyYWZ0LmFpZ3ZlcnNpb254KDgxY2U4MmUyYzVjM2NiZmJlOGM2ZmJlMTc5ZDVmOGQ5MWM0MDljZTF3b3JnLmNvbnRlbnRhdXRoLmMycGFfcnNmMC45MC43aXNpZ25hdHVyZXhNc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYvYzJwYS5zaWduYXR1cmVyY3JlYXRlZF9hc3NlcnRpb25zgqJjdXJseCpzZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmFjdGlvbnMudjJkaGFzaFggrqPgHfjyxh/tBsdIyF2Mi4qXN4jiEt14UjTpREmazLqiY3VybHgpc2VsZiNqdW1iZj1jMnBhLmFzc2VydGlvbnMvYzJwYS5oYXNoLmRhdGFkaGFzaFggFG7LvO4bsCMUecVma3nNbRdDCGvTHX+mZCmAspTLjKFoZGM6dGl0bGV4GlJlY3JhZnQgQUkgR2VuZXJhdGVkIEltYWdlY2FsZ2ZzaGEyNTYAAAfcanVtYgAAAChqdW1kYzJjcwARABCAAACqADibcQNjMnBhLnNpZ25hdHVyZQAAAAesY2JvctKEWQOwogEmGCGCWQHnMIIB4zCCAYmgAwIBAgIJALfeWmNDUW56MAoGCCqGSM49BAMCMEAxHzAdBgNVBAMMFlJlY3JhZnQgU3RhZ2luZyBEZXYgQ0ExEDAOBgNVBAoMB1JlY3JhZnQxCzAJBgNVBAYTAlVTMB4XDTI2MDYxMjE5NDM1MFoXDTI3MDYxMjE5NDM1MFowNzELMAkGA1UEBhMCVVMxEzARBgNVBAoTClJlY3JhZnQgQUkxEzARBgNVBAMTCnJlY3JhZnQuYWkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARKaTVbACsg/DeG3LeOxYdID/VA6EFG73E6Oknb+KIiCFJygRUz4ueN2z/t2qYb6CIUvS8RvgOiiClfoqsYtw81o3UwczAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIGwDATBgNVHSUEDDAKBggrBgEFBQcDBDAdBgNVHQ4EFgQULzHpBen96SL1y4IPHa8MkMshXf0wHwYDVR0jBBgwFoAUAgsqOBrKqpdK//m/kxZo7ZR4ebcwCgYIKoZIzj0EAwIDSAAwRQIgU8hKW0aXvvk8SQgVFNkax69Ym9ae8GsT2RZTQw+B51ACIQC0D4BkEoRD4N0r2ZRkNy0HZaW3WICy/QZGN95ilF4yzFkBvTCCAbkwggFfoAMCAQICCQCc+Wg7T6ATbzAKBggqhkjOPQQDAjBAMR8wHQYDVQQDDBZSZWNyYWZ0IFN0YWdpbmcgRGV2IENBMRAwDgYDVQQKDAdSZWNyYWZ0MQswCQYDVQQGEwJVUzAeFw0yNjA2MTIxOTQwMTZaFw0yODA2MTExOTQwMTZaMEAxHzAdBgNVBAMMFlJlY3JhZnQgU3RhZ2luZyBEZXYgQ0ExEDAOBgNVBAoMB1JlY3JhZnQxCzAJBgNVBAYTAlVTMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQ9IQBlcVbKaKPYrQSfOhL/00s7xUDC7RinIuLO/I1k99y9yh6oWF9kPxaP+tx1v1PeOL3yrVquJ730H0ZGiDyqNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0OBBYEFAILKjgayqqXSv/5v5MWaO2UeHm3MAoGCCqGSM49BAMCA0gAMEUCIFQwNImLlYDeQhjgF+ZiqTbgcuzSqmOJw3Q2lQ/hu83FAiEA9O8cLm/xfoVLqB4jtdbuHzi3WL+p2RN+DRGkwpYswVuhY3BhZFkDpAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9lhAQwnDgTGhTlZMHOhGBBMjmTg8cbxiL31uCwmm8+uhtVFGpnFofudPUE6Jv8aCGiXXTklRuuqFsTuhCuqNGLxfQgAAE95qdW1iAAAAR2p1bWRjMm1hABEAEIAAAKoAOJtxA3VybjpjMnBhOjM4N2RkOWI1LTEwODQtNDI2OC1iNTIyLTI3OGI4YWVmNGUzNAAAAAkdanVtYgAAAClqdW1kYzJhcwARABCAAACqADibcQNjMnBhLmFzc2VydGlvbnMAAAAGOmp1bWIAAABEanVtZGNib3IAEQAQgAAAqgA4m3ETYzJwYS5pbmdyZWRpZW50LnYzAAAAABhjMnNog/oRuPJxotUsX5C/E5ZaYAAABe5jYm9yp2xyZWxhdGlvbnNoaXBocGFyZW50T2ZoZGM6dGl0bGVmc291cmNlaWRjOmZvcm1hdG1pbWFnZS9zdmcreG1scXZhbGlkYXRpb25SZXN1bHRzoW5hY3RpdmVNYW5pZmVzdKNnc3VjY2Vzc4WjZGNvZGV4HWNsYWltU2lnbmF0dXJlLmluc2lkZVZhbGlkaXR5Y3VybHhNc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYvYzJwYS5zaWduYXR1cmVrZXhwbGFuYXRpb251Y2xhaW0gc2lnbmF0dXJlIHZhbGlko2Rjb2RleBhjbGFpbVNpZ25hdHVyZS52YWxpZGF0ZWRjdXJseE1zZWxmI2p1bWJmPS9jMnBhL3VybjpjMnBhOjhhNjQ5MjBhLTVjYTctNDRmNi05MjkyLWI4ZTU4YjIwMzM2Zi9jMnBhLnNpZ25hdHVyZWtleHBsYW5hdGlvbnVjbGFpbSBzaWduYXR1cmUgdmFsaWSjZGNvZGV4GWFzc2VydGlvbi5oYXNoZWRVUkkubWF0Y2hjdXJseF5zZWxmI2p1bWJmPS9jMnBhL3VybjpjMnBhOjhhNjQ5MjBhLTVjYTctNDRmNi05MjkyLWI4ZTU4YjIwMzM2Zi9jMnBhLmFzc2VydGlvbnMvYzJwYS5hY3Rpb25zLnYya2V4cGxhbmF0aW9ueD5oYXNoZWQgdXJpIG1hdGNoZWQ6IHNlbGYjanVtYmY9YzJwYS5hc3NlcnRpb25zL2MycGEuYWN0aW9ucy52MqNkY29kZXgZYXNzZXJ0aW9uLmhhc2hlZFVSSS5tYXRjaGN1cmx4XXNlbGYjanVtYmY9L2MycGEvdXJuOmMycGE6OGE2NDkyMGEtNWNhNy00NGY2LTkyOTItYjhlNThiMjAzMzZmL2MycGEuYXNzZXJ0aW9ucy9jMnBhLmhhc2guZGF0YWtleHBsYW5hdGlvbng9aGFzaGVkIHVyaSBtYXRjaGVkOiBzZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmhhc2guZGF0YaNkY29kZXgYYXNzZXJ0aW9uLmRhdGFIYXNoLm1hdGNoY3VybHhdc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYvYzJwYS5hc3NlcnRpb25zL2MycGEuaGFzaC5kYXRha2V4cGxhbmF0aW9ub2RhdGEgaGFzaCB2YWxpZG1pbmZvcm1hdGlvbmFsgGdmYWlsdXJlgaNkY29kZXgbc2lnbmluZ0NyZWRlbnRpYWwudW50cnVzdGVkY3VybHhNc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYvYzJwYS5zaWduYXR1cmVrZXhwbGFuYXRpb254HXNpZ25pbmcgY2VydGlmaWNhdGUgdW50cnVzdGVkamluc3RhbmNlSUR4LHhtcDppaWQ6OTkwOGY1MzAtODcyYi00NjIyLWI1NjUtMTBiYjBjMzc1YWIwbmFjdGl2ZU1hbmlmZXN0o2N1cmx4PnNlbGYjanVtYmY9L2MycGEvdXJuOmMycGE6OGE2NDkyMGEtNWNhNy00NGY2LTkyOTItYjhlNThiMjAzMzZmY2FsZ2ZzaGEyNTZkaGFzaFggGHZDgcDg6/TVoZ0bd86Yt6o6RVjfdAFoVR3tQzKOQ6NuY2xhaW1TaWduYXR1cmWjY3VybHhNc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTo4YTY0OTIwYS01Y2E3LTQ0ZjYtOTI5Mi1iOGU1OGIyMDMzNmYvYzJwYS5zaWduYXR1cmVjYWxnZnNoYTI1NmRoYXNoWCB8xh7lK9xUfUd9+jv3d4hh3jdpY0IaVa/ckyMOZXz5vAAAAe5qdW1iAAAAQWp1bWRjYm9yABEAEIAAAKoAOJtxE2MycGEuYWN0aW9ucy52MgAAAAAYYzJzaMVUcgShv7cqCaprL598Q2kAAAGlY2JvcqFnYWN0aW9uc4KiZmFjdGlvbmtjMnBhLm9wZW5lZGpwYXJhbWV0ZXJzoWtpbmdyZWRpZW50c4GiY3VybHgtc2VsZiNqdW1iZj1jMnBhLmFzc2VydGlvbnMvYzJwYS5pbmdyZWRpZW50LnYzZGhhc2hYIAo0TzSBdwM+QgwkETib24z54b6NQksUvR/zz1nqHKbPpGZhY3Rpb25sYzJwYS5jcmVhdGVkanBhcmFtZXRlcnOha2luZ3JlZGllbnRzgaJjdXJseC1zZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmluZ3JlZGllbnQudjNkaGFzaFggCjRPNIF3Az5CDCQROJvbjPnhvo1CSxS9H/PPWeocps9xZGlnaXRhbFNvdXJjZVR5cGV4QWh0dHA6Ly9jdi5pcHRjLm9yZy9uZXdzY29kZXMvZGlnaXRhbHNvdXJjZXR5cGUvY29tcG9zaXRlU3ludGhldGlja2Rlc2NyaXB0aW9ueB9Db21wb3NlZCBpbiB0aGUgUmVjcmFmdCBlZGl0b3IuAAAAxGp1bWIAAABAanVtZGNib3IAEQAQgAAAqgA4m3ETYzJwYS5oYXNoLmRhdGEAAAAAGGMyc2h9q0PywFj2kjJpuSpnk0DPAAAAfGNib3KlamV4Y2x1c2lvbnOBomVzdGFydBjsZmxlbmd0aBkrCGRuYW1lbmp1bWJmIG1hbmlmZXN0Y2FsZ2ZzaGEyNTZkaGFzaFggcMDfoy1aU1GypbsneYy/+KJz3oYgw9prXbc7eOukr2ljcGFkSQAAAAAAAAAAAAAAApZqdW1iAAAAJ2p1bWRjMmNsABEAEIAAAKoAOJtxA2MycGEuY2xhaW0udjIAAAACZ2Nib3Knamluc3RhbmNlSUR4LHhtcDppaWQ6MDFmZTQzOTktMzQ3MS00MTE2LTgyNWEtNGM3ODAxNWUxZTM0dGNsYWltX2dlbmVyYXRvcl9pbmZvo2RuYW1lanJlY3JhZnQuYWlndmVyc2lvbngoODFjZTgyZTJjNWMzY2JmYmU4YzZmYmUxNzlkNWY4ZDkxYzQwOWNlMXdvcmcuY29udGVudGF1dGguYzJwYV9yc2YwLjkwLjdpc2lnbmF0dXJleE1zZWxmI2p1bWJmPS9jMnBhL3VybjpjMnBhOjM4N2RkOWI1LTEwODQtNDI2OC1iNTIyLTI3OGI4YWVmNGUzNC9jMnBhLnNpZ25hdHVyZXJjcmVhdGVkX2Fzc2VydGlvbnOComN1cmx4KnNlbGYjanVtYmY9YzJwYS5hc3NlcnRpb25zL2MycGEuYWN0aW9ucy52MmRoYXNoWCB8QbL1wmqWaQeG7nTmsGgUsnhnc6SvkJkYJqCbzPS76aJjdXJseClzZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmhhc2guZGF0YWRoYXNoWCDY9ANO4c3jWaQrJmK8Opvear7pAcwyaaL33yt+GKteJnNnYXRoZXJlZF9hc3NlcnRpb25zgaJjdXJseC1zZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmluZ3JlZGllbnQudjNkaGFzaFggCjRPNIF3Az5CDCQROJvbjPnhvo1CSxS9H/PPWeocps9oZGM6dGl0bGVtUmVjcmFmdCBJbWFnZWNhbGdmc2hhMjU2AAAH3Gp1bWIAAAAoanVtZGMyY3MAEQAQgAAAqgA4m3EDYzJwYS5zaWduYXR1cmUAAAAHrGNib3LShFkDsKIBJhghglkB5zCCAeMwggGJoAMCAQICCQC33lpjQ1FuejAKBggqhkjOPQQDAjBAMR8wHQYDVQQDDBZSZWNyYWZ0IFN0YWdpbmcgRGV2IENBMRAwDgYDVQQKDAdSZWNyYWZ0MQswCQYDVQQGEwJVUzAeFw0yNjA2MTIxOTQzNTBaFw0yNzA2MTIxOTQzNTBaMDcxCzAJBgNVBAYTAlVTMRMwEQYDVQQKEwpSZWNyYWZ0IEFJMRMwEQYDVQQDEwpyZWNyYWZ0LmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESmk1WwArIPw3hty3jsWHSA/1QOhBRu9xOjpJ2/iiIghScoEVM+Lnjds/7dqmG+giFL0vEb4DoogpX6KrGLcPNaN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCBsAwEwYDVR0lBAwwCgYIKwYBBQUHAwQwHQYDVR0OBBYEFC8x6QXp/eki9cuCDx2vDJDLIV39MB8GA1UdIwQYMBaAFAILKjgayqqXSv/5v5MWaO2UeHm3MAoGCCqGSM49BAMCA0gAMEUCIFPISltGl775PEkIFRTZGsevWJvWnvBrE9kWU0MPgedQAiEAtA+AZBKEQ+DdK9mUZDctB2Wlt1iAsv0GRjfeYpReMsxZAb0wggG5MIIBX6ADAgECAgkAnPloO0+gE28wCgYIKoZIzj0EAwIwQDEfMB0GA1UEAwwWUmVjcmFmdCBTdGFnaW5nIERldiBDQTEQMA4GA1UECgwHUmVjcmFmdDELMAkGA1UEBhMCVVMwHhcNMjYwNjEyMTk0MDE2WhcNMjgwNjExMTk0MDE2WjBAMR8wHQYDVQQDDBZSZWNyYWZ0IFN0YWdpbmcgRGV2IENBMRAwDgYDVQQKDAdSZWNyYWZ0MQswCQYDVQQGEwJVUzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEPSEAZXFWymij2K0EnzoS/9NLO8VAwu0YpyLizvyNZPfcvcoeqFhfZD8Wj/rcdb9T3ji98q1arie99B9GRog8qjQjBAMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgGGMB0GA1UdDgQWBBQCCyo4Gsqql0r/+b+TFmjtlHh5tzAKBggqhkjOPQQDAgNIADBFAiBUMDSJi5WA3kIY4BfmYqk24HLs0qpjicN0NpUP4bvNxQIhAPTvHC5v8X6FS6geI7XW7h84t1i/qdkTfg0RpMKWLMFboWNwYWRZA6QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPZYQAPln9/N3XKZBoDSQ0W4dSr6ppv/inEdIhGqnSDaWfZVyKKjd0JPp3IBpuKtO6UXPqQ/hgGpPhKPh5twchCqvqg=</c2pa:manifest></metadata><path fill="white" d="M0 0L1024 0L1024 1024L0 1024L0 0Z"/><path fill="#04DB98" d="M47.2882 662.18L47.1097 328.456L47.1414 236.567C47.1585 215.248 45.9673 186.952 50.0536 166.772C56.5822 135.529 72.0926 106.874 94.6801 84.3241C111.068 68.1083 125.385 58.4155 146.373 48.9361C183.979 31.9507 223.211 35.1155 263.362 35.0671L365.047 35.1773L700.436 35.3083L778.421 35.258C800.057 35.2386 824.52 34.2158 845.446 38.6524C876.414 45.5283 904.788 61.0686 927.259 83.4602C955.801 112.304 972.878 148.939 975.586 189.39C976.328 200.484 976.011 213.17 976.013 224.394L976.006 276.93L975.866 405.729L975.755 666.222L975.877 743.221C975.874 755.281 976.298 770.756 975.665 782.659C975.77 795.622 975.89 808.962 975.793 821.909C975.484 863.26 955.718 906.234 926.295 934.955C902.886 958.168 872.912 973.63 840.428 979.251C814.521 983.976 780.445 981.284 753.495 981.106L636.079 981.262L393.551 981.22L264 981.394C246.575 981.395 228.707 981.817 211.355 981.574C166.238 981.161 123.222 962.448 92.1626 929.721C67.2984 903.96 51.783 870.609 48.0941 834.996C46.7664 822.051 47.1102 808.593 47.1143 795.568C47.0549 782.58 47.0883 769.591 47.2146 756.603C47.2184 727.15 48.0677 693.056 47.0241 663.885C60.1794 665.357 75.0928 667.446 88.1452 667.947C93.3943 682.617 100.398 688.458 114.844 693.827C115.027 702.965 116.651 713.67 117.612 722.838C118.415 730.502 119.107 738.346 120.49 745.904C122.568 730.565 124.016 708.457 127.598 693.597C141.024 688.453 148.783 681.723 153.187 667.851C159.844 668.324 179.797 665.487 187.776 664.654C197.005 663.691 204.641 663.706 213.527 663.108C206.417 660.894 188.179 659.715 179.916 658.942C171.928 658.194 161.392 656.816 153.563 656.298C149.149 641.345 142.631 635.412 128.464 629.389C127.031 620.151 125.817 610.881 124.823 601.586C124.107 594.977 123.288 583.218 121.351 577.278C120.632 588.35 119.417 599.384 117.709 610.348C116.848 616.24 115.535 622.61 114.848 628.378C103.554 633.935 93.5775 639.57 89.1613 652.293C88.7498 653.509 88.3748 654.737 88.0366 655.975C75.0552 657.256 60.1156 659.771 47.2882 662.18Z"/><path d="M368.027 417.495C368.319 411.905 367.788 406.099 367.417 400.492C364.341 353.993 343.139 300.806 307.263 269.903C284.053 249.911 249.882 237.874 219.237 240.758C196.088 242.936 178.847 251.482 163.89 269.428C150.59 285.622 144.266 306.433 146.307 327.288C147.733 342.468 154.403 357.5 166.144 367.827C183.85 383.401 225.302 380.533 221.108 349.279C218.929 333.046 206.207 317.781 194.896 306.758C190.296 302.275 184.955 296.981 190.35 290.485C195.931 284.007 204.547 287.605 211.137 289.578C244.957 299.702 273.721 328.595 275.488 365.515C276.418 386.145 269.107 406.298 255.165 421.533C235.798 442.804 210.663 451.58 182.482 452.752C152.597 453.723 123.54 442.838 101.649 422.47C87.379 409.254 74.1758 389.741 68.1299 371.253C45.5903 302.328 64.7369 228.983 113.58 176.874C147.98 140.105 195.621 118.571 245.95 117.042C254.18 116.804 267.143 116.697 275.254 117.415C324.43 122.193 370.595 143.278 406.407 177.317C452.656 221.385 480.775 281.269 489.062 344.305C491.084 359.69 491.391 374.768 491.792 390.229C493.793 393.553 497.781 398.29 500.247 401.484C503.817 406.164 507.312 410.9 510.732 415.69C516.732 407.096 524.167 398.227 530.453 389.502C531.653 374.046 532.174 361.744 534.127 345.974C541.729 284.596 565.629 227.45 609.526 182.942C650.339 141.389 706.046 117.838 764.289 117.514C816.466 117.296 863.897 131.151 901.6 168.686C940.607 206.799 962.7 258.964 962.932 313.5C962.987 353.128 950.977 390.138 922.397 418.286C899.938 440.592 872.684 453.661 840.751 453.369C791.799 452.92 745.576 419.565 747.006 367.324C747.624 344.726 755.83 327.764 772.041 312.047C783.991 300.501 799.133 292.809 815.505 289.968C821.358 288.931 829.792 287.4 833.913 292.622C839.786 300.064 827.589 307.541 823.519 311.519C813.845 320.971 803.174 333.144 801.912 347.179C800.494 362.952 810.909 375.901 827.127 377.035C838.47 377.852 849.668 374.095 858.223 366.603C884.69 343.076 879.909 292.418 857.238 267.655C819.466 226.396 750.488 236.026 712.698 271.992C675.13 307.746 654.548 362.988 652.754 414.16C678.397 449.599 705.873 463.244 746.678 475.197C764.596 480.384 782.955 483.9 801.521 485.701C852.343 490.925 890.106 483.677 934.7 459.341C934.643 465.037 934.459 471.144 933.216 476.809C925.034 514.096 891.799 548.584 860.85 569.525C854.452 573.855 841.023 581.801 834.156 584.843C816.274 592.765 791.066 599.467 771.423 599.092C761.349 598.899 749.794 596.359 739.993 594.372C741.241 616.933 739.987 635.991 734.215 657.877C731.19 669.345 726.877 679.588 722.689 690.65L704.656 738.708L678.522 811.33C669.42 836.69 663.498 857.681 648.637 880.463C632.522 903.494 615.764 920.405 591.48 934.731C525.135 973.867 441.321 957.928 389.884 902.077C387.372 899.349 381.116 890.683 378.867 888.91C372.323 879.566 364.978 868.868 360.421 858.44C354.413 844.692 349.523 829.271 344.765 814.975C340.044 800.58 335.001 786.293 329.64 772.124C323.189 754.833 316.603 737.592 309.884 720.403C301.243 698.507 292.635 676.93 287.114 653.958C282.216 633.579 282.324 616.636 282.423 595.794C227.556 603.158 180.553 591.597 139.083 553.696C112.93 529.793 87.6446 496.91 86.205 460.282C91.1009 462.08 95.9898 464.797 100.795 466.874C105.902 469.082 111.187 471.084 116.418 472.976C155.727 487.379 198.113 491.283 239.392 484.302C286.501 476.74 339.026 457.509 368.027 417.495Z"/><path fill="#A09B83" d="M321.809 532.2C335.604 534.777 359.441 544.119 372.219 550.471C410.417 569.464 438.237 605.602 444.237 648.228C446.321 663.038 445.619 682.389 445.606 697.795L445.644 758.486C445.649 767.196 444.333 790.73 446.662 797.847C448.466 803.359 451.473 808.668 454.532 813.567C466.318 832.44 482.362 845.574 501.959 855.676C502.344 869.949 502.161 884.824 502.157 899.149C499.15 898.892 496.155 898.509 493.18 898.003C473.21 894.759 451.2 887.658 444.315 866.41C442.76 861.611 442.301 856.371 440.021 852.061C437.721 847.714 431.815 847.071 428.321 849.917C426.492 851.406 425.538 855.713 425.579 857.764C427.065 930.678 560.742 934.852 590.8 881.057C595.235 873.117 603.852 847.5 587.105 848.454C579.352 848.896 579.743 859.636 578.203 864.854C577.036 868.864 575.149 872.629 572.635 875.964C560.419 892.109 538.694 896.238 520.044 898.726L520.04 856.127C541.109 845.693 558.432 830.481 570.235 809.923C579.368 794.016 576.489 783.087 576.476 765.298L576.474 696.742C576.469 681.083 575.803 663.059 577.974 647.779C579.569 636.39 582.843 625.301 587.69 614.873C590.199 609.366 593.058 604.026 596.251 598.885C622.509 556.234 659.063 543.47 704.457 532.639C710.935 546.006 715.63 560.166 718.422 574.756C722.292 594.381 723.121 620.271 719.493 640.03C717.105 653.03 712.557 663.204 708.192 675.457C700.78 696.266 692.795 716.848 685.213 737.587L659.151 809.705C650.801 833.019 645.626 852.203 631.37 873.287C609.789 905.372 576.257 927.476 538.264 934.662C475.19 946.683 413.916 915.17 382.539 860.038C373.929 844.91 368.778 827.286 363.516 810.756C359.556 798.227 355.327 785.785 350.833 773.439C341.066 746.86 329.768 720.318 319.98 693.769C308.685 663.132 301.389 643.403 301.889 610.499C302.363 579.338 303.248 559.119 321.809 532.2Z"/><path d="M357.97 574.247C383.598 571.301 406.767 589.674 409.739 615.299C412.712 640.923 394.364 664.112 368.742 667.111C343.082 670.115 319.852 651.734 316.875 626.071C313.898 600.408 332.304 577.197 357.97 574.247Z"/><path fill="white" d="M362.031 607.163C369.05 606.357 375.411 611.35 376.295 618.36C377.18 625.37 372.259 631.786 365.259 632.75C360.661 633.382 356.078 631.495 353.258 627.808C350.438 624.121 349.818 619.203 351.633 614.931C353.448 610.659 357.419 607.692 362.031 607.163Z"/><path d="M652.762 574.912C678.226 571.378 701.725 589.18 705.217 614.651C708.709 640.121 690.868 663.59 665.393 667.041C639.976 670.483 616.572 652.693 613.088 627.281C609.604 601.87 627.356 578.437 652.762 574.912Z"/><path fill="white" d="M655.158 607.296C662.016 605.633 668.927 609.831 670.613 616.683C672.299 623.536 668.125 630.461 661.278 632.17C654.398 633.887 647.433 629.688 645.739 622.803C644.045 615.918 648.267 608.967 655.158 607.296Z"/><path fill="#A09B83" d="M531.245 416.793C532.021 418.687 532.163 423.022 532.314 425.218C534.329 454.607 572.067 468.096 597.026 465.662C619.034 463.516 634.473 454.779 648.153 438.526C656.7 447.554 664.881 455.682 675.264 462.741C727.229 498.07 814.199 514.079 875.512 502.044C866.882 505.872 857.481 511.346 848.725 515.395C814.777 531.68 779.645 535.584 743.145 526.092C730.922 522.914 718.036 517.994 706.002 514.481C703.76 513.827 690.919 516.851 687.639 517.604C658.651 524.263 629.278 536.4 607.132 556.748C578.955 582.293 561.629 617.658 558.711 655.579C557.793 666.902 558.632 682.592 558.453 694.288C558.04 721.181 559.288 749.502 558.223 776.295C524.55 763.238 502.635 760.969 468.179 774.433L464.174 776.345C462.96 739.979 464.12 702.767 463.654 666.314C462.531 578.482 397.728 527.67 316.803 512.908C311.85 514.306 304.703 517.494 299.497 519.339C288.506 523.234 277.72 526.552 266.284 528.88C223.837 537.521 179.876 523.398 144.556 499.728C159.421 504.02 183.427 505.773 199.153 505.526C263.32 504.519 328.203 486.312 373.744 438.875C376.438 441.923 379.11 444.858 382.183 447.686C408.841 472.223 463.086 473.057 485.138 441.884C489.704 435.429 490.569 425.624 491.021 417.882C495.241 424.499 506.117 439.171 511.027 445.52C513.968 441.756 516.718 437.221 519.592 433.316C523.673 427.77 527.724 422.72 531.245 416.793Z"/><path fill="#A09B83" d="M457.801 293.987L458.401 294.065C459.597 294.932 460.196 297.731 460.628 299.21C471.37 335.932 475.264 373.152 472.998 411.327C472.503 417.817 474.169 426.131 470.633 431.915C466.091 439.344 456.142 443.795 448.053 445.9C430.291 450.523 413.323 447.108 397.775 437.853C382.74 427.678 388.198 422.046 386.742 406.597C384.529 383.117 381.414 355.244 371.423 333.685C399.959 320.213 429.132 307.382 457.801 293.987Z"/><path fill="#A09B83" d="M563.81 293.216C567.847 294.97 571.903 297.012 575.916 298.867C600.818 310.376 626.524 321.304 651.118 333.368C641.567 353.142 637.8 384.884 634.6 406.417C632.473 420.736 638.799 425.954 625.001 437.13C623.901 437.945 622.769 438.715 621.605 439.436C608.829 447.258 589.837 449.806 575.379 446.001C567.286 443.871 556.079 439.322 551.732 431.665C548.215 424.938 549.952 416.029 549.63 408.799C548.733 388.664 549.62 368.731 552.007 348.723C554.244 329.974 558.647 311.374 563.81 293.216Z"/><path fill="#A09B83" d="M649.966 172.913C652.062 174.261 670.142 193.644 673.313 196.889C683.993 207.819 695.399 218.633 706.113 229.577C709.769 233.311 716.482 239.969 719.386 244.131C692.782 260.682 672.599 288.616 659.312 316.576C655.101 314.885 650.935 313.086 646.817 311.182C638.346 306.666 626.913 302.001 618.017 298.056C602.144 291.047 586.416 283.712 570.845 276.056C582.253 244.941 605.241 211.813 629.565 189.171C635.534 183.615 643.415 177.792 649.966 172.913Z"/><path fill="#A09B83" d="M372.325 172.821C406.124 196.439 436.749 238.403 451.847 276.557C439.335 282.11 427.15 288.421 414.526 293.805C401.754 299.253 389.121 305.34 376.545 311.25C372.809 312.971 368.648 314.574 364.814 316.135C345.549 283.381 334.204 265.498 301.36 243.827C310.915 235.286 319.988 225.924 329.011 216.814L372.325 172.821Z"/><path fill="#A09B83" d="M247.977 135.211C255.899 134.22 266.298 135.028 274.283 135.774C306.926 138.826 329.096 147.665 357.522 162.621C336.742 182.853 317.058 203.495 296.425 223.645C292.848 227.429 289.167 231.113 285.386 234.694C260.456 224.302 248.568 223.165 222.391 221.495C214.463 195.619 205.882 170.157 198.025 144.042C216.55 138.206 228.846 136.354 247.977 135.211Z"/><path fill="#A09B83" d="M761.032 135.209C780.805 133.619 805.331 138.986 824.422 143.347C822.18 152.881 817.685 165.412 814.756 175.246C810.082 190.938 805.421 207.283 799.62 222.542C773.007 222.289 762.265 224.675 737.476 234.581L733.479 230.764C711.647 209.747 686.241 184.815 665.894 162.787C692.013 145.457 729.917 136.385 761.032 135.209Z"/><path fill="#A09B83" d="M841.365 150.068C882.971 165.262 922.246 213.425 935.028 255.068C925.547 257.017 915.72 259.675 906.304 262.074C897.76 264.11 889.269 266.362 880.839 268.828C863.053 243.136 847.292 233.926 817.976 225.015C820.656 217.59 823.63 206.715 826.085 198.852L841.365 150.068Z"/><path fill="#A09B83" d="M180.902 150.513C182.67 153.844 189.652 178.125 191.268 183.422L199.022 208.362C200.553 213.259 202.588 219.031 203.444 224.02C175.382 231.303 159.69 243.098 142.381 266.217C133.64 264.523 123.545 262.818 114.75 261.317C105.451 259.498 95.8891 257.742 86.6738 255.622C87.0171 254.407 87.3995 253.203 87.8202 252.012C90.3328 244.944 95.5445 234.428 99.1549 227.911C117.493 194.085 146.125 166.977 180.902 150.513Z"/><path fill="#A09B83" d="M938.518 273.119L939.532 273.039L940.284 273.792C944.989 304.314 946.293 328.038 937.251 358.571C934.905 366.493 932.632 373.612 928.126 380.665C918.805 375.797 912.733 372.078 903.89 366.389C898.441 363.36 892.944 359.425 887.852 355.819C895.398 332.171 896.165 309.001 888.329 285.382C894.204 284.202 900.829 282.208 906.759 280.706C917.313 278.043 927.9 275.513 938.518 273.119Z"/><path fill="#A09B83" d="M81.2788 273.263C84.135 273.692 87.4986 274.462 90.3241 275.128C104.47 278.46 118.952 280.276 133.134 283.318C124.567 310.196 125.293 329.064 134.409 355.115C129.536 357.824 124.84 360.727 120.082 363.627C111.142 369.678 102.031 375.473 92.7609 381.006C77.8766 353.721 75.5418 318.242 79.2527 287.721C79.8362 282.922 80.5923 278.056 81.2788 273.263Z"/><path fill="#EFD2BC" d="M121.006 505.227C122.904 505.907 137.049 516.339 139.684 518.152C145.883 522.424 152.372 526.258 159.106 529.626C203.21 551.578 249.356 555.607 296.174 539.94C292.246 548.531 290.533 552.978 287.981 562.048C286.611 567.222 285.792 571.085 284.821 576.299C263.171 580.452 244.092 581.751 222.259 576.636C209.592 573.653 197.332 569.149 185.746 563.221C163.272 551.51 134.393 526.897 121.006 505.227Z"/><path fill="#EFD2BC" d="M901.469 504.013L901.649 504.224L901.577 504.979C885.084 527.699 864.033 546.729 839.768 560.853C806.797 580.397 774.761 584.565 737.921 575.097L735.412 565.887C733.142 556.881 731.245 549.687 727.966 540.985C742.406 544.984 760.025 548.735 774.999 549.714C818.861 552.582 868.629 532.027 901.469 504.013Z"/><path fill="#A09B83" d="M502.867 783.686C517.997 780.876 544.168 789.493 558.022 796.402C551.309 811.473 533.327 827.907 518.808 836.02C515.902 837.608 514.251 838.366 511.194 839.613C489.533 830.2 476.765 816.044 465.81 795.887C478.252 789.118 488.667 785.421 502.867 783.686Z"/><path fill="#A09B83" d="M144.082 371.006C146.069 372.442 148.564 376.288 150.531 378.274C156.563 384.368 164.065 388.281 171.903 391.419C169.98 404.291 166.698 420.65 165.659 433.234C154.264 431.598 149.996 430.607 139.213 426.096C124.243 419.134 112.593 409.889 102.719 396.598C116.441 388.175 130.324 379.208 144.082 371.006Z"/><path fill="#A09B83" d="M764.785 376.018L791.76 375.984C793.377 378.68 795.289 381.188 797.462 383.46C807.003 393.266 819.148 395.387 832.272 395.603C833.066 406.301 836.715 422.725 838.076 435.01C811.206 433.364 783.709 419.889 770.511 395.399C767.231 389.312 766.001 382.746 764.785 376.018Z"/><path fill="#A09B83" d="M234.508 373.856C241.185 375.662 249.197 376.057 256.146 376.494C251.464 405.235 230.966 424.445 203.201 431.835C196.557 433.233 190.585 433.826 183.873 434.249C184.868 422.849 187.717 407.593 189.183 395.555C208.861 394.232 223.043 390.954 234.508 373.856Z"/><path fill="#A09B83" d="M878.519 371.505C887.564 376.761 896.376 382.693 905.384 388.043C909.548 390.515 913.835 393.165 917.676 396.093C909.899 406.794 892.245 419.775 880.758 426.004C872.587 430.136 866.497 431.899 857.641 434.024C855.018 421.962 852.869 405.49 850.427 392.582C861.451 388.964 871.711 380.85 878.519 371.505Z"/><path fill="#A09B83" d="M793.418 318.018C793.906 318.928 790.87 323.342 790.157 324.662C784.041 335.978 783.496 345.124 784.579 357.463C778.149 357.877 773.033 357.975 766.598 357.92L765.735 357.347C765.693 356.912 765.619 356.442 765.753 356.013C770.626 340.39 780.76 328.069 793.418 318.018Z"/><path fill="#A09B83" d="M227.127 317.82C239.608 323.095 253.32 345.356 256.899 358.219C251.377 358.069 245.878 357.432 240.467 356.316C239.595 339.376 236.718 332.136 227.127 317.82Z"/><path fill="#068B6C" d="M198.5 779.656C198.619 763.577 202.488 740.993 204.135 724.529C204.741 718.471 206.212 699.119 207.208 694.238C208.722 705.093 209.592 723.426 210.593 735.136C211.643 747.414 214.076 768.289 214.091 779.71C232.586 783.941 243.037 795.754 247.875 813.711C268.455 814.774 289.007 816.341 309.511 818.41C315.132 818.944 328.654 819.87 333.672 821.124C315.509 822.509 297.41 824.837 279.355 827.254C275.029 827.834 258.761 829.702 255.102 830.707C260.831 834.14 267.082 837.467 273.032 840.664C304.201 857.41 334.746 877.432 369.197 886.693C371.543 887.324 376.739 889.006 378.867 888.91C381.116 890.683 387.372 899.349 389.884 902.077C441.321 957.928 525.135 973.867 591.48 934.731C615.764 920.405 632.522 903.494 648.637 880.463C671.151 879.629 755.977 834.044 780.233 822.125C790.389 817.13 800.745 812.553 811.276 808.407C811.997 804.841 812.286 798.981 812.447 795.352C812.697 793.769 812.515 794.184 813.171 792.785L813.983 793.362C814.088 797.785 814.404 802.201 814.93 806.593C824.177 803.378 833.741 799.044 842.865 795.317C886.547 777.474 928.691 764.902 975.65 759.12C975.663 766.978 975.467 774.792 975.665 782.659C975.77 795.622 975.89 808.962 975.793 821.909C975.484 863.26 955.718 906.234 926.295 934.955C902.886 958.168 872.912 973.63 840.428 979.251C814.521 983.976 780.445 981.284 753.495 981.106L636.079 981.262L393.551 981.22L264 981.394C246.575 981.395 228.707 981.817 211.355 981.574C166.238 981.161 123.222 962.448 92.1626 929.721C67.2984 903.96 51.783 870.609 48.0941 834.996C46.7664 822.051 47.1102 808.593 47.1143 795.568C47.0549 782.58 47.0883 769.591 47.2146 756.603C83.8118 759.404 119.835 767.324 154.232 780.132C161.309 782.758 172.309 787.007 178.965 790.636C186.084 784.424 189.716 782.846 198.5 779.656Z"/><path fill="#F3FADD" d="M198.5 779.656C198.619 763.577 202.488 740.993 204.135 724.529C204.741 718.471 206.212 699.119 207.208 694.238C208.722 705.093 209.592 723.426 210.593 735.136C211.643 747.414 214.076 768.289 214.091 779.71C232.586 783.941 243.037 795.754 247.875 813.711C268.455 814.774 289.007 816.341 309.511 818.41C315.132 818.944 328.654 819.87 333.672 821.124C315.509 822.509 297.41 824.837 279.355 827.254C275.029 827.834 258.761 829.702 255.102 830.707L247.872 831.361C245.677 850.405 231.161 861.063 213.504 864.746C213.61 872.717 211.823 889.053 211.083 897.294L206.634 948.26C205.403 939.734 204.635 929.177 203.741 920.423C201.837 901.854 200.106 883.267 198.548 864.666C193.581 863.376 190.726 862.411 186.241 859.769C176.097 853.793 168.731 844.043 165.755 832.651C142.38 828.86 120.744 826.079 97.1684 821.263C115.794 820.443 133.908 817.951 152.397 815.784C156.777 815.27 161.2 814.845 165.552 814.145C167.549 804.421 172.071 797.545 178.965 790.636C186.084 784.424 189.716 782.846 198.5 779.656Z"/><path fill="#068B6C" d="M193.754 798.735C201.243 794.348 210.399 793.878 218.298 797.474C226.198 801.071 231.854 808.285 233.463 816.814C235.975 830.136 228.098 843.225 215.15 847.243C202.202 851.261 188.299 844.931 182.828 832.527C177.357 820.123 182.056 805.588 193.754 798.735Z"/><path fill="#04DB98" d="M193.754 798.735C201.243 794.348 210.399 793.878 218.298 797.474C226.198 801.071 231.854 808.285 233.463 816.814C230.16 815.919 221.679 811.89 218.355 810.335L193.754 798.735Z"/><path fill="#F3FADD" d="M812.447 795.352C812.697 793.769 812.515 794.184 813.171 792.785L813.983 793.362C814.088 797.785 814.404 802.201 814.93 806.593C816.58 819.459 818.776 832.194 820.659 845.02C834.694 849.387 842.227 856.999 846.049 871.173C867.141 874.628 879.342 876.49 900.712 877.404C893.415 878.744 886.562 879.286 879.267 880.384C868.08 882.161 856.918 884.094 845.785 886.181C841.013 897.488 836.225 903.87 824.514 908.622L821.38 909.877C819.587 922.555 817.977 935.258 816.552 947.982C815.538 957.108 814.839 966.175 813.323 975.219C812.895 969.256 813.19 961.386 812.355 955.765C810.152 940.93 809.374 923.858 806.352 909.339C793.135 905.275 785.775 898.801 782.099 885.14C766.85 883.787 751.321 880.728 736.064 879.063C732.928 878.721 729.228 878.344 726.184 877.693C743.841 875.595 764.592 876.042 782.236 870.778C784.465 857.009 793.999 849.686 806.405 845.074C807.634 832.803 809.259 820.574 811.276 808.407C811.997 804.841 812.286 798.981 812.447 795.352Z"/><path fill="#068B6C" d="M811.684 857.941C822.229 856.6 831.892 863.988 833.362 874.516C834.831 885.044 827.561 894.796 817.052 896.394C810.139 897.445 803.195 894.697 798.873 889.201C794.551 883.704 793.518 876.308 796.17 869.838C798.821 863.368 804.748 858.824 811.684 857.941Z"/><path fill="#BDF1E1" d="M812.879 786.388C813.451 789.085 813.685 790.641 813.983 793.362L813.171 792.785C812.515 794.184 812.697 793.769 812.447 795.352C812.429 792.385 812.687 789.356 812.879 786.388Z"/><path fill="#F3FADD" d="M511.103 43.6097C512.577 44.1051 512.764 45.0879 512.927 46.6058C514.516 61.3986 516.075 78.0798 520.329 92.3204C533.665 97.7507 539.532 102.322 544.075 116.312C557.25 118.785 571.922 120.302 585.274 121.917C590.739 122.578 596.317 122.465 602.063 123.184C594.135 124.567 586.641 124.698 578.87 125.637C568.192 126.926 554.916 128.742 544.525 131.434C538.21 144.72 533.563 148.082 520.796 154.049C517.484 164.482 515.703 185.122 514.182 196.391C513.607 200.648 513.784 205.715 513.036 210.441L512.781 210.419C511.78 205.448 511.519 198.019 510.807 192.792C509.254 181.392 507.442 164.807 504.345 153.912C490.108 147.984 487.657 144.758 480.172 131.48C476.432 130.073 471.546 129.624 467.609 128.894C456.174 126.773 444.724 125.644 433.147 124.705C429.568 124.415 425.585 124.093 422.086 123.307C435.52 122.395 467.849 120.112 480.159 115.777C487.671 101.407 489.457 98.5836 504.483 92.0505C508.333 78.2736 510.768 57.8663 511.103 43.6097Z"/><path fill="#068B6C" d="M508.297 105.2C514.755 103.633 521.555 105.676 526.08 110.542C530.605 115.409 532.15 122.339 530.119 128.666C528.088 134.993 522.798 139.73 516.286 141.054C506.476 143.047 496.876 136.819 494.698 127.047C492.521 117.276 498.568 107.561 508.297 105.2Z"/><path fill="#F3FADD" d="M882.738 588.354C883.227 588.771 883.658 589.5 883.725 590.124C885.528 606.865 888.798 623.383 890.408 640.134C905.837 646.873 909.477 650.983 916.32 666.45C924.951 667.95 956.651 670.794 962.553 673.093C945.342 673.708 932.118 676.253 915.333 679.744C914.99 680.486 914.635 681.223 914.268 681.953C908.067 694.389 902.353 700.075 889.323 704.373C886.975 714.725 884.244 737.974 883.322 748.644C881.811 746.703 876.744 709.048 876 703.993C863.644 698.889 856.552 691.987 851.076 679.804C839.915 678.586 829.13 676.187 818.07 674.343C812.956 673.491 808.158 673.578 803.003 672.996C817.73 669.178 837.885 669.062 850.765 665.072C858.208 650.574 862.157 646.256 876.786 639.96C877.882 634.937 878.426 627.453 879.087 622.16C880.493 610.897 882.015 599.679 882.738 588.354Z"/><path fill="#068B6C" d="M880.761 653.789C890.822 652.339 900.166 659.289 901.67 669.343C903.175 679.397 896.276 688.778 886.231 690.337C876.108 691.908 866.638 684.944 865.122 674.813C863.606 664.682 870.621 655.25 880.761 653.789Z"/><path fill="#068B6C" d="M118.821 642.315C129.28 641.204 138.655 648.793 139.746 659.253C140.838 669.714 133.232 679.074 122.77 680.147C112.334 681.217 103.003 673.635 101.914 663.202C100.825 652.768 108.39 643.423 118.821 642.315Z"/></svg>
+</file>
+
+<file path="public/next.svg">
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 394 80"><path fill="#000" d="M262 0h68.5v12.7h-27.2v66.6h-13.6V12.7H262V0ZM149 0v12.7H94v20.4h44.3v12.6H94v21h55v12.6H80.5V0h68.7zm34.3 0h-17.8l63.8 79.4h17.9l-32-39.7 32-39.6h-17.9l-23 28.6-23-28.6zm18.3 56.7-9-11-27.1 33.7h17.8l18.3-22.7z"/><path fill="#000" d="M81 79.3 17 0H0v79.3h13.6V17l50.2 62.3H81Zm252.6-.4c-1 0-1.8-.4-2.5-1s-1.1-1.6-1.1-2.6.3-1.8 1-2.5 1.6-1 2.6-1 1.8.3 2.5 1a3.4 3.4 0 0 1 .6 4.3 3.7 3.7 0 0 1-3 1.8zm23.2-33.5h6v23.3c0 2.1-.4 4-1.3 5.5a9.1 9.1 0 0 1-3.8 3.5c-1.6.8-3.5 1.3-5.7 1.3-2 0-3.7-.4-5.3-1s-2.8-1.8-3.7-3.2c-.9-1.3-1.4-3-1.4-5h6c.1.8.3 1.6.7 2.2s1 1.2 1.6 1.5c.7.4 1.5.5 2.4.5 1 0 1.8-.2 2.4-.6a4 4 0 0 0 1.6-1.8c.3-.8.5-1.8.5-3V45.5zm30.9 9.1a4.4 4.4 0 0 0-2-3.3 7.5 7.5 0 0 0-4.3-1.1c-1.3 0-2.4.2-3.3.5-.9.4-1.6 1-2 1.6a3.5 3.5 0 0 0-.3 4c.3.5.7.9 1.3 1.2l1.8 1 2 .5 3.2.8c1.3.3 2.5.7 3.7 1.2a13 13 0 0 1 3.2 1.8 8.1 8.1 0 0 1 3 6.5c0 2-.5 3.7-1.5 5.1a10 10 0 0 1-4.4 3.5c-1.8.8-4.1 1.2-6.8 1.2-2.6 0-4.9-.4-6.8-1.2-2-.8-3.4-2-4.5-3.5a10 10 0 0 1-1.7-5.6h6a5 5 0 0 0 3.5 4.6c1 .4 2.2.6 3.4.6 1.3 0 2.5-.2 3.5-.6 1-.4 1.8-1 2.4-1.7a4 4 0 0 0 .8-2.4c0-.9-.2-1.6-.7-2.2a11 11 0 0 0-2.1-1.4l-3.2-1-3.8-1c-2.8-.7-5-1.7-6.6-3.2a7.2 7.2 0 0 1-2.4-5.7 8 8 0 0 1 1.7-5 10 10 0 0 1 4.3-3.5c2-.8 4-1.2 6.4-1.2 2.3 0 4.4.4 6.2 1.2 1.8.8 3.2 2 4.3 3.4 1 1.4 1.5 3 1.5 5h-5.8z"/></svg>
+</file>
+
+<file path="public/vercel.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1155 1000"><path d="m577.3 0 577.4 1000H0z" fill="#fff"/></svg>
+</file>
+
+<file path="public/window.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
+</file>
+
+<file path="supabase/migrations/01_schema.sql">
+-- ==========================================
+-- NAQSHAI Supabase Database Schema Migration
+-- Migration Script: 01_schema.sql
+-- ==========================================
+
+-- 1. Create Sellers (User Profiles) Table
+CREATE TABLE IF NOT EXISTS public.sellers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name TEXT NOT NULL,
+    phone_number TEXT,
+    seller_role TEXT DEFAULT 'Direct Owner', -- e.g., 'Direct Owner', 'Real Estate Agency'
+    is_identity_verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Create Plots Table
+CREATE TABLE IF NOT EXISTS public.plots (
+    id TEXT PRIMARY KEY, -- e.g., "Plot-101"
+    seller_id UUID REFERENCES public.sellers(id) ON DELETE SET NULL,
+    title TEXT NOT NULL, -- e.g., "Block A, Gulberg Greens"
+    city TEXT NOT NULL, -- e.g., "Islamabad"
+    price_pkr NUMERIC NOT NULL, -- Raw number, e.g., 18500000
+    size_dimensions TEXT NOT NULL, -- e.g., "1 Kanal (50x90)"
+    category TEXT DEFAULT 'Residential', -- e.g., "Residential", "Commercial"
+    flood_risk TEXT DEFAULT 'Low Hazard', -- e.g., "Low Hazard"
+    noise_level TEXT DEFAULT 'Low (Quiet Zone)', -- e.g., "Low (Quiet Zone)"
+    elevation_profile TEXT DEFAULT 'High Ridge (Optimal)', -- e.g., "High Ridge (Optimal)"
+    proximity_notes TEXT, -- e.g., "200m from Main Expressway, 500m from Mosque"
+    polygon_coordinates JSONB NOT NULL DEFAULT '[]'::jsonb, -- 4-corner interactive map boundary drawings
+    documents JSONB DEFAULT '[]'::jsonb, -- Array of file paths pointing to uploaded Allotment Letter / CNIC in Supabase Storage
+    is_verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for optimized querying
+CREATE INDEX IF NOT EXISTS idx_plots_city ON public.plots(city);
+CREATE INDEX IF NOT EXISTS idx_plots_category ON public.plots(category);
+CREATE INDEX IF NOT EXISTS idx_plots_seller_id ON public.plots(seller_id);
+CREATE INDEX IF NOT EXISTS idx_plots_price ON public.plots(price_pkr);
+
+-- Automatic Timestamp Update Trigger
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER update_sellers_modtime
+    BEFORE UPDATE ON public.sellers
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+CREATE OR REPLACE TRIGGER update_plots_modtime
+    BEFORE UPDATE ON public.plots
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+
+-- ==========================================
+-- 3. Row Level Security (RLS) Configuration
+-- ==========================================
+
+-- Enable RLS on sellers and plots
+ALTER TABLE public.sellers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.plots ENABLE ROW LEVEL SECURITY;
+
+-- Permissive RLS Policies for 'sellers'
+DROP POLICY IF EXISTS "Public sellers read access" ON public.sellers;
+CREATE POLICY "Public sellers read access" 
+    ON public.sellers 
+    FOR SELECT 
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert to sellers" ON public.sellers;
+CREATE POLICY "Allow public insert to sellers" 
+    ON public.sellers 
+    FOR INSERT 
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update to sellers" ON public.sellers;
+CREATE POLICY "Allow public update to sellers" 
+    ON public.sellers 
+    FOR UPDATE 
+    USING (true);
+
+-- Permissive RLS Policies for 'plots'
+DROP POLICY IF EXISTS "Public plots read access" ON public.plots;
+CREATE POLICY "Public plots read access" 
+    ON public.plots 
+    FOR SELECT 
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert to plots" ON public.plots;
+CREATE POLICY "Allow public insert to plots" 
+    ON public.plots 
+    FOR INSERT 
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update to plots" ON public.plots;
+CREATE POLICY "Allow public update to plots" 
+    ON public.plots 
+    FOR UPDATE 
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow public delete to plots" ON public.plots;
+CREATE POLICY "Allow public delete to plots" 
+    ON public.plots 
+    FOR DELETE 
+    USING (true);
+
+
+-- ==========================================
+-- 4. Supabase Storage Bucket & RLS Setup
+-- ==========================================
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('plot-documents', 'plot-documents', false)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Authenticated sellers upload documents" ON storage.objects;
+CREATE POLICY "Authenticated sellers upload documents"
+    ON storage.objects
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'plot-documents');
+
+DROP POLICY IF EXISTS "Sellers view own plot documents" ON storage.objects;
+CREATE POLICY "Sellers view own plot documents"
+    ON storage.objects
+    FOR SELECT
+    TO authenticated
+    USING (bucket_id = 'plot-documents');
+</file>
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+</file>
+
+<file path="AGENTS.md">
+# NAQSHAI Coding Agent Rules & Guidelines
+
+## 1. Project Overview & Tech Stack
+- **Framework**: Next.js (App Router), React, Tailwind CSS.
+- **APIs & Cloud**: Google Maps JavaScript API (`@react-google-maps/api`), Google Gen AI SDK (`@google/genai` with `gemini-2.5-flash`), Supabase (PostgreSQL, Storage, Auth).
+- **Domain**: Pakistan real estate intelligence (Islamabad & Rawalpindi).
+
+## 2. Design System: Refined Architectural Light
+- Always use the established color palette:
+  - Page Canvas: `bg-slate-100 text-slate-800`
+  - Cards & Modals: `bg-white border border-slate-200 shadow-sm rounded-2xl`
+  - Primary Buttons & Accents: `emerald-700` (`hover:bg-emerald-600 text-white`)
+  - Badges: `bg-emerald-50 text-emerald-800` (verified/low risk), `bg-amber-50 text-amber-800` (moderate)
+- **Do not** introduce dark-mode black containers unless explicitly requested.
+
+## 3. Code Standards & Safety
+- **No Unsaved Assumptions**: When editing files, ensure imports are valid and paths align with `@/...`.
+- **API Responses**: Always wrap API route handlers (`/api/*`) in clean `try/catch` blocks and return consistent JSON structures.
+- **No Hallucinated Packages**: Use only installed libraries (`@google/genai`, `@react-google-maps/api`, `@supabase/supabase-js`, `lucide-react`).
+- **File Discipline**: Never overwrite working map configurations or clear existing coordinates unless instructed.
+</file>
+
+<file path="CLAUDE.md">
+# NAQSHAI Coding Agent Rules & Guidelines
+
+## 1. Project Overview & Tech Stack
+- **Framework**: Next.js (App Router), React, Tailwind CSS.
+- **APIs & Cloud**: Google Maps JavaScript API (`@react-google-maps/api`), Google Gen AI SDK (`@google/genai` with `gemini-2.5-flash`), Supabase (PostgreSQL, Storage, Auth).
+- **Domain**: Pakistan real estate intelligence (Islamabad & Rawalpindi).
+
+## 2. Design System: Refined Architectural Light
+- Always use the established color palette:
+  - Page Canvas: `bg-slate-100 text-slate-800`
+  - Cards & Modals: `bg-white border border-slate-200 shadow-sm rounded-2xl`
+  - Primary Buttons & Accents: `emerald-700` (`hover:bg-emerald-600 text-white`)
+  - Badges: `bg-emerald-50 text-emerald-800` (verified/low risk), `bg-amber-50 text-amber-800` (moderate)
+- **Do not** introduce dark-mode black containers unless explicitly requested.
+
+## 3. Code Standards & Safety
+- **No Unsaved Assumptions**: When editing files, ensure imports are valid and paths align with `@/...`.
+- **API Responses**: Always wrap API route handlers (`/api/*`) in clean `try/catch` blocks and return consistent JSON structures.
+- **No Hallucinated Packages**: Use only installed libraries (`@google/genai`, `@react-google-maps/api`, `@supabase/supabase-js`, `lucide-react`).
+- **File Discipline**: Never overwrite working map configurations or clear existing coordinates unless instructed.
+</file>
+
+<file path="eslint.config.mjs">
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+</file>
+
+<file path="jsconfig.json">
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
+}
+</file>
+
+<file path="next.config.mjs">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  /* config options here */
+};
+
+export default nextConfig;
+</file>
+
+<file path="package.json">
+{
+  "name": "naqshai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@google/genai": "^2.19.0",
+    "@react-google-maps/api": "^2.20.8",
+    "@supabase/supabase-js": "^2.112.4",
+    "lucide-react": "^1.37.0",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "tailwindcss": "^4"
+  }
+}
+</file>
+
+<file path="postcss.config.mjs">
+const config = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+
+export default config;
+</file>
+
+<file path="README.md">
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
+</files>
