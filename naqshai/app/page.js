@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
+import GuideChatbot from '@/components/GuideChatbot';
 import {
   Sparkles,
   ArrowRight,
@@ -416,6 +417,9 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* Floating Collapsible Guide Chatbot */}
+      <GuideChatbot />
 
     </div>
   );
