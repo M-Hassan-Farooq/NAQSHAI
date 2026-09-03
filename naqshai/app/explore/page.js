@@ -490,67 +490,69 @@ function ExploreContent() {
       </div>
 
       {/* 1. Google Map Container (3D terrain) */}
-      <GoogleMap
-        mapContainerStyle={mapContainerStyle}
-        center={defaultCenter}
-        zoom={DEFAULT_ZOOM}
-        onLoad={onLoad}
-        onUnmount={onUnmount}
-        onZoomChanged={handleZoomChanged}
-        onIdle={handleZoomChanged}
-        options={{
-          mapTypeId: 'terrain',
-          disableDefaultUI: false,
-          zoomControl: true,
-        }}
-      >
-        {/* Render real plot boundary polygons from the database.
-            Hidden while zoomed out (the green marker layer represents them there);
-            the selected plot's polygon always renders so its highlight stays visible. */}
-        {plots.map((plot) => {
-          if (!plot.hasGeometry) return null;
-          const isSelected = selectedPlot?.id?.toLowerCase() === plot.id.toLowerCase();
-          if (zoom < POLYGON_MIN_ZOOM && !isSelected) return null;
-          const isHovered = hoveredPlotId === plot.id;
-          return (
-            <Polygon
-              key={plot.id}
-              paths={plot.paths}
-              onClick={() => handleSelectPlot(plot)}
-              onMouseOver={() => setHoveredPlotId(plot.id)}
-              onMouseOut={() => setHoveredPlotId((cur) => (cur === plot.id ? null : cur))}
+      <GoogleMapsSafeLoader>
+        <GoogleMap
+          mapContainerStyle={mapContainerStyle}
+          center={defaultCenter}
+          zoom={DEFAULT_ZOOM}
+          onLoad={onLoad}
+          onUnmount={onUnmount}
+          onZoomChanged={handleZoomChanged}
+          onIdle={handleZoomChanged}
+          options={{
+            mapTypeId: 'terrain',
+            disableDefaultUI: false,
+            zoomControl: true,
+          }}
+        >
+          {/* Render real plot boundary polygons from the database.
+              Hidden while zoomed out (the green marker layer represents them there);
+              the selected plot's polygon always renders so its highlight stays visible. */}
+          {plots.map((plot) => {
+            if (!plot.hasGeometry) return null;
+            const isSelected = selectedPlot?.id?.toLowerCase() === plot.id.toLowerCase();
+            if (zoom < POLYGON_MIN_ZOOM && !isSelected) return null;
+            const isHovered = hoveredPlotId === plot.id;
+            return (
+              <Polygon
+                key={plot.id}
+                paths={plot.paths}
+                onClick={() => handleSelectPlot(plot)}
+                onMouseOver={() => setHoveredPlotId(plot.id)}
+                onMouseOut={() => setHoveredPlotId((cur) => (cur === plot.id ? null : cur))}
+                options={{
+                  fillColor: isSelected ? '#10b981' : isHovered ? '#34d399' : '#94a3b8',
+                  fillOpacity: isSelected ? 0.25 : isHovered ? 0.22 : 0.15,
+                  strokeColor: isSelected ? '#047857' : isHovered ? '#059669' : '#64748b',
+                  strokeWeight: isSelected ? 4 : isHovered ? 3 : 2,
+                  zIndex: isSelected ? 99 : isHovered ? 50 : 1,
+                  clickable: true,
+                }}
+              />
+            );
+          })}
+
+          {/* Selected Plot Marker Pin */}
+          {selectedPlot && selectedPlot.center && (
+            <Marker
+              position={selectedPlot.center}
+              title={selectedPlot.name}
+            />
+          )}
+
+          {/* 3D Walkthrough View */}
+          {is3DMode && selectedPlot && selectedPlot.center && (
+            <StreetViewPanorama
+              position={selectedPlot.center}
+              visible={is3DMode}
               options={{
-                fillColor: isSelected ? '#10b981' : isHovered ? '#34d399' : '#94a3b8',
-                fillOpacity: isSelected ? 0.25 : isHovered ? 0.22 : 0.15,
-                strokeColor: isSelected ? '#047857' : isHovered ? '#059669' : '#64748b',
-                strokeWeight: isSelected ? 4 : isHovered ? 3 : 2,
-                zIndex: isSelected ? 99 : isHovered ? 50 : 1,
-                clickable: true,
+                pov: { heading: 100, pitch: 0 },
+                zoom: 1,
               }}
             />
-          );
-        })}
-
-        {/* Selected Plot Marker Pin */}
-        {selectedPlot && selectedPlot.center && (
-          <Marker
-            position={selectedPlot.center}
-            title={selectedPlot.name}
-          />
-        )}
-
-        {/* 3D Walkthrough View */}
-        {is3DMode && selectedPlot && selectedPlot.center && (
-          <StreetViewPanorama
-            position={selectedPlot.center}
-            visible={is3DMode}
-            options={{
-              pov: { heading: 100, pitch: 0 },
-              zoom: 1,
-            }}
-          />
-        )}
-      </GoogleMap>
+          )}
+        </GoogleMap>
+      </GoogleMapsSafeLoader>
 
       {/* Data status overlays: loading / error / empty (non-blocking card) */}
       {(plotsLoading || plotsError || showEmptyState) && (

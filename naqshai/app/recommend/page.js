@@ -147,16 +147,88 @@ function ChatInterface() {
                 body: JSON.stringify({ messages: updatedMessages, language: language }),
             });
 
-            const data = await res.json();
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to fetch response');
+            }
 
+            const reader = res.body?.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = '';
+
+            // Add placeholder assistant message
             setMessages((prev) => [
                 ...prev,
                 {
                     role: 'assistant',
-                    content: data.reply || 'Maazrat, koi reply nahi mil saka.',
-                    recommendedPlots: data.recommendedPlots || []
+                    content: '',
+                    recommendedPlots: []
                 }
             ]);
+
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    accumulatedText += decoder.decode(value, { stream: true });
+
+                    // Stream parsing: try parsing JSON as tokens accumulate
+                    let cleanText = accumulatedText.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
+                    let replyContent = cleanText;
+                    let plotsList = [];
+
+                    try {
+                        const parsed = JSON.parse(cleanText);
+                        if (parsed && typeof parsed === 'object') {
+                            replyContent = parsed.reply || cleanText;
+                            if (Array.isArray(parsed.recommendedPlots)) {
+                                plotsList = parsed.recommendedPlots;
+                            }
+                        }
+                    } catch (_) {
+                        // Partial JSON chunk while streaming
+                        const replyMatch = cleanText.match(/"reply"\s*:\s*"([^"]*)/);
+                        if (replyMatch && replyMatch[1]) {
+                            replyContent = replyMatch[1];
+                        }
+                    }
+
+                    setMessages((prev) => {
+                        const next = [...prev];
+                        const lastIdx = next.length - 1;
+                        if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                            next[lastIdx] = {
+                                ...next[lastIdx],
+                                content: replyContent,
+                                recommendedPlots: plotsList.length > 0 ? plotsList : next[lastIdx].recommendedPlots
+                            };
+                        }
+                        return next;
+                    });
+                }
+
+                // Final Parse when stream ends
+                let cleanText = accumulatedText.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
+                let parsedData = null;
+                try {
+                    parsedData = JSON.parse(cleanText);
+                } catch (_) {
+                    parsedData = { reply: cleanText, recommendedPlots: [] };
+                }
+
+                setMessages((prev) => {
+                    const next = [...prev];
+                    const lastIdx = next.length - 1;
+                    if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                        next[lastIdx] = {
+                            role: 'assistant',
+                            content: parsedData?.reply || cleanText || 'Maazrat, koi reply nahi mil saka.',
+                            recommendedPlots: parsedData?.recommendedPlots || []
+                        };
+                    }
+                    return next;
+                });
+            }
         } catch (err) {
             console.error('[ChatInterface] fetch error:', err);
             setMessages((prev) => [
