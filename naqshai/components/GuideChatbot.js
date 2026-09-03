@@ -14,8 +14,19 @@ import {
   ShieldCheck,
   PlusCircle,
   Languages,
-  RotateCcw
+  RotateCcw,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  AlertCircle
 } from 'lucide-react';
+import {
+  speakText,
+  stopSpeaking,
+  isSpeechRecognitionSupported,
+  isSpeechSynthesisSupported
+} from '@/lib/voiceHelper';
 
 const QUICK_QUESTIONS = [
   {
@@ -111,7 +122,88 @@ export default function GuideChatbot() {
   ]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const [speakingId, setSpeakingId] = useState(null);
+
   const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // Stop active speech and listening on unmount
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  const toggleListening = () => {
+    setVoiceError('');
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!SpeechRecognition) {
+      setVoiceError('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map((res) => res[0].transcript)
+          .join('');
+        setInputText(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('SpeechRecognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          setVoiceError('Microphone permission was denied. Please allow microphone access in your browser settings.');
+        } else if (event.error !== 'no-speech') {
+          setVoiceError(`Voice input error: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error('Speech recognition error:', err);
+      setVoiceError('Failed to activate microphone.');
+      setIsListening(false);
+    }
+  };
+
+  const handleToggleSpeak = (textToSpeak, msgId) => {
+    if (speakingId === msgId) {
+      stopSpeaking();
+      setSpeakingId(null);
+      return;
+    }
+
+    speakText(textToSpeak, {
+      onStart: () => setSpeakingId(msgId),
+      onEnd: () => setSpeakingId(null),
+      onError: () => setSpeakingId(null),
+    });
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -407,6 +499,34 @@ export default function GuideChatbot() {
                       ))}
                     </div>
                   )}
+
+                  {/* Text-to-Speech Speaker Button */}
+                  {msg.role === 'assistant' && msg.content && (
+                    <div className="mt-2 pt-1 border-t border-slate-200/60 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSpeak(msg.content, msg.id)}
+                        className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md transition cursor-pointer ${
+                          speakingId === msg.id
+                            ? 'bg-emerald-100 text-emerald-800 font-semibold'
+                            : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-200/50'
+                        }`}
+                        title={speakingId === msg.id ? 'Stop reading' : 'Read aloud'}
+                      >
+                        {speakingId === msg.id ? (
+                          <>
+                            <VolumeX className="w-3 h-3 text-emerald-700 animate-pulse" />
+                            <span>Stop</span>
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-3 h-3" />
+                            <span>Listen</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -425,21 +545,65 @@ export default function GuideChatbot() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Inline Voice Error Banner */}
+          {voiceError && (
+            <div className="px-3 py-1.5 bg-red-50 border-t border-red-200 flex items-center justify-between text-[11px] text-red-700">
+              <div className="flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                <span className="truncate max-w-[240px]">{voiceError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVoiceError('')}
+                className="text-red-500 hover:text-red-700 text-[10px] font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Input Box Form */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSendQuery();
             }}
-            className="p-2.5 bg-slate-50 border-t border-slate-200 flex items-center gap-2 shrink-0"
+            className="p-2.5 bg-slate-50 border-t border-slate-200 flex items-center gap-1.5 shrink-0"
           >
             <input
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ask about 3D map, flood risk, or plots..."
-              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 placeholder-slate-400"
+              placeholder={
+                isListening
+                  ? "Listening... speak now"
+                  : "Ask about 3D map, flood risk, or plots..."
+              }
+              className={`flex-1 bg-white border rounded-xl px-3 py-2 text-xs focus:outline-none transition text-slate-800 placeholder-slate-400 ${
+                isListening
+                  ? 'border-red-400 ring-2 ring-red-100 bg-red-50/20'
+                  : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
+              }`}
             />
+
+            {/* Microphone Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`p-2 rounded-xl transition shadow-sm flex items-center justify-center cursor-pointer ${
+                isListening
+                  ? 'bg-red-600 hover:bg-red-700 text-white ring-2 ring-red-200 animate-pulse'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 hover:text-emerald-700'
+              }`}
+              title={isListening ? 'Stop listening' : 'Speak your query (Speech to Text)'}
+            >
+              {isListening ? (
+                <MicOff className="w-3.5 h-3.5" />
+              ) : (
+                <Mic className="w-3.5 h-3.5" />
+              )}
+            </button>
+
             <button
               type="submit"
               disabled={!inputText.trim() || loading}

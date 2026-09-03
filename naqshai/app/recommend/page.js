@@ -16,8 +16,20 @@ import {
     Phone,
     CheckCircle2,
     User,
-    LogOut
+    LogOut,
+    Mic,
+    MicOff,
+    Volume2,
+    VolumeX,
+    AlertCircle
 } from 'lucide-react';
+import {
+    speakText,
+    stopSpeaking,
+    isSpeechRecognitionSupported,
+    isSpeechSynthesisSupported
+} from '@/lib/voiceHelper';
+import { getFastConversationalReply } from '@/lib/conversationHelper';
 
 const QUICK_QUESTIONS = {
     Auto: [
@@ -47,10 +59,10 @@ const QUICK_QUESTIONS = {
 };
 
 const GREETINGS = {
-    Auto: "Hello! I am NAQSHAI AI, your expert land recommendation chatbot for real estate in Pakistan. All recommendations are powered exclusively by our live database.\n\nWhich city, budget range, or plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) are you looking for today?",
-    EN: "Hello! I am NAQSHAI AI, your expert land recommendation chatbot for real estate in Pakistan. All recommendations are powered exclusively by our live database.\n\nWhich city, budget range, or plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) are you looking for today?",
-    RO: "Assalam-o-Alaikum! Main NAQSHAI AI Advisor hoon. Hamari tamam recommendations live Supabase database se aati hain.\n\nAap kis city, budget ya plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) me dilchaspi rakhte hain?",
-    UR: "السلام علیکم! میں نقشئی اے آئی ایڈوائزر ہوں۔ ہماری تمام سفارشات لائیو ڈیٹا بیس سے لی جاتی ہیں۔\n\nآپ کس شہر، بجٹ یا پلاٹ کے سائز (مثلاً 5 مرلہ، 10 مرلہ، 1 کنال) میں دلچسپی رکھتے ہیں؟"
+    Auto: "Hello! Which city, budget range, or plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) are you looking for today?",
+    EN: "Hello! Which city, budget range, or plot size (e.g. 5 Marla, 10 Marla, 1 Kanal) are you looking for today?",
+    RO: "Salam! Aap Islamabad ya Rawalpindi me kis budget ya plot size (5 Marla, 10 Marla, 1 Kanal) me search kar rahe hain?",
+    UR: "السلام علیکم! آپ کس شہر، بجٹ یا سائز (5 مرلہ، 10 مرلہ، 1 کنال) میں پلاٹ تلاش کر رہے ہیں؟"
 };
 
 function ChatInterface() {
@@ -69,8 +81,102 @@ function ChatInterface() {
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [voiceError, setVoiceError] = useState('');
+    const [speakingIdx, setSpeakingIdx] = useState(null);
+
     const chatEndRef = useRef(null);
     const didAutoTriggerRef = useRef(false);
+    const recognitionRef = useRef(null);
+    const wasVoiceInputRef = useRef(false);
+
+    // Stop speaking and speech recognition on unmount
+    useEffect(() => {
+        return () => {
+            stopSpeaking();
+            recognitionRef.current?.stop();
+        };
+    }, []);
+
+    const toggleListening = () => {
+        setVoiceError('');
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+            return;
+        }
+
+        const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+        if (!SpeechRecognition) {
+            setVoiceError('Speech recognition is not supported in this browser. Please try Google Chrome or Microsoft Edge.');
+            return;
+        }
+
+        try {
+            const recognition = new SpeechRecognition();
+            recognitionRef.current = recognition;
+            recognition.continuous = false;
+            recognition.interimResults = true;
+
+            // Strictly locked to English (en-US) to capture clean speech without script-mangling bugs
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                setIsListening(true);
+                wasVoiceInputRef.current = true;
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = Array.from(event.results)
+                    .map((res) => res[0].transcript)
+                    .join('');
+                setInput(transcript);
+                wasVoiceInputRef.current = true;
+            };
+
+            recognition.onerror = (event) => {
+                console.warn('SpeechRecognition error:', event.error);
+                if (event.error === 'not-allowed') {
+                    setVoiceError('Microphone access was denied. Please allow microphone permissions in your browser address bar.');
+                } else if (event.error !== 'no-speech') {
+                    setVoiceError(`Voice input error: ${event.error}`);
+                }
+                setIsListening(false);
+            };
+
+            recognition.onend = () => {
+                setIsListening(false);
+            };
+
+            recognition.start();
+        } catch (err) {
+            console.error('Failed to start speech recognition:', err);
+            setVoiceError('Failed to activate microphone. Please check device permissions.');
+            setIsListening(false);
+        }
+    };
+
+    const handleToggleSpeak = (textToSpeak, idx) => {
+        if (speakingIdx === idx) {
+            stopSpeaking();
+            setSpeakingIdx(null);
+            return;
+        }
+
+        const isUrduOrRoman = language === 'UR' || language === 'RO' || /[\u0600-\u06FF]/.test(textToSpeak);
+        const langCode = (language === 'UR' || language === 'RO') ? 'ur-PK' : 'en-US';
+
+        speakText(textToSpeak, {
+            lang: langCode,
+            isUrduOrRoman: isUrduOrRoman,
+            onStart: () => setSpeakingIdx(idx),
+            onEnd: () => setSpeakingIdx(null),
+            onError: (err) => {
+                console.warn('Text-to-speech notice:', err);
+                setSpeakingIdx(null);
+            }
+        });
+    };
 
     useEffect(() => {
         let isMounted = true;
@@ -134,6 +240,26 @@ function ChatInterface() {
         const query = textToSend || input;
         if (!query.trim() || loading) return;
 
+        // 1. Zero-Delay Fast Path for Casual Queries:
+        // Purely conversational inputs, greetings, or pleasantries bypass all vector search, DB queries, and fake loading spinners entirely.
+        const fastReply = getFastConversationalReply(query, language);
+        if (fastReply) {
+            const userMsg = { role: 'user', content: query };
+            const assistantMsg = { role: 'assistant', content: fastReply, recommendedPlots: [] };
+            const nextMessages = [...messages, userMsg, assistantMsg];
+            setMessages(nextMessages);
+            setInput('');
+
+            if (wasVoiceInputRef.current) {
+                wasVoiceInputRef.current = false;
+                const assistantIndex = nextMessages.length - 1;
+                setTimeout(() => {
+                    handleToggleSpeak(fastReply, assistantIndex);
+                }, 200);
+            }
+            return;
+        }
+
         const userMsg = { role: 'user', content: query };
         const updatedMessages = [...messages, userMsg];
         setMessages(updatedMessages);
@@ -149,7 +275,17 @@ function ChatInterface() {
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to fetch response');
+                const safeReply = errorData.reply || 'Maazrat, request process karne me masla aya. Dobara koshish karein.';
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        content: safeReply,
+                        recommendedPlots: []
+                    }
+                ]);
+                setLoading(false);
+                return;
             }
 
             const reader = res.body?.getReader();
@@ -216,29 +352,51 @@ function ChatInterface() {
                     parsedData = { reply: cleanText, recommendedPlots: [] };
                 }
 
+                const finalReply = parsedData?.reply || cleanText || 'Maazrat, koi reply nahi mil saka.';
+                const finalPlots = parsedData?.recommendedPlots || [];
+
                 setMessages((prev) => {
                     const next = [...prev];
                     const lastIdx = next.length - 1;
                     if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
                         next[lastIdx] = {
                             role: 'assistant',
-                            content: parsedData?.reply || cleanText || 'Maazrat, koi reply nahi mil saka.',
-                            recommendedPlots: parsedData?.recommendedPlots || []
+                            content: finalReply,
+                            recommendedPlots: finalPlots
                         };
                     }
                     return next;
                 });
+
+                // Auto-Trigger Voice Output on Voice Input:
+                // Automatically triggers TTS read aloud if user inputted via microphone
+                if (wasVoiceInputRef.current && finalReply) {
+                    wasVoiceInputRef.current = false;
+                    const assistantIndex = updatedMessages.length;
+                    setTimeout(() => {
+                        handleToggleSpeak(finalReply, assistantIndex);
+                    }, 350);
+                }
             }
         } catch (err) {
             console.error('[ChatInterface] fetch error:', err);
+            const fallbackReply = 'Maazrat, request process karne me masla aya. Dobara koshish karein.';
             setMessages((prev) => [
                 ...prev,
                 {
                     role: 'assistant',
-                    content: 'Maazrat, request process karne me masla aya. Dobara koshish karein.',
+                    content: fallbackReply,
                     recommendedPlots: []
                 }
             ]);
+
+            if (wasVoiceInputRef.current) {
+                wasVoiceInputRef.current = false;
+                const assistantIndex = updatedMessages.length;
+                setTimeout(() => {
+                    handleToggleSpeak(fallbackReply, assistantIndex);
+                }, 350);
+            }
         } finally {
             setLoading(false);
         }
@@ -316,67 +474,96 @@ function ChatInterface() {
                 </div>
             </header>
 
-            {/* Chat Canvas */}
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 max-w-4xl mx-auto w-full">
-                {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                        {msg.role === 'assistant' && (
-                            <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 text-emerald-700 shadow-sm mt-0.5">
-                                <Bot className="w-4 h-4" />
-                            </div>
-                        )}
+            {/* Chat Canvas (Scrollbar anchored to extreme right edge of screen) */}
+            <main className="flex-1 overflow-y-auto w-full">
+                <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6 w-full">
+                    {messages.map((msg, idx) => (
+                        <div
+                            key={idx}
+                            className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                            {msg.role === 'assistant' && (
+                                <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 text-emerald-700 shadow-sm mt-0.5">
+                                    <Bot className="w-4 h-4" />
+                                </div>
+                            )}
 
-                        <div className="max-w-[88%] md:max-w-[78%] space-y-3">
-                            <div
-                                dir="auto"
-                                className={`p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
-                                    msg.role === 'user'
-                                        ? 'bg-emerald-700 text-white rounded-br-none shadow-sm'
-                                        : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'
-                                }`}
-                            >
-                                {msg.content}
-                            </div>
+                            <div className="max-w-[88%] md:max-w-[78%] space-y-3">
+                                <div
+                                    dir="auto"
+                                    className={`p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-line relative group ${
+                                        msg.role === 'user'
+                                            ? 'bg-emerald-700 text-white rounded-br-none shadow-sm'
+                                            : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'
+                                    }`}
+                                >
+                                    <div>{msg.content}</div>
 
-                            {/* Recommended Plot Cards (Only rendered when matching live database plots exist) */}
-                            {msg.recommendedPlots?.length > 0 && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                                    {msg.recommendedPlots.map((plot) => {
-                                        const isLowRisk = plot.floodRisk?.toLowerCase().includes('low');
-                                        const isModerateRisk =
-                                            plot.floodRisk?.toLowerCase().includes('moderate') ||
-                                            plot.floodRisk?.toLowerCase().includes('medium');
-
-                                        return (
-                                            <div
-                                                key={plot.id}
-                                                className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3 hover:border-emerald-300 transition shadow-sm flex flex-col justify-between"
+                                    {/* Text-to-Speech (Audio Output) Speaker Button */}
+                                    {msg.role === 'assistant' && msg.content && (
+                                        <div className="flex items-center justify-end mt-2 pt-1 border-t border-slate-100/80">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleSpeak(msg.content, idx)}
+                                                className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+                                                    speakingIdx === idx
+                                                        ? 'bg-emerald-100 text-emerald-800 font-semibold'
+                                                        : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-100'
+                                                }`}
+                                                title={speakingIdx === idx ? 'Stop reading aloud' : 'Listen to message (Text-to-Speech)'}
                                             >
-                                                <div className="space-y-2.5">
-                                                    <div className="flex justify-between items-start gap-2">
-                                                        <div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                                                                    {plot.id}
-                                                                </span>
-                                                                {plot.isVerified && (
-                                                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                        Verified
+                                                {speakingIdx === idx ? (
+                                                    <>
+                                                        <VolumeX className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
+                                                        <span>Stop Reading</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Volume2 className="w-3.5 h-3.5" />
+                                                        <span>Read Aloud</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Recommended Plot Cards (Only rendered when matching live database plots exist) */}
+                                {msg.recommendedPlots?.length > 0 && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                                        {msg.recommendedPlots.map((plot) => {
+                                            const isLowRisk = plot.floodRisk?.toLowerCase().includes('low');
+                                            const isModerateRisk =
+                                                plot.floodRisk?.toLowerCase().includes('moderate') ||
+                                                plot.floodRisk?.toLowerCase().includes('medium');
+
+                                            return (
+                                                <div
+                                                    key={plot.id}
+                                                    className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3 hover:border-emerald-300 transition shadow-sm flex flex-col justify-between"
+                                                >
+                                                    <div className="space-y-2.5">
+                                                        <div className="flex justify-between items-start gap-2">
+                                                            <div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                                                        {plot.id}
                                                                     </span>
-                                                                )}
+                                                                    {plot.isVerified && (
+                                                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                            Verified
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <h4 className="font-semibold text-sm mt-1.5 text-slate-900 leading-snug">
+                                                                    {plot.title}
+                                                                </h4>
                                                             </div>
-                                                            <h4 className="font-semibold text-sm mt-1.5 text-slate-900 leading-snug">
-                                                                {plot.title}
-                                                            </h4>
+                                                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 whitespace-nowrap shrink-0">
+                                                                {plot.price}
+                                                            </span>
                                                         </div>
-                                                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 whitespace-nowrap shrink-0">
-                                                            {plot.price}
-                                                        </span>
-                                                    </div>
 
                                                     <div className="text-xs text-slate-500 space-y-1.5 pt-0.5">
                                                         <p className="flex items-center gap-1.5 text-slate-600">
@@ -456,14 +643,33 @@ function ChatInterface() {
                 {loading && (
                     <div className="flex items-center gap-2.5 text-slate-500 text-xs italic ml-11 py-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-emerald-700" />
-                        NAQSHAI is querying live Supabase inventory and calculating risk metrics...
+                        NAQSHAI Advisor is thinking...
                     </div>
                 )}
                 <div ref={chatEndRef} />
+                </div>
             </main>
 
             {/* Input Form */}
             <footer className="p-4 border-t border-slate-200 bg-white shrink-0">
+                {/* Subtle Inline Voice Error Banner */}
+                {voiceError && (
+                    <div className="max-w-4xl mx-auto mb-2 px-3.5 py-2 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-700 animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                            <span>{voiceError}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setVoiceError('')}
+                            className="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-0.5 cursor-pointer"
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                )}
+
+                {/* Model Loading State Banner */}
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
@@ -474,14 +680,49 @@ function ChatInterface() {
                     <input
                         type="text"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Type in English, Roman Urdu (e.g. Islamabad me plot chahiye), or اردو..."
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-slate-800 placeholder:text-slate-400"
+                        onChange={(e) => {
+                            setInput(e.target.value);
+                            wasVoiceInputRef.current = false;
+                        }}
+                        placeholder={
+                            isListening
+                                ? "Listening... Speak in English now"
+                                : "Type in English, Roman Urdu (e.g. Islamabad me plot chahiye), or اردو..."
+                        }
+                        className={`flex-1 bg-slate-50 border rounded-xl px-4 py-3 text-sm focus:outline-none transition text-slate-800 placeholder:text-slate-400 ${
+                            isListening
+                                ? 'border-red-400 ring-2 ring-red-100 bg-red-50/20'
+                                : 'border-slate-200 focus:border-emerald-500'
+                        }`}
                     />
+
+                    {/* Speech-to-Text Microphone Input Button (English en-US) */}
+                    <button
+                        type="button"
+                        onClick={toggleListening}
+                        className={`p-3 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center relative ${
+                            isListening
+                                ? 'bg-red-600 hover:bg-red-700 text-white ring-4 ring-red-100 animate-pulse'
+                                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 hover:text-emerald-700'
+                        }`}
+                        title={
+                            isListening
+                                ? 'Stop listening'
+                                : 'Voice Input (English - Speech to Text)'
+                        }
+                    >
+                        {isListening ? (
+                            <MicOff className="w-4 h-4" />
+                        ) : (
+                            <Mic className="w-4 h-4" />
+                        )}
+                    </button>
+
                     <button
                         type="submit"
                         disabled={loading || !input.trim()}
                         className="p-3 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl transition shadow-sm cursor-pointer"
+                        title="Send Message"
                     >
                         <Send className="w-4 h-4" />
                     </button>
