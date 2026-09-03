@@ -7,11 +7,34 @@ import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
 import AmenityScoreCard from '@/components/AmenityScoreCard';
-import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home, Loader2, RefreshCw, User, LogOut } from 'lucide-react';
+import {
+  Search,
+  ShieldAlert,
+  Phone,
+  MapPin,
+  Eye,
+  X,
+  ArrowLeft,
+  MessageSquare,
+  Home,
+  Loader2,
+  RefreshCw,
+  User,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Maximize2,
+  Minimize2,
+  Navigation,
+  Compass,
+  SlidersHorizontal,
+  Building2,
+  Layers,
+  GripVertical
+} from 'lucide-react';
 
 const mapContainerStyle = {
   width: '100%',
-  height: '100vh',
+  height: '100%',
 };
 
 // Fallback camera only — used before plots load or when no plot has geometry.
@@ -20,8 +43,7 @@ const DEFAULT_ZOOM = 12;
 const MAX_AUTO_ZOOM = 18;
 
 // Below this zoom, show the green availability-marker layer (clustered). At/above it,
-// individual plot polygons take over. Clustering stops just under this level so the
-// markers fully separate into individual pins before the boundaries appear.
+// individual plot polygons take over.
 const POLYGON_MIN_ZOOM = 16;
 
 // Programmatically generated green "availability" pin (SVG data URI — no image asset).
@@ -53,12 +75,84 @@ function ExploreContent() {
 
   const [map, setMap] = useState(null);
   const [session, setSession] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [is3DMode, setIs3DMode] = useState(false);
   const [hoveredPlotId, setHoveredPlotId] = useState(null);
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM); // drives the marker-layer ↔ polygon transition
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  // Split-Screen Interface States
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isPlacesSearchOpen, setIsPlacesSearchOpen] = useState(true);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+  const [activeCityFilter, setActiveCityFilter] = useState('ALL');
+
+  // Resizable Split Pane States (300px min - 600px max, default 400px)
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
+
+  // Restore saved width from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedWidth = localStorage.getItem('naqshai_explorer_sidebar_width');
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (!Number.isNaN(parsed) && parsed >= 300 && parsed <= 600) {
+          setSidebarWidth(parsed);
+        }
+      }
+    } catch (_) {}
+  }, []);
+
+  // Handle Dragging to Resize Sidebar
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDraggingRef.current) return;
+      const newWidth = Math.max(300, Math.min(600, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      // Persist width to localStorage
+      setSidebarWidth((latest) => {
+        try {
+          localStorage.setItem('naqshai_explorer_sidebar_width', String(latest));
+        } catch (_) {}
+        return latest;
+      });
+
+      // Recalculate Google Maps bounds & viewport
+      if (mapRef.current && window.google?.maps?.event) {
+        window.google.maps.event.trigger(mapRef.current, 'resize');
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  // Google Places Autocomplete input ref
+  const placesInputRef = useRef(null);
+  const autocompleteInstanceRef = useRef(null);
 
   // Auth session state check
   useEffect(() => {
@@ -91,28 +185,24 @@ function ExploreContent() {
     router.refresh();
   };
 
-  // Database-backed plot data.
+  // Database-backed plot data
   const [plots, setPlots] = useState([]);
   const [plotsLoading, setPlotsLoading] = useState(true);
   const [plotsError, setPlotsError] = useState(null);
 
   const mapRef = useRef(null);
-  const didFitRef = useRef(false); // ensures we auto-fit the camera only once
-  const plotParamRef = useRef(plotParam); // latest deep-link param, read without re-fetching
-  const clustererRef = useRef(null); // active MarkerClusterer instance (marker layer)
-  const markersRef = useRef([]); // google.maps.Marker instances backing the clusterer
+  const didFitRef = useRef(false);
+  const plotParamRef = useRef(plotParam);
+  const clustererRef = useRef(null);
+  const markersRef = useRef([]);
 
-  const [reloadKey, setReloadKey] = useState(0); // bump to re-run the fetch (retry)
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Keep the deep-link ref current without triggering re-fetches.
   useEffect(() => {
     plotParamRef.current = plotParam;
   }, [plotParam]);
 
-  // --- Data fetching -------------------------------------------------------
-  // The fetch lives inside the effect as an async callback, so state is only set in
-  // the awaited continuation — never synchronously in the effect body. `reloadKey`
-  // re-runs it for retry; `cancelled` guards against setState-after-unmount.
+  // Data fetching
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -124,16 +214,14 @@ function ExploreContent() {
         const list = Array.isArray(data.plots) ? data.plots : [];
         setPlots(list);
         setPlotsError(null);
-        didFitRef.current = false; // re-fit after a fresh load / retry
+        didFitRef.current = false;
 
-        // Deep-link: open ?plot=<id> once its data is available.
         const param = plotParamRef.current;
         if (param) {
           const match = list.find((p) => p.id.toLowerCase() === param.toLowerCase());
           if (match) {
             setSelectedPlot(match);
-            setSearchQuery(match.name);
-            didFitRef.current = true; // focusing a specific plot; skip auto-fit
+            didFitRef.current = true;
           }
         }
       } catch (err) {
@@ -150,14 +238,13 @@ function ExploreContent() {
     };
   }, [reloadKey]);
 
-  // Retry from the error state — reset to loading and re-run the fetch effect.
   const handleRetry = useCallback(() => {
     setPlotsLoading(true);
     setPlotsError(null);
     setReloadKey((k) => k + 1);
   }, []);
 
-  // --- Map lifecycle -------------------------------------------------------
+  // Map lifecycle
   const onLoad = useCallback((mapInstance) => {
     mapRef.current = mapInstance;
     setMap(mapInstance);
@@ -168,14 +255,11 @@ function ExploreContent() {
     mapRef.current = null;
   }, []);
 
-  // Track zoom (event-driven, not an effect) so the map can switch between the green
-  // availability-marker layer and the individual plot polygons.
   const handleZoomChanged = useCallback(() => {
     const z = mapRef.current?.getZoom?.();
     if (typeof z === 'number') setZoom(z);
   }, []);
 
-  // Fit the viewport to every plot that has valid geometry. Returns whether it did.
   const fitToPlots = useCallback((mapInstance, plotList) => {
     if (!mapInstance || typeof window === 'undefined' || !window.google?.maps) return false;
     const withGeo = plotList.filter((p) => p.hasGeometry && p.paths.length);
@@ -184,7 +268,6 @@ function ExploreContent() {
       const bounds = new window.google.maps.LatLngBounds();
       withGeo.forEach((p) => p.paths.forEach((pt) => bounds.extend(pt)));
       mapInstance.fitBounds(bounds);
-      // Prevent over-zoom when there's a single small plot.
       window.google.maps.event.addListenerOnce(mapInstance, 'idle', () => {
         if (mapInstance.getZoom() > MAX_AUTO_ZOOM) mapInstance.setZoom(MAX_AUTO_ZOOM);
       });
@@ -195,14 +278,23 @@ function ExploreContent() {
     }
   }, []);
 
+  // Select plot and focus
   const handleSelectPlot = useCallback((plot) => {
     setSelectedPlot(plot);
-    setSearchQuery(plot.name);
-    setIsDropdownOpen(false);
     setIs3DMode(false);
   }, []);
 
-  // Auto-fit the camera once, after the map + plots are ready (unless a plot is selected).
+  // "See on Map" action: pans, zooms, highlights and opens inspector drawer
+  const handleSeeOnMap = useCallback((plot) => {
+    setSelectedPlot(plot);
+    setIs3DMode(false);
+    if (plot.center && mapRef.current) {
+      mapRef.current.panTo(plot.center);
+      mapRef.current.setZoom(17);
+    }
+  }, []);
+
+  // Auto-fit camera once
   useEffect(() => {
     if (!map || plotsLoading || didFitRef.current || selectedPlot) return;
     if (fitToPlots(map, plots)) {
@@ -210,7 +302,7 @@ function ExploreContent() {
     }
   }, [map, plots, plotsLoading, selectedPlot, fitToPlots]);
 
-  // Pan/zoom into the selected plot.
+  // Pan into selected plot
   useEffect(() => {
     if (selectedPlot?.center && map) {
       map.panTo(selectedPlot.center);
@@ -218,10 +310,7 @@ function ExploreContent() {
     }
   }, [selectedPlot, map]);
 
-  // --- Availability marker layer (green markers + clustering) --------------
-  // Built imperatively from the same DB-backed `plots` (marker at each plot's centroid).
-  // Shown only when zoomed out; polygons take over past POLYGON_MIN_ZOOM. This effect
-  // only syncs the map (an external system) and sets no React state.
+  // Availability marker layer
   const showMarkerLayer = zoom < POLYGON_MIN_ZOOM;
 
   useEffect(() => {
@@ -229,7 +318,7 @@ function ExploreContent() {
     if (!showMarkerLayer) return undefined;
 
     const g = window.google;
-    const markerPlots = plots.filter((p) => p.center); // center exists only with valid geometry
+    const markerPlots = plots.filter((p) => p.center);
     if (!markerPlots.length) return undefined;
 
     const { MarkerClusterer, SuperClusterAlgorithm } = GoogleMapsMarkerClusterer;
@@ -241,14 +330,12 @@ function ExploreContent() {
       labelOrigin: new g.maps.Point(18, 18),
     };
 
-    // One green marker per registered plot; click reuses the existing details flow.
     const markers = markerPlots.map((plot) => {
       const marker = new g.maps.Marker({ position: plot.center, icon: pinIcon, title: plot.name });
       marker.addListener('click', () => handleSelectPlot(plot));
       return marker;
     });
 
-    // Green cluster bubble with the count of available plots in that area.
     const renderer = {
       render: ({ count, position }) => {
         const size = count < 10 ? 46 : count < 50 ? 54 : 62;
@@ -270,7 +357,6 @@ function ExploreContent() {
       map,
       markers,
       renderer,
-      // Stop clustering just below the polygon threshold so pins fully separate first.
       algorithm: new SuperClusterAlgorithm({ radius: 130, maxZoom: POLYGON_MIN_ZOOM - 1 }),
     });
 
@@ -281,9 +367,7 @@ function ExploreContent() {
       try {
         clusterer.clearMarkers();
         clusterer.setMap(null);
-      } catch (e) {
-        /* clusterer teardown is best-effort */
-      }
+      } catch (e) {}
       markers.forEach((m) => {
         g.maps.event.clearInstanceListeners(m);
         m.setMap(null);
@@ -293,35 +377,83 @@ function ExploreContent() {
     };
   }, [map, plots, showMarkerLayer, handleSelectPlot]);
 
-  const handleResetSearch = useCallback(() => {
-    setSearchQuery('');
-    setSelectedPlot(null);
-    setIsDropdownOpen(false);
-    setIs3DMode(false);
-    if (map) {
-      const fitted = fitToPlots(map, plots);
-      if (!fitted) {
-        map.panTo(defaultCenter);
-        map.setZoom(DEFAULT_ZOOM);
-      }
-      didFitRef.current = true;
+  // Google Places Autocomplete Initialization
+  useEffect(() => {
+    if (!map || typeof window === 'undefined' || !window.google?.maps?.places || !placesInputRef.current) {
+      return;
     }
-  }, [map, plots, fitToPlots]);
 
-  // Search filters the dropdown list only; the map always shows all registered plots.
+    try {
+      const autocomplete = new window.google.maps.places.Autocomplete(placesInputRef.current, {
+        componentRestrictions: { country: 'pk' },
+        fields: ['geometry', 'name', 'formatted_address']
+      });
+
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place?.geometry?.location && map) {
+          map.panTo(place.geometry.location);
+          map.setZoom(15);
+        }
+      });
+
+      autocompleteInstanceRef.current = autocomplete;
+    } catch (e) {
+      console.warn('Google Places Autocomplete initialization notice:', e);
+    }
+
+    return () => {
+      if (autocompleteInstanceRef.current && window.google?.maps?.event) {
+        window.google.maps.event.clearInstanceListeners(autocompleteInstanceRef.current);
+      }
+    };
+  }, [map]);
+
+  // Sidebar Filter Logic
+  const uniqueCities = useMemo(() => {
+    const set = new Set();
+    plots.forEach((p) => {
+      if (p.city && p.city.trim()) {
+        set.add(p.city.trim());
+      }
+    });
+    return Array.from(set);
+  }, [plots]);
+
   const filteredPlots = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return plots;
-    return plots.filter((plot) =>
-      (plot.name || '').toLowerCase().includes(q) ||
-      (plot.society || '').toLowerCase().includes(q) ||
-      (plot.id || '').toLowerCase().includes(q) ||
-      (plot.city || '').toLowerCase().includes(q) ||
-      (plot.price || '').toLowerCase().includes(q) ||
-      (plot.details?.size || '').toLowerCase().includes(q) ||
-      (plot.details?.floodRisk || '').toLowerCase().includes(q)
-    );
-  }, [plots, searchQuery]);
+    return plots.filter((plot) => {
+      // City filter
+      if (activeCityFilter !== 'ALL') {
+        const cityMatch = (plot.city || '').trim().toLowerCase() === activeCityFilter.toLowerCase();
+        if (!cityMatch) return false;
+      }
+
+      // Query filter
+      const q = sidebarSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+
+      return (
+        (plot.name || '').toLowerCase().includes(q) ||
+        (plot.society || '').toLowerCase().includes(q) ||
+        (plot.id || '').toLowerCase().includes(q) ||
+        (plot.city || '').toLowerCase().includes(q) ||
+        (plot.price || '').toLowerCase().includes(q) ||
+        (plot.details?.size || '').toLowerCase().includes(q) ||
+        (plot.details?.floodRisk || '').toLowerCase().includes(q)
+      );
+    });
+  }, [plots, activeCityFilter, sidebarSearchQuery]);
+
+  // Group filtered plots by city
+  const plotsByCity = useMemo(() => {
+    const groups = {};
+    filteredPlots.forEach((plot) => {
+      const cityName = (plot.city && plot.city.trim()) || 'Islamabad';
+      if (!groups[cityName]) groups[cityName] = [];
+      groups[cityName].push(plot);
+    });
+    return groups;
+  }, [filteredPlots]);
 
   const showEmptyState = !plotsLoading && !plotsError && plots.length === 0;
 
@@ -332,418 +464,618 @@ function ExploreContent() {
         if (!isLoaded) return <div className="p-4 text-slate-500">Loading Map...</div>;
 
         return (
-          <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800">
-
-      {/* 2. Navigation Bridge (Home, Sell Plot & Back to AI Advisor) */}
-      <div className="absolute top-3 right-6 z-20 flex items-center gap-3">
-        <button
-          onClick={() => router.push('/sell')}
-          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
-        >
-          <span>List Your Plot</span>
-        </button>
-        <button
-          onClick={() => router.push('/')}
-          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
-        >
-          <Home className="w-4 h-4 text-emerald-700" />
-          <span>Home</span>
-        </button>
-        <button
-          onClick={() => router.push('/recommend')}
-          className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4 text-emerald-700" />
-          <span>Back to AI Advisor</span>
-        </button>
-
-        {session?.user ? (
-          <UserNav
-            session={session}
-            onSignOut={handleSignOut}
-            onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
-            className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-2 py-1"
-          />
-        ) : (
-          <button
-            onClick={() => router.push('/login?redirect=/explore')}
-            className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
-          >
-            <User className="w-4 h-4 text-emerald-700" />
-            <span>Sign In</span>
-          </button>
-        )}
-      </div>
-
-      {/* 3. Floating Command Center (Search & Filters) */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-md px-4 sm:px-0">
-        <div className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-3 space-y-2">
-
-          {/* Search Bar Input */}
-          <div className="relative">
-            <div className="relative flex items-center bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-8 py-1.5">
-              <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
-              <input
-                type="text"
-                placeholder="Search plot, society, or ID..."
-                className="w-full outline-none text-sm text-slate-800 placeholder:text-slate-400 bg-transparent"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsDropdownOpen(true);
-                }}
-                onFocus={() => setIsDropdownOpen(true)}
-              />
-              {searchQuery && (
+          <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800 flex flex-col">
+            {/* Top Navigation Bar */}
+            <header className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between z-20 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={handleResetSearch}
-                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  title="Clear search and reset map"
+                  onClick={() => setIsSidebarOpen((prev) => !prev)}
+                  className="p-2 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition flex items-center gap-1.5 text-xs font-semibold"
+                  title={isSidebarOpen ? 'Collapse plot list to maximize map' : 'Expand plot list'}
                 >
-                  <X className="w-4 h-4" />
+                  {isSidebarOpen ? (
+                    <>
+                      <PanelLeftClose className="w-4 h-4 text-emerald-700" />
+                      <span className="hidden sm:inline">Maximize Map</span>
+                    </>
+                  ) : (
+                    <>
+                      <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
+                      <span className="hidden sm:inline">Show Plots</span>
+                    </>
+                  )}
                 </button>
-              )}
-            </div>
 
-            {/* Dropdown Results */}
-            {isDropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-30 max-h-60 overflow-y-auto">
-                {plotsLoading ? (
-                  <div className="p-3 text-xs text-slate-500 text-center flex items-center justify-center gap-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" /> Loading registered plots…
-                  </div>
-                ) : filteredPlots.length > 0 ? (
-                  filteredPlots.map((plot) => (
-                    <button
-                      key={plot.id}
-                      onClick={() => handleSelectPlot(plot)}
-                      className="w-full text-left px-4 py-3 hover:bg-emerald-50/70 transition border-b border-slate-100 last:border-0 flex items-start space-x-2.5"
-                    >
-                      <MapPin className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center">
-                          <p className="text-sm font-semibold text-slate-800">{plot.name}</p>
-                          <span className="text-xs font-bold text-emerald-700">{plot.price}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {plot.society ? `${plot.society}, ` : ''}{plot.city} • {plot.id}
-                        </p>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-3 text-xs text-slate-500 text-center">No matching plots found</div>
-                )}
+                <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                  <span className="font-bold text-sm text-slate-900 tracking-tight flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-emerald-700" />
+                    NAQSHAI Explorer
+                  </span>
+                  <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full hidden sm:inline-block">
+                    {plotsLoading ? 'Loading…' : `${plots.length} Verified Plots`}
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Filter Pills Row */}
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pt-0.5">
-            <button
-              onClick={() => {
-                setSearchQuery('Low');
-                setIsDropdownOpen(true);
-              }}
-              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
-            >
-              Low Flood Risk
-            </button>
-            <button
-              onClick={() => {
-                setSearchQuery('10 Marla');
-                setIsDropdownOpen(true);
-              }}
-              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
-            >
-              10 Marla
-            </button>
-            <button
-              onClick={() => {
-                setSearchQuery('Crore');
-                setIsDropdownOpen(true);
-              }}
-              className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition whitespace-nowrap"
-            >
-              Priced in Crore
-            </button>
-          </div>
-
-          {/* Registered plot count / reset */}
-          <div className="pt-1 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-400 font-mono">
-              {plotsLoading
-                ? 'Loading…'
-                : `${plots.length} registered plot${plots.length === 1 ? '' : 's'}`}
-            </span>
-            {selectedPlot && (
-              <button
-                onClick={handleResetSearch}
-                className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 py-1 px-2 rounded-lg transition"
-              >
-                Reset view
-              </button>
-            )}
-          </div>
-
-        </div>
-      </div>
-
-      {/* 1. Google Map Container (3D terrain) */}
-      <GoogleMapsSafeLoader>
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          center={defaultCenter}
-          zoom={DEFAULT_ZOOM}
-          onLoad={onLoad}
-          onUnmount={onUnmount}
-          onZoomChanged={handleZoomChanged}
-          onIdle={handleZoomChanged}
-          options={{
-            mapTypeId: 'terrain',
-            disableDefaultUI: false,
-            zoomControl: true,
-          }}
-        >
-          {/* Render real plot boundary polygons from the database.
-              Hidden while zoomed out (the green marker layer represents them there);
-              the selected plot's polygon always renders so its highlight stays visible. */}
-          {plots.map((plot) => {
-            if (!plot.hasGeometry) return null;
-            const isSelected = selectedPlot?.id?.toLowerCase() === plot.id.toLowerCase();
-            if (zoom < POLYGON_MIN_ZOOM && !isSelected) return null;
-            const isHovered = hoveredPlotId === plot.id;
-            return (
-              <Polygon
-                key={plot.id}
-                paths={plot.paths}
-                onClick={() => handleSelectPlot(plot)}
-                onMouseOver={() => setHoveredPlotId(plot.id)}
-                onMouseOut={() => setHoveredPlotId((cur) => (cur === plot.id ? null : cur))}
-                options={{
-                  fillColor: isSelected ? '#10b981' : isHovered ? '#34d399' : '#94a3b8',
-                  fillOpacity: isSelected ? 0.25 : isHovered ? 0.22 : 0.15,
-                  strokeColor: isSelected ? '#047857' : isHovered ? '#059669' : '#64748b',
-                  strokeWeight: isSelected ? 4 : isHovered ? 3 : 2,
-                  zIndex: isSelected ? 99 : isHovered ? 50 : 1,
-                  clickable: true,
-                }}
-              />
-            );
-          })}
-
-          {/* Selected Plot Marker Pin */}
-          {selectedPlot && selectedPlot.center && (
-            <Marker
-              position={selectedPlot.center}
-              title={selectedPlot.name}
-            />
-          )}
-
-          {/* 3D Walkthrough View */}
-          {is3DMode && selectedPlot && selectedPlot.center && (
-            <StreetViewPanorama
-              position={selectedPlot.center}
-              visible={is3DMode}
-              options={{
-                pov: { heading: 100, pitch: 0 },
-                zoom: 1,
-              }}
-            />
-          )}
-        </GoogleMap>
-      </GoogleMapsSafeLoader>
-
-      {/* Data status overlays: loading / error / empty (non-blocking card) */}
-      {(plotsLoading || plotsError || showEmptyState) && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-4">
-          <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg rounded-2xl px-6 py-5 max-w-sm w-full text-center">
-            {plotsLoading ? (
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-6 h-6 text-emerald-700 animate-spin" />
-                <p className="text-sm font-semibold text-slate-800">Loading registered plots…</p>
-                <p className="text-xs text-slate-500">Fetching the latest properties from the database.</p>
-              </div>
-            ) : plotsError ? (
-              <div className="flex flex-col items-center gap-3">
-                <ShieldAlert className="w-6 h-6 text-red-500" />
-                <p className="text-sm font-semibold text-slate-800">Couldn’t load plots</p>
-                <p className="text-xs text-slate-500">{plotsError}</p>
-                <button
-                  onClick={handleRetry}
-                  className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Retry
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                <MapPin className="w-6 h-6 text-slate-400" />
-                <p className="text-sm font-semibold text-slate-800">No registered plots found</p>
-                <p className="text-xs text-slate-500">Once plots are registered, they’ll appear here on the map.</p>
+              {/* Navigation Action Links */}
+              <div className="flex items-center gap-2.5">
                 <button
                   onClick={() => router.push('/sell')}
-                  className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
                 >
-                  List a Plot
+                  List Your Plot
                 </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+                <button
+                  onClick={() => router.push('/')}
+                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
+                >
+                  <Home className="w-3.5 h-3.5 text-emerald-700" />
+                  <span className="hidden sm:inline">Home</span>
+                </button>
+                <button
+                  onClick={() => router.push('/recommend')}
+                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-emerald-700" />
+                  <span className="hidden sm:inline">AI Advisor</span>
+                </button>
 
-      {/* Availability legend (bottom-left) — explains the green markers and current mode */}
-      {!plotsLoading && !plotsError && plots.length > 0 && (
-        <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2.5">
-          <span className="w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow shrink-0" />
-          <div className="leading-tight">
-            <p className="text-xs font-semibold text-slate-700">Available plots</p>
-            <p className="text-[11px] text-slate-400">
-              {showMarkerLayer ? 'Zoom in to see plot boundaries' : 'Showing plot boundaries'}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Slide-Out Property Inspector (Sidebar) */}
-      <div
-        className={`absolute top-0 right-0 h-full w-96 max-w-full bg-white shadow-2xl border-l border-slate-200 z-30 transform transition-transform duration-300 flex flex-col ${
-          selectedPlot ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {selectedPlot && (
-          <>
-            {/* Sidebar Header */}
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <span className="font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700 text-xs font-bold">
-                  {selectedPlot.id}
-                </span>
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                  {selectedPlot.price}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedPlot(null)}
-                className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Sidebar Content (Scrollable) */}
-            <div className="p-5 flex-1 overflow-y-auto space-y-5 text-slate-800">
-
-              {/* Title & Location */}
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 leading-snug">{selectedPlot.name}</h2>
-                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>{selectedPlot.society ? `${selectedPlot.society}, ` : ''}{selectedPlot.city}</span>
-                </p>
-              </div>
-
-              {/* 3D Walkthrough Toggle */}
-              <button
-                onClick={() => setIs3DMode(!is3DMode)}
-                disabled={!selectedPlot.center}
-                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 font-medium py-2.5 px-4 rounded-xl border border-slate-200 transition text-xs shadow-sm"
-              >
-                <Eye className="w-4 h-4 text-emerald-700" />
-                <span>
-                  {!selectedPlot.center
-                    ? 'Walkthrough Unavailable (No Boundary)'
-                    : is3DMode
-                    ? 'Exit 3D Walkthrough'
-                    : 'Launch 3D Walkthrough'}
-                </span>
-              </button>
-
-              {/* Architectural Breakdown */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Architectural Breakdown</h3>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 block text-[11px]">Plot Size</span>
-                    <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.size}</span>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 block text-[11px]">Category</span>
-                    <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.category || 'Residential'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Risk Intelligence Badges */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
-                <div className="flex flex-wrap gap-2 pt-0.5">
-                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                    <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
-                    Flood: {selectedPlot.details.floodRisk}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                    Noise: {selectedPlot.details.noiseLevel}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                    Elevation: {selectedPlot.details.elevation}
-                  </span>
-                </div>
-              </div>
-
-              {/* Interactive Neighborhood Amenity Scoring */}
-              <AmenityScoreCard
-                plotId={selectedPlot.id}
-                lat={selectedPlot.center?.lat}
-                lng={selectedPlot.center?.lng}
-              />
-
-              {/* Landmarks & Proximity */}
-              <div className="space-y-1.5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Landmarks & Proximity</h3>
-                <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-                  {selectedPlot.details.landmarks}
-                </p>
-              </div>
-
-              {/* WhatsApp Secondary Link */}
-              <div className="pt-2">
-                {selectedPlot.ownerContact ? (
-                  <a
-                    href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 px-4 rounded-xl transition text-xs shadow-sm"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Contact Owner via WhatsApp</span>
-                  </a>
+                {session?.user ? (
+                  <UserNav
+                    session={session}
+                    onSignOut={handleSignOut}
+                    onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
+                    className="bg-white border border-slate-200 shadow-xs rounded-xl px-2 py-0.5"
+                  />
                 ) : (
-                  <div className="w-full text-center text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-xl py-2.5">
-                    Owner contact not available
-                  </div>
+                  <button
+                    onClick={() => router.push('/login?redirect=/explore')}
+                    className="bg-white border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
+                  >
+                    <User className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Sign In</span>
+                  </button>
                 )}
               </div>
+            </header>
 
-            </div>
-
-            {/* Sidebar Footer / CTA */}
-            <div className="p-4 border-t border-slate-200 bg-white">
-              <button
-                onClick={() => router.push(`/recommend?context=${selectedPlot.id}`)}
-                className="bg-emerald-700 hover:bg-emerald-600 text-white w-full py-3 rounded-xl font-semibold flex justify-center items-center gap-2 text-sm shadow-sm transition"
+            {/* Split View Body: Left Sidebar + Right Map */}
+            <div className="flex-1 flex overflow-hidden relative">
+              {/* LEFT SIDEBAR: Available Plots List (Grouped by City) */}
+              <aside
+                style={{
+                  width: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+                  transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                className="bg-white border-r border-slate-200 flex flex-col h-full z-10 shrink-0 overflow-hidden"
               >
-                <MessageSquare className="w-4 h-4" />
-                <span>Discuss with AI</span>
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+                {/* Sidebar Header with Internal Filter & City Tabs */}
+                <div className="p-3.5 border-b border-slate-200 space-y-3 bg-slate-50/70 shrink-0">
+                  {/* Search Plots Input & Width Presets */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-xs focus-within:border-emerald-500 transition">
+                      <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Search by society, size, or plot ID..."
+                        value={sidebarSearchQuery}
+                        onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                        className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                      />
+                      {sidebarSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSidebarSearchQuery('')}
+                          className="text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
-    </div>
+                    {/* Width Preset Buttons (S / M / L) */}
+                    <div className="hidden sm:flex items-center gap-0.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs shrink-0">
+                      {[
+                        { label: 'S', width: 320, title: 'Compact width (320px)' },
+                        { label: 'M', width: 400, title: 'Default width (400px)' },
+                        { label: 'L', width: 520, title: 'Wide width (520px)' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setSidebarWidth(preset.width);
+                            try {
+                              localStorage.setItem('naqshai_explorer_sidebar_width', String(preset.width));
+                            } catch (_) {}
+                            if (mapRef.current && window.google?.maps?.event) {
+                              setTimeout(() => window.google.maps.event.trigger(mapRef.current, 'resize'), 250);
+                            }
+                          }}
+                          className={`w-5 h-6 flex items-center justify-center rounded text-[10px] font-mono font-bold transition ${
+                            sidebarWidth === preset.width
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
+                          }`}
+                          title={preset.title}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* City Filter Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setActiveCityFilter('ALL')}
+                      className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition whitespace-nowrap ${
+                        activeCityFilter === 'ALL'
+                          ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                      }`}
+                    >
+                      All Cities ({plots.length})
+                    </button>
+                    {uniqueCities.map((city) => {
+                      const count = plots.filter((p) => (p.city || '').trim().toLowerCase() === city.toLowerCase()).length;
+                      return (
+                        <button
+                          key={city}
+                          type="button"
+                          onClick={() => setActiveCityFilter(city)}
+                          className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition whitespace-nowrap ${
+                            activeCityFilter.toLowerCase() === city.toLowerCase()
+                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                          }`}
+                        >
+                          {city} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Sidebar Scrollable Plot List */}
+                <div className="flex-1 overflow-y-auto p-3.5 space-y-5">
+                  {plotsLoading ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 space-y-2.5">
+                      <Loader2 className="w-6 h-6 animate-spin text-emerald-700" />
+                      <p className="text-xs font-medium">Loading verified properties…</p>
+                    </div>
+                  ) : plotsError ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center space-y-2">
+                      <ShieldAlert className="w-5 h-5 text-red-600 mx-auto" />
+                      <p className="text-xs text-red-700">{plotsError}</p>
+                      <button
+                        onClick={handleRetry}
+                        className="text-xs font-semibold text-emerald-700 underline"
+                      >
+                        Retry Loading
+                      </button>
+                    </div>
+                  ) : Object.keys(plotsByCity).length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs">
+                      No matching plots found for this filter.
+                    </div>
+                  ) : (
+                    Object.entries(plotsByCity).map(([city, cityPlots]) => (
+                      <div key={city} className="space-y-2.5">
+                        {/* City Group Header */}
+                        <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-xs py-1 z-1 border-b border-slate-100">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 font-mono flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-700" />
+                            {city}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                            {cityPlots.length} {cityPlots.length === 1 ? 'plot' : 'plots'}
+                          </span>
+                        </div>
+
+                        {/* City Plot Cards */}
+                        <div className="space-y-2.5">
+                          {cityPlots.map((plot) => {
+                            const isSelected = selectedPlot?.id === plot.id;
+                            const isLowFlood = plot.details?.floodRisk?.toLowerCase().includes('low');
+
+                            return (
+                              <div
+                                key={plot.id}
+                                className={`rounded-xl border p-3.5 transition flex flex-col justify-between space-y-2.5 shadow-xs ${
+                                  isSelected
+                                    ? 'border-emerald-600 bg-emerald-50/20 ring-1 ring-emerald-500/30'
+                                    : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm'
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                          {plot.id}
+                                        </span>
+                                        {plot.isVerified && (
+                                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                            Verified
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h4 className="font-bold text-xs text-slate-900 mt-1 leading-snug">
+                                        {plot.name}
+                                      </h4>
+                                    </div>
+                                    <span className="text-xs font-extrabold text-emerald-700 whitespace-nowrap bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                      {plot.price}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span>
+                                      {plot.society ? `${plot.society}, ` : ''}{plot.city}
+                                    </span>
+                                  </p>
+                                </div>
+
+                                {/* Spec Badges */}
+                                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                    {plot.details?.size || 'Plot'}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded border font-medium ${
+                                      isLowFlood
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                    }`}
+                                  >
+                                    Flood: {plot.details?.floodRisk || 'N/A'}
+                                  </span>
+                                  {plot.details?.elevation && (
+                                    <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {plot.details.elevation}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* "See on Map" Action Button */}
+                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSeeOnMap(plot)}
+                                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                      isSelected
+                                        ? 'bg-emerald-700 text-white shadow-xs'
+                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                    }`}
+                                  >
+                                    <MapPin className="w-3.5 h-3.5" />
+                                    <span>{isSelected ? 'Viewing on Map' : 'See on Map'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </aside>
+
+              {/* Resizable Divider Handle (Draggable Splitter) */}
+              {isSidebarOpen && (
+                <div
+                  onMouseDown={handleMouseDown}
+                  className={`w-2 hover:w-2.5 bg-slate-200 hover:bg-emerald-500 active:bg-emerald-600 cursor-col-resize z-20 flex items-center justify-center transition-colors relative select-none group shrink-0 ${
+                    isDragging ? 'bg-emerald-600 w-2.5 shadow-md' : ''
+                  }`}
+                  title="Drag to resize sidebar width (300px - 600px)"
+                >
+                  <div className="w-0.5 h-8 rounded-full bg-slate-400 group-hover:bg-white transition-colors" />
+                </div>
+              )}
+
+              {/* RIGHT AREA: Interactive Google Maps Viewport */}
+              <main className="flex-1 h-full relative overflow-hidden">
+                {/* Floating Google Places Search Bar Overlay */}
+                <div className="absolute top-3.5 left-4 z-20 flex items-center gap-2 max-w-sm sm:max-w-md w-full">
+                  {/* Toggle Sidebar Button when sidebar is collapsed */}
+                  {!isSidebarOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSidebarOpen(true)}
+                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition flex items-center gap-1.5 text-xs font-semibold shrink-0"
+                      title="Show plot list"
+                    >
+                      <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
+                      <span className="hidden sm:inline">Plots</span>
+                    </button>
+                  )}
+
+                  {/* Hideable Places Search Box */}
+                  {isPlacesSearchOpen ? (
+                    <div className="flex-1 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2 transition-all">
+                      <Compass className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <input
+                        ref={placesInputRef}
+                        type="text"
+                        placeholder="Search real-world locations, landmarks, cities..."
+                        className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsPlacesSearchOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                        title="Hide Google Places search bar"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsPlacesSearchOpen(true)}
+                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold"
+                      title="Show Google Places search bar"
+                    >
+                      <Compass className="w-4 h-4 text-emerald-700" />
+                      <span>Search Places</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 1. Google Map Container */}
+                <GoogleMap
+                  mapContainerStyle={mapContainerStyle}
+                  center={defaultCenter}
+                  zoom={DEFAULT_ZOOM}
+                  onLoad={onLoad}
+                  onUnmount={onUnmount}
+                  onZoomChanged={handleZoomChanged}
+                  options={{
+                    disableDefaultUI: false,
+                    zoomControl: true,
+                    mapTypeControl: true,
+                    streetViewControl: false,
+                    fullscreenControl: false,
+                    mapTypeId: is3DMode ? 'hybrid' : 'roadmap',
+                  }}
+                >
+                  {/* 2. Individual Plot Polygons (Zoom >= POLYGON_MIN_ZOOM) */}
+                  {!showMarkerLayer &&
+                    plots.map((plot) => {
+                      if (!plot.hasGeometry || !plot.paths.length) return null;
+                      const isSelected = selectedPlot?.id === plot.id;
+                      const isHovered = hoveredPlotId === plot.id;
+
+                      const strokeColor = isSelected ? '#047857' : isHovered ? '#059669' : '#059669';
+                      const fillColor = isSelected ? '#059669' : isHovered ? '#10b981' : '#10b981';
+
+                      return (
+                        <Polygon
+                          key={plot.id}
+                          paths={plot.paths}
+                          options={{
+                            strokeColor,
+                            strokeOpacity: 0.95,
+                            strokeWeight: isSelected ? 3 : 2,
+                            fillColor,
+                            fillOpacity: isSelected ? 0.45 : isHovered ? 0.35 : 0.22,
+                            clickable: true,
+                            zIndex: isSelected ? 100 : isHovered ? 50 : 1,
+                          }}
+                          onClick={() => handleSelectPlot(plot)}
+                          onMouseOver={() => setHoveredPlotId(plot.id)}
+                          onMouseOut={() => setHoveredPlotId(null)}
+                        />
+                      );
+                    })}
+
+                  {/* 3. Street View 3D Panorama */}
+                  {is3DMode && selectedPlot?.center && (
+                    <StreetViewPanorama
+                      position={selectedPlot.center}
+                      visible={is3DMode}
+                      options={{
+                        pov: { heading: 100, pitch: 0 },
+                        zoom: 1,
+                      }}
+                    />
+                  )}
+                </GoogleMap>
+
+                {/* Data status overlays */}
+                {(plotsLoading || plotsError || showEmptyState) && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-4">
+                    <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg rounded-2xl px-6 py-5 max-w-sm w-full text-center">
+                      {plotsLoading ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="w-6 h-6 text-emerald-700 animate-spin" />
+                          <p className="text-sm font-semibold text-slate-800">Loading registered plots…</p>
+                          <p className="text-xs text-slate-500">Fetching the latest properties from the database.</p>
+                        </div>
+                      ) : plotsError ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <ShieldAlert className="w-6 h-6 text-red-500" />
+                          <p className="text-sm font-semibold text-slate-800">Couldn’t load plots</p>
+                          <p className="text-xs text-slate-500">{plotsError}</p>
+                          <button
+                            onClick={handleRetry}
+                            className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" /> Retry
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3">
+                          <MapPin className="w-6 h-6 text-slate-400" />
+                          <p className="text-sm font-semibold text-slate-800">No registered plots found</p>
+                          <p className="text-xs text-slate-500">Once plots are registered, they’ll appear here on the map.</p>
+                          <button
+                            onClick={() => router.push('/sell')}
+                            className="mt-1 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-sm"
+                          >
+                            List a Plot
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Availability legend (bottom-left) */}
+                {!plotsLoading && !plotsError && plots.length > 0 && (
+                  <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2.5">
+                    <span className="w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow-xs shrink-0" />
+                    <div className="leading-tight">
+                      <p className="text-xs font-semibold text-slate-700">Available plots</p>
+                      <p className="text-[11px] text-slate-400">
+                        {showMarkerLayer ? 'Zoom in to see plot boundaries' : 'Showing plot boundaries'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Slide-Out Property Inspector (Sidebar Drawer) */}
+                <div
+                  className={`absolute top-0 right-0 h-full w-96 max-w-full bg-white shadow-2xl border-l border-slate-200 z-30 transform transition-transform duration-300 flex flex-col ${
+                    selectedPlot ? 'translate-x-0' : 'translate-x-full'
+                  }`}
+                >
+                  {selectedPlot && (
+                    <>
+                      {/* Sidebar Header */}
+                      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700 text-xs font-bold">
+                            {selectedPlot.id}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                            {selectedPlot.price}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setSelectedPlot(null)}
+                          className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Sidebar Content (Scrollable) */}
+                      <div className="p-5 flex-1 overflow-y-auto space-y-5 text-slate-800">
+                        {/* Title & Location */}
+                        <div>
+                          <h2 className="text-lg font-bold text-slate-900 leading-snug">{selectedPlot.name}</h2>
+                          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{selectedPlot.society ? `${selectedPlot.society}, ` : ''}{selectedPlot.city}</span>
+                          </p>
+                        </div>
+
+                        {/* 3D Walkthrough Toggle */}
+                        <button
+                          onClick={() => setIs3DMode(!is3DMode)}
+                          disabled={!selectedPlot.center}
+                          className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 font-medium py-2.5 px-4 rounded-xl border border-slate-200 transition text-xs shadow-xs"
+                        >
+                          <Eye className="w-4 h-4 text-emerald-700" />
+                          <span>
+                            {!selectedPlot.center
+                              ? 'Walkthrough Unavailable (No Boundary)'
+                              : is3DMode
+                              ? 'Exit 3D Walkthrough'
+                              : 'Launch 3D Walkthrough'}
+                          </span>
+                        </button>
+
+                        {/* Architectural Breakdown */}
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Architectural Breakdown</h3>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Plot Size</span>
+                              <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.size}</span>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Category</span>
+                              <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.category || 'Residential'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Risk Intelligence Badges */}
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
+                          <div className="flex flex-wrap gap-2 pt-0.5">
+                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                              <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                              Flood: {selectedPlot.details.floodRisk}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                              Noise: {selectedPlot.details.noiseLevel}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                              Elevation: {selectedPlot.details.elevation}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Neighborhood Amenity Scoring */}
+                        <AmenityScoreCard
+                          plotId={selectedPlot.id}
+                          lat={selectedPlot.center?.lat}
+                          lng={selectedPlot.center?.lng}
+                        />
+
+                        {/* Landmarks & Proximity */}
+                        <div className="space-y-1.5">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Landmarks & Proximity</h3>
+                          <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
+                            {selectedPlot.details.landmarks}
+                          </p>
+                        </div>
+
+                        {/* WhatsApp Secondary Link */}
+                        <div className="pt-2">
+                          {selectedPlot.ownerContact ? (
+                            <a
+                              href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 px-4 rounded-xl transition text-xs shadow-xs"
+                            >
+                              <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Contact Owner via WhatsApp</span>
+                            </a>
+                          ) : (
+                            <div className="w-full text-center text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-xl py-2.5">
+                              Owner contact not available
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Sidebar Footer / CTA */}
+                      <div className="p-4 border-t border-slate-200 bg-white">
+                        <button
+                          onClick={() => router.push(`/recommend?context=${selectedPlot.id}`)}
+                          className="bg-emerald-700 hover:bg-emerald-600 text-white w-full py-3 rounded-xl font-semibold flex justify-center items-center gap-2 text-sm shadow-xs transition"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          <span>Discuss with AI</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </main>
+            </div>
+          </div>
         );
       }}
     </GoogleMapsSafeLoader>
@@ -752,7 +1084,7 @@ function ExploreContent() {
 
 export default function ExplorePage() {
   return (
-    <Suspense fallback={<div className="p-4 text-slate-400">Loading Map...</div>}>
+    <Suspense fallback={<div className="p-4 text-slate-400">Loading Map Explorer...</div>}>
       <ExploreContent />
     </Suspense>
   );
