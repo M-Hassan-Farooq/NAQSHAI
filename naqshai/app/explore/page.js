@@ -150,9 +150,18 @@ function ExploreContent() {
     };
   }, []);
 
-  // Google Places Autocomplete input ref
-  const placesInputRef = useRef(null);
-  const autocompleteInstanceRef = useRef(null);
+  // Google Places Autocomplete States & Services
+  const [placesQuery, setPlacesQuery] = useState('');
+  const [placesPredictions, setPlacesPredictions] = useState([]);
+  const [isPlacesDropdownOpen, setIsPlacesDropdownOpen] = useState(false);
+  const [isPlacesLoading, setIsPlacesLoading] = useState(false);
+  const [searchedLocation, setSearchedLocation] = useState(null);
+
+  const autocompleteServiceRef = useRef(null);
+  const placesServiceRef = useRef(null);
+  const geocoderRef = useRef(null);
+  const placesSearchContainerRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
   // Auth session state check
   useEffect(() => {
@@ -377,37 +386,213 @@ function ExploreContent() {
     };
   }, [map, plots, showMarkerLayer, handleSelectPlot]);
 
-  // Google Places Autocomplete Initialization
+  // Initialize AutocompleteService and PlacesService when map is ready
   useEffect(() => {
-    if (!map || typeof window === 'undefined' || !window.google?.maps?.places || !placesInputRef.current) {
+    if (typeof window === 'undefined' || !window.google?.maps) return;
+
+    if (window.google.maps.places) {
+      if (!autocompleteServiceRef.current && window.google.maps.places.AutocompleteService) {
+        autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+      }
+      if (map && window.google.maps.places.PlacesService) {
+        placesServiceRef.current = new window.google.maps.places.PlacesService(map);
+      }
+    }
+
+    if (typeof window.google.maps.Geocoder === 'function') {
+      geocoderRef.current = new window.google.maps.Geocoder();
+    }
+  }, [map]);
+
+  // Click-outside listener to dismiss places suggestions dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (placesSearchContainerRef.current && !placesSearchContainerRef.current.contains(e.target)) {
+        setIsPlacesDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handle typing in Google Places search input
+  const handlePlacesInputChange = (val) => {
+    setPlacesQuery(val);
+    if (!val || val.trim().length < 2) {
+      setPlacesPredictions([]);
+      setIsPlacesDropdownOpen(false);
+      setIsPlacesLoading(false);
       return;
     }
 
-    try {
-      const autocomplete = new window.google.maps.places.Autocomplete(placesInputRef.current, {
-        componentRestrictions: { country: 'pk' },
-        fields: ['geometry', 'name', 'formatted_address']
-      });
+    setIsPlacesLoading(true);
+    setIsPlacesDropdownOpen(true);
 
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place?.geometry?.location && map) {
-          map.panTo(place.geometry.location);
-          map.setZoom(15);
-        }
-      });
-
-      autocompleteInstanceRef.current = autocomplete;
-    } catch (e) {
-      console.warn('Google Places Autocomplete initialization notice:', e);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
 
-    return () => {
-      if (autocompleteInstanceRef.current && window.google?.maps?.event) {
-        window.google.maps.event.clearInstanceListeners(autocompleteInstanceRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      if (!autocompleteServiceRef.current && window.google?.maps?.places?.AutocompleteService) {
+        autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+      }
+
+      if (autocompleteServiceRef.current) {
+        autocompleteServiceRef.current.getPlacePredictions(
+          {
+            input: val,
+            componentRestrictions: { country: 'pk' },
+          },
+          (results, status) => {
+            setIsPlacesLoading(false);
+            if (status === 'OK' && Array.isArray(results)) {
+              setPlacesPredictions(results);
+            } else {
+              setPlacesPredictions([]);
+            }
+          }
+        );
+      } else {
+        setIsPlacesLoading(false);
+      }
+    }, 250);
+  };
+
+  // Select place prediction from dropdown
+  const handleSelectPrediction = useCallback((prediction) => {
+    const mainTitle = prediction.structured_formatting?.main_text || prediction.description;
+    setPlacesQuery(mainTitle);
+    setIsPlacesDropdownOpen(false);
+    setPlacesPredictions([]);
+
+    const applyLocation = (lat, lng, name, address) => {
+      setSearchedLocation({ lat, lng, name, address });
+      if (mapRef.current) {
+        mapRef.current.panTo({ lat, lng });
+        mapRef.current.setZoom(15);
       }
     };
-  }, [map]);
+
+    // 1. Primary: Use PlacesService.getDetails
+    if (placesServiceRef.current && prediction.place_id) {
+      placesServiceRef.current.getDetails(
+        {
+          placeId: prediction.place_id,
+          fields: ['geometry', 'name', 'formatted_address'],
+        },
+        (place, status) => {
+          if (
+            (status === 'OK' || status === window.google?.maps?.places?.PlacesServiceStatus?.OK) &&
+            place?.geometry?.location
+          ) {
+            applyLocation(
+              place.geometry.location.lat(),
+              place.geometry.location.lng(),
+              mainTitle,
+              place.formatted_address || mainTitle
+            );
+            return;
+          }
+
+          fallbackGeocode();
+        }
+      );
+    } else {
+      fallbackGeocode();
+    }
+
+    function fallbackGeocode() {
+      if (!geocoderRef.current && typeof window.google?.maps?.Geocoder === 'function') {
+        geocoderRef.current = new window.google.maps.Geocoder();
+      }
+
+      if (geocoderRef.current) {
+        const queryParam = prediction.place_id
+          ? { placeId: prediction.place_id }
+          : { address: prediction.description, componentRestrictions: { country: 'pk' } };
+
+        geocoderRef.current.geocode(queryParam, (results, status) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            applyLocation(loc.lat(), loc.lng(), mainTitle, results[0].formatted_address);
+          }
+        });
+      }
+    }
+  }, []);
+
+  // Form submit (Enter key or search click)
+  const handlePlacesSearchSubmit = (e) => {
+    e?.preventDefault?.();
+    if (!placesQuery.trim()) return;
+
+    // If suggestions exist, pick first
+    if (placesPredictions.length > 0) {
+      handleSelectPrediction(placesPredictions[0]);
+      return;
+    }
+
+    const applyLocation = (lat, lng, name, address) => {
+      setSearchedLocation({ lat, lng, name, address });
+      setIsPlacesDropdownOpen(false);
+      if (mapRef.current) {
+        mapRef.current.panTo({ lat, lng });
+        mapRef.current.setZoom(15);
+      }
+    };
+
+    if (placesServiceRef.current && typeof placesServiceRef.current.findPlaceFromQuery === 'function') {
+      setIsPlacesLoading(true);
+      placesServiceRef.current.findPlaceFromQuery(
+        { query: placesQuery, fields: ['geometry', 'name', 'formatted_address'] },
+        (results, status) => {
+          setIsPlacesLoading(false);
+          if (
+            (status === 'OK' || status === window.google?.maps?.places?.PlacesServiceStatus?.OK) &&
+            results?.[0]?.geometry?.location
+          ) {
+            applyLocation(
+              results[0].geometry.location.lat(),
+              results[0].geometry.location.lng(),
+              placesQuery,
+              results[0].formatted_address || placesQuery
+            );
+            return;
+          }
+          fallbackGeocodeSubmit();
+        }
+      );
+    } else {
+      fallbackGeocodeSubmit();
+    }
+
+    function fallbackGeocodeSubmit() {
+      if (!geocoderRef.current && typeof window.google?.maps?.Geocoder === 'function') {
+        geocoderRef.current = new window.google.maps.Geocoder();
+      }
+
+      if (geocoderRef.current) {
+        setIsPlacesLoading(true);
+        geocoderRef.current.geocode(
+          { address: placesQuery, componentRestrictions: { country: 'pk' } },
+          (results, status) => {
+            setIsPlacesLoading(false);
+            if (status === 'OK' && results?.[0]?.geometry?.location) {
+              const loc = results[0].geometry.location;
+              applyLocation(loc.lat(), loc.lng(), placesQuery, results[0].formatted_address);
+            }
+          }
+        );
+      }
+    }
+  };
+
+  const handleClearPlacesSearch = () => {
+    setPlacesQuery('');
+    setPlacesPredictions([]);
+    setIsPlacesDropdownOpen(false);
+    setSearchedLocation(null);
+  };
 
   // Sidebar Filter Logic
   const uniqueCities = useMemo(() => {
@@ -796,30 +981,76 @@ function ExploreContent() {
                     </button>
                   )}
 
-                  {/* Hideable Places Search Box */}
+                  {/* Hideable Places Search Box with Dropdown Predictions */}
                   {isPlacesSearchOpen ? (
-                    <div className="flex-1 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2 transition-all">
-                      <Compass className="w-4 h-4 text-emerald-700 shrink-0" />
-                      <input
-                        ref={placesInputRef}
-                        type="text"
-                        placeholder="Search real-world locations, landmarks, cities..."
-                        className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setIsPlacesSearchOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
-                        title="Hide Google Places search bar"
+                    <div ref={placesSearchContainerRef} className="flex-1 relative">
+                      <form
+                        onSubmit={handlePlacesSearchSubmit}
+                        className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3.5 py-2 flex items-center gap-2 transition-all focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                        <Compass className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <input
+                          type="text"
+                          value={placesQuery}
+                          onChange={(e) => handlePlacesInputChange(e.target.value)}
+                          onFocus={() => {
+                            if (placesPredictions.length > 0) setIsPlacesDropdownOpen(true);
+                          }}
+                          placeholder="Search real-world locations, landmarks, cities..."
+                          className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                        />
+                        {isPlacesLoading && (
+                          <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
+                        )}
+                        {placesQuery && (
+                          <button
+                            type="button"
+                            onClick={handleClearPlacesSearch}
+                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                            title="Clear search"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsPlacesSearchOpen(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded border-l border-slate-200 pl-1.5 ml-0.5 cursor-pointer"
+                          title="Hide Google Places search bar"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </form>
+
+                      {/* Dropdown Suggestions UI */}
+                      {isPlacesDropdownOpen && placesPredictions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white/98 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
+                          {placesPredictions.map((pred) => (
+                            <button
+                              key={pred.place_id}
+                              type="button"
+                              onClick={() => handleSelectPrediction(pred)}
+                              className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-50/80 transition flex items-start gap-2.5 group cursor-pointer"
+                            >
+                              <MapPin className="w-4 h-4 text-emerald-600 group-hover:text-emerald-700 mt-0.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-800 truncate">
+                                  {pred.structured_formatting?.main_text || pred.description}
+                                </p>
+                                <p className="text-[11px] text-slate-400 truncate">
+                                  {pred.structured_formatting?.secondary_text || ''}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <button
                       type="button"
                       onClick={() => setIsPlacesSearchOpen(true)}
-                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold"
+                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
                       title="Show Google Places search bar"
                     >
                       <Compass className="w-4 h-4 text-emerald-700" />
@@ -827,6 +1058,24 @@ function ExploreContent() {
                     </button>
                   )}
                 </div>
+
+                {/* Active Searched Place Badge */}
+                {searchedLocation && (
+                  <div className="absolute top-16 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="font-semibold text-slate-800 truncate max-w-[220px]">
+                      {searchedLocation.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchedLocation(null)}
+                      className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      title="Clear location pin"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
 
                 {/* 1. Google Map Container */}
                 <GoogleMap
@@ -845,6 +1094,14 @@ function ExploreContent() {
                     mapTypeId: is3DMode ? 'hybrid' : 'roadmap',
                   }}
                 >
+                  {/* Searched Location Marker */}
+                  {searchedLocation && (
+                    <Marker
+                      position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }}
+                      title={searchedLocation.name}
+                      zIndex={999}
+                    />
+                  )}
                   {/* 2. Individual Plot Polygons (Zoom >= POLYGON_MIN_ZOOM) */}
                   {!showMarkerLayer &&
                     plots.map((plot) => {
