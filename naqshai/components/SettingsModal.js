@@ -15,6 +15,8 @@ import {
   UserCheck
 } from 'lucide-react';
 
+import { getProfile, syncProfile } from '@/lib/profileHelper';
+
 export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) {
   const [fullName, setFullName] = useState('');
   const [verificationStatus, setVerificationStatus] = useState(null); // 'verified' | 'pending' | 'none'
@@ -28,12 +30,14 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
   useEffect(() => {
     if (!user) return;
 
-    const userMeta = user.user_metadata || {};
-    setFullName(userMeta.full_name || userMeta.name || '');
-
-    // Fetch seller verification status from public.sellers table
-    async function fetchVerificationStatus() {
+    // Fetch persistent profile from public.profiles table
+    async function fetchPersistentProfile() {
       try {
+        const dbProfile = await getProfile(user.id);
+        const userMeta = user.user_metadata || {};
+        setFullName(dbProfile?.full_name || userMeta.full_name || userMeta.name || '');
+
+        // Fetch seller verification status from public.sellers table
         const { data: sellerData, error } = await supabase
           .from('sellers')
           .select('is_identity_verified, seller_role, full_name')
@@ -46,11 +50,7 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
 
         if (sellerData) {
           setSellerRole(sellerData.seller_role || 'Direct Owner');
-          if (sellerData.is_identity_verified) {
-            setVerificationStatus('verified');
-          } else {
-            setVerificationStatus('pending');
-          }
+          setVerificationStatus(sellerData.is_identity_verified ? 'verified' : 'pending');
         } else {
           setVerificationStatus('none');
         }
@@ -60,16 +60,20 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
       }
     }
 
-    fetchVerificationStatus();
+    fetchPersistentProfile();
   }, [user]);
 
   if (!isOpen || !user) return null;
 
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState(null);
+
   const userMeta = user.user_metadata || {};
   const avatarUrl = userMeta.avatar_url || userMeta.picture || null;
+  const activeAvatarDisplay = avatarPreviewUrl || avatarUrl;
   const initial = (fullName || user.email || 'U').charAt(0).toUpperCase();
 
-  const handleAvatarFileChange = async (e) => {
+  const handleAvatarFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -83,63 +87,13 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
       return;
     }
 
-    setUploadingAvatar(true);
-    setStatusMessage({ type: '', text: '' });
-
-    try {
-      let publicUrl = null;
-
-      // 1. Try uploading to Supabase Storage 'avatars' bucket
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-
-      try {
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(fileName, file, { upsert: true });
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-          publicUrl = urlData?.publicUrl;
-        } else {
-          console.warn('Supabase storage upload fallback:', uploadError.message);
-        }
-      } catch (storageException) {
-        console.warn('Storage exception, using data URL fallback:', storageException);
-      }
-
-      // 2. Data URL Fallback if bucket upload was not configured
-      if (!publicUrl) {
-        publicUrl = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(file);
-        });
-      }
-
-      // 3. Update Supabase User Metadata with new avatar_url
-      const { data: updateData, error: updateErr } = await supabase.auth.updateUser({
-        data: {
-          avatar_url: publicUrl,
-          picture: publicUrl,
-        },
-      });
-
-      if (updateErr) {
-        throw updateErr;
-      }
-
-      setStatusMessage({ type: 'success', text: 'Profile avatar updated successfully!' });
-      if (onUserUpdated && updateData?.user) {
-        onUserUpdated(updateData.user);
-      }
-    } catch (err) {
-      console.error('Avatar update failed:', err);
-      setStatusMessage({ type: 'error', text: err.message || 'Failed to update avatar.' });
-    } finally {
-      setUploadingAvatar(false);
-      if (e.target) e.target.value = '';
-    }
+    setSelectedAvatarFile(file);
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarPreviewUrl(objectUrl);
+    setStatusMessage({
+      type: 'info',
+      text: 'New profile picture selected. Click "Save Changes" below to submit.',
+    });
   };
 
   const handleSaveProfile = async (e) => {
@@ -148,23 +102,74 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
     setStatusMessage({ type: '', text: '' });
 
     try {
-      const { data: updateData, error } = await supabase.auth.updateUser({
-        data: {
-          full_name: fullName,
-        },
-      });
+      let publicUrl = null;
 
-      if (error) throw error;
+      // 1. Upload selected avatar file if present
+      if (selectedAvatarFile) {
+        const fileExt = selectedAvatarFile.name.split('.').pop();
+        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+        try {
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, selectedAvatarFile, { upsert: true });
+
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+            publicUrl = urlData?.publicUrl;
+          } else {
+            console.warn('Storage upload fallback:', uploadError.message);
+          }
+        } catch (storageErr) {
+          console.warn('Storage exception fallback:', storageErr);
+        }
+
+        if (!publicUrl) {
+          publicUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(selectedAvatarFile);
+          });
+        }
+      }
+
+      // 2. Resolve final avatar URL
+      const finalAvatarUrl = publicUrl || avatarPreviewUrl || avatarUrl;
+
+      // 3. Single Unified Request: Write full_name & avatar_url to public.profiles and auth.updateUser()
+      const syncPayload = { full_name: fullName };
+      if (finalAvatarUrl) {
+        syncPayload.avatar_url = finalAvatarUrl;
+      }
+
+      const { profile: updatedProfile, authUser } = await syncProfile(user.id, syncPayload);
+
+      const resolvedAvatarUrl = updatedProfile?.avatar_url || finalAvatarUrl;
+      const resolvedFullName = updatedProfile?.full_name || fullName;
+
+      const finalUpdatedUser = authUser || {
+        ...user,
+        user_metadata: {
+          ...userMeta,
+          full_name: resolvedFullName,
+          avatar_url: resolvedAvatarUrl,
+          picture: resolvedAvatarUrl,
+        },
+      };
+
+      setSelectedAvatarFile(null);
+      setAvatarPreviewUrl(null);
 
       setStatusMessage({ type: 'success', text: 'Profile details updated successfully!' });
-      if (onUserUpdated && updateData?.user) {
-        onUserUpdated(updateData.user);
+      if (onUserUpdated && finalUpdatedUser) {
+        onUserUpdated(finalUpdatedUser);
       }
     } catch (err) {
       console.error('Profile update error:', err);
-      setStatusMessage({ type: 'error', text: err.message || 'Failed to update profile.' });
+      setStatusMessage({ type: 'error', text: err?.message || 'Failed to update profile.' });
     } finally {
       setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -193,11 +198,15 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
             className={`p-3.5 rounded-xl text-xs flex items-start gap-2.5 ${
               statusMessage.type === 'success'
                 ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : statusMessage.type === 'info'
+                ? 'bg-blue-50 border border-blue-200 text-blue-800'
                 : 'bg-red-50 border border-red-200 text-red-700'
             }`}
           >
             {statusMessage.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+            ) : statusMessage.type === 'info' ? (
+              <Sparkles className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
             ) : (
               <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
             )}
@@ -208,9 +217,9 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
         {/* Avatar Section */}
         <div className="flex flex-col items-center justify-center text-center">
           <div className="relative group">
-            {avatarUrl ? (
+            {activeAvatarDisplay ? (
               <img
-                src={avatarUrl}
+                src={activeAvatarDisplay}
                 alt={fullName || user.email}
                 className="w-20 h-20 rounded-full object-cover border-2 border-emerald-600 shadow-md"
               />
@@ -226,32 +235,28 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
               ref={fileInputRef}
               accept="image/*"
               className="hidden"
-              onChange={handleAvatarFileChange}
+              onChange={handleAvatarFileSelect}
             />
 
             <button
               type="button"
-              disabled={uploadingAvatar}
+              disabled={loading}
               onClick={() => fileInputRef.current?.click()}
               className="absolute bottom-0 right-0 p-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-full shadow-md transition transform hover:scale-105 disabled:opacity-50"
-              title="Update Avatar Image"
+              title="Select Avatar Image"
             >
-              {uploadingAvatar ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Camera className="w-4 h-4" />
-              )}
+              <Camera className="w-4 h-4" />
             </button>
           </div>
 
           <button
             type="button"
-            disabled={uploadingAvatar}
+            disabled={loading}
             onClick={() => fileInputRef.current?.click()}
             className="mt-3 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1"
           >
             <UploadCloud className="w-3.5 h-3.5" />
-            <span>{uploadingAvatar ? 'Uploading image...' : 'Update Avatar'}</span>
+            <span>{selectedAvatarFile ? `Selected: ${selectedAvatarFile.name}` : 'Select New Avatar'}</span>
           </button>
         </div>
 
@@ -334,10 +339,10 @@ export default function SettingsModal({ isOpen, onClose, user, onUserUpdated }) 
               {loading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
+                  <span>Saving Profile...</span>
                 </>
               ) : (
-                <span>Save Changes</span>
+                <span>Save Profile Changes</span>
               )}
             </button>
           </div>

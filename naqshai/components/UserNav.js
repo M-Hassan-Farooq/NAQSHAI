@@ -5,11 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/UserAvatar';
 import { Settings, LogOut, ChevronDown } from 'lucide-react';
+import { useProfile } from '@/context/ProfileContext';
+import { getLocalCachedProfile } from '@/lib/profileHelper';
 
 export default function UserNav({ session, onSignOut, className = '' }) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+
+  const { user: contextUser, profile: contextProfile } = useProfile();
+  const activeUser = session?.user || contextUser;
 
   // Click-outside listener to close dropdown automatically
   useEffect(() => {
@@ -28,11 +33,12 @@ export default function UserNav({ session, onSignOut, className = '' }) {
     };
   }, []);
 
-  if (!session?.user) return null;
+  if (!activeUser) return null;
 
-  const user = session.user;
-  const userMeta = user.user_metadata || {};
-  const displayName = userMeta.full_name || userMeta.name || user.email || 'Account';
+  const localCache = getLocalCachedProfile(activeUser.id);
+  const userMeta = activeUser.user_metadata || {};
+  const activeProfile = contextProfile || localCache;
+  const displayName = activeProfile?.full_name || userMeta.full_name || userMeta.name || activeUser.email || 'Account';
 
   const handleSignOutClick = async () => {
     setIsDropdownOpen(false);
@@ -58,7 +64,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
         aria-expanded={isDropdownOpen}
         aria-haspopup="true"
       >
-        <UserAvatar user={user} />
+        <UserAvatar user={activeUser} profile={activeProfile} />
         <ChevronDown
           className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${
             isDropdownOpen ? 'rotate-180 text-emerald-700' : ''
@@ -73,7 +79,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
           {/* Header User Summary */}
           <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl mb-1">
             <p className="text-xs font-bold text-slate-900 truncate">{displayName}</p>
-            <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
+            <p className="text-[11px] text-slate-500 truncate">{activeUser.email}</p>
           </div>
 
           {/* Menu Items */}

@@ -1,13 +1,20 @@
 'use client';
 
 import React from 'react';
+import { useProfile } from '@/context/ProfileContext';
+import { getLocalCachedProfile } from '@/lib/profileHelper';
 
-export default function UserAvatar({ user, className = '' }) {
+export default function UserAvatar({ user, profile: propProfile, className = '' }) {
+  const { profile: contextProfile } = useProfile();
+
   if (!user) return null;
 
+  const localCache = getLocalCachedProfile(user.id);
   const userMeta = user.user_metadata || {};
-  const avatarUrl = userMeta.avatar_url || userMeta.picture || null;
-  const displayName = userMeta.full_name || userMeta.name || user.email || 'User';
+  const activeProfile = propProfile || contextProfile || localCache;
+
+  const avatarUrl = activeProfile?.avatar_url || userMeta.avatar_url || userMeta.picture || null;
+  const displayName = activeProfile?.full_name || userMeta.full_name || userMeta.name || user.email || 'User';
   const initial = displayName.trim().charAt(0).toUpperCase() || 'U';
 
   return (

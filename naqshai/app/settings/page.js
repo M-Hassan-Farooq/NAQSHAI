@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
+import { syncProfile, getProfile, fetchLatestUserAndProfile } from '@/lib/profileHelper';
 import {
   Sparkles,
   ArrowLeft,
-  UploadCloud,
   ShieldCheck,
   AlertCircle,
   User,
@@ -28,37 +28,66 @@ export default function SettingsPage() {
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Form & Profile State
   const [fullName, setFullName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
+
+  // Verification & UI State
   const [verificationStatus, setVerificationStatus] = useState(null); // 'verified' | 'pending' | 'none'
   const [sellerRole, setSellerRole] = useState('');
   const [loading, setLoading] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
-  // Route Protection: Check active session
+  // 1. Loading State Guard & Database-First Profile Loading
   useEffect(() => {
     let isMounted = true;
 
-    async function checkAuthSession() {
+    async function loadAuthAndProfile() {
       try {
+        // Authenticated User Verification via getUser() & getSession()
+        const { data: { user: authUser }, error: userErr } = await supabase.auth.getUser();
         const { data: { session: activeSession } } = await supabase.auth.getSession();
-        if (!activeSession) {
-          router.push('/login?redirect=/settings');
+
+        const effectiveUser = authUser || activeSession?.user;
+
+        // Strict Redirect Condition: Only trigger redirect if session/user is definitively confirmed null
+        if (!effectiveUser && !activeSession) {
+          if (isMounted) {
+            setCheckingAuth(false);
+            router.push('/login?redirect=/settings');
+          }
           return;
         }
 
         if (isMounted) {
+          setUser(effectiveUser);
           setSession(activeSession);
-          setUser(activeSession.user);
 
-          const userMeta = activeSession.user.user_metadata || {};
-          setFullName(userMeta.full_name || userMeta.name || '');
+          // Query public.profiles directly database-first
+          const { data: profileRow, error: profileErr } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', effectiveUser.id)
+            .maybeSingle();
 
-          // Fetch identity verification status from public.sellers table
-          const { data: sellerData, error } = await supabase
+          if (profileErr && profileErr.code !== 'PGRST116') {
+            console.warn('Profiles table load notice:', profileErr.message);
+          }
+
+          const userMeta = effectiveUser.user_metadata || {};
+          const resolvedFullName = profileRow?.full_name || userMeta.full_name || userMeta.name || '';
+          const resolvedAvatarUrl = profileRow?.avatar_url || userMeta.avatar_url || userMeta.picture || null;
+
+          setFullName(resolvedFullName);
+          setAvatarUrl(resolvedAvatarUrl);
+
+          // Query seller verification status from public.sellers table
+          const { data: sellerData } = await supabase
             .from('sellers')
             .select('is_identity_verified, seller_role, full_name')
-            .eq('id', activeSession.user.id)
+            .eq('id', effectiveUser.id)
             .maybeSingle();
 
           if (sellerData) {
@@ -69,19 +98,28 @@ export default function SettingsPage() {
           }
         }
       } catch (err) {
-        console.error('Session check error on settings page:', err);
-        router.push('/login?redirect=/settings');
+        console.error('Database-First profile load error:', err);
+        if (isMounted) {
+          router.push('/login?redirect=/settings');
+        }
       } finally {
-        if (isMounted) setCheckingAuth(false);
+        if (isMounted) {
+          setCheckingAuth(false);
+        }
       }
     }
 
-    checkAuthSession();
+    loadAuthAndProfile();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      if (!currentSession) {
-        router.push('/login?redirect=/settings');
-      } else if (isMounted) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      // Only redirect on explicit SIGNED_OUT event after initial auth check completes
+      if (event === 'SIGNED_OUT') {
+        if (isMounted) {
+          setSession(null);
+          setUser(null);
+          router.push('/login?redirect=/settings');
+        }
+      } else if (currentSession?.user && isMounted) {
         setSession(currentSession);
         setUser(currentSession.user);
       }
@@ -100,9 +138,10 @@ export default function SettingsPage() {
     router.push('/');
   };
 
-  const handleAvatarFileChange = async (e) => {
+  // 2. Avatar Selection & Local Preview Handler
+  const handleAvatarFileSelect = (e) => {
     const file = e.target.files?.[0];
-    if (!file || !user) return;
+    if (!file) return;
 
     if (!file.type.startsWith('image/')) {
       setStatusMessage({ type: 'error', text: 'Please select a valid image file (PNG, JPG, WEBP).' });
@@ -114,67 +153,17 @@ export default function SettingsPage() {
       return;
     }
 
-    setUploadingAvatar(true);
-    setStatusMessage({ type: '', text: '' });
-
-    try {
-      let publicUrl = null;
-
-      // 1. Upload file to Supabase Storage 'avatars' bucket
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-
-      try {
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(fileName, file, { upsert: true });
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-          publicUrl = urlData?.publicUrl;
-        } else {
-          console.warn('Storage upload fallback:', uploadError.message);
-        }
-      } catch (storageErr) {
-        console.warn('Storage exception fallback:', storageErr);
-      }
-
-      // 2. Data URL Fallback if bucket upload has restrictions
-      if (!publicUrl) {
-        publicUrl = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(file);
-        });
-      }
-
-      // 3. Update user session metadata with new avatar_url
-      const { data: updateData, error: updateErr } = await supabase.auth.updateUser({
-        data: {
-          avatar_url: publicUrl,
-          picture: publicUrl,
-        },
-      });
-
-      if (updateErr) throw updateErr;
-
-      // 4. Update local state immediately so Navbar & page update instantly
-      if (updateData?.user) {
-        setUser(updateData.user);
-        setSession((prev) => (prev ? { ...prev, user: updateData.user } : prev));
-      }
-
-      setStatusMessage({ type: 'success', text: 'Profile picture updated successfully!' });
-    } catch (err) {
-      console.error('Avatar update failed:', err);
-      setStatusMessage({ type: 'error', text: err.message || 'Failed to update profile picture.' });
-    } finally {
-      setUploadingAvatar(false);
-      if (e.target) e.target.value = '';
-    }
+    setSelectedFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setFilePreview(previewUrl);
+    setStatusMessage({
+      type: 'info',
+      text: 'New profile picture selected! Click "Save Profile Changes" below to submit your changes.',
+    });
   };
 
-  const handleSaveProfileDetails = async (e) => {
+  // 3. Persistent Save Handler
+  const handleSaveProfileChanges = async (e) => {
     e.preventDefault();
     if (!user) return;
 
@@ -182,25 +171,66 @@ export default function SettingsPage() {
     setStatusMessage({ type: '', text: '' });
 
     try {
-      const { data: updateData, error } = await supabase.auth.updateUser({
-        data: {
-          full_name: fullName,
-        },
-      });
+      let uploadedPublicUrl = null;
 
-      if (error) throw error;
+      // 3.1 Perform Storage Upload if new file is selected
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop();
+        const filePath = `${user.id}/${Date.now()}_avatar.${fileExt}`;
 
-      if (updateData?.user) {
-        setUser(updateData.user);
-        setSession((prev) => (prev ? { ...prev, user: updateData.user } : prev));
+        try {
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(filePath, selectedFile, { upsert: true });
+
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+            uploadedPublicUrl = urlData?.publicUrl;
+          } else {
+            console.warn('Storage bucket upload notice:', uploadError.message);
+          }
+        } catch (storageErr) {
+          console.warn('Storage exception fallback:', storageErr);
+        }
+
+        // Data URL Fallback if bucket upload fails
+        if (!uploadedPublicUrl) {
+          uploadedPublicUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(selectedFile);
+          });
+        }
       }
 
-      setStatusMessage({ type: 'success', text: 'Profile details saved successfully!' });
+      const finalAvatarUrl = uploadedPublicUrl || filePreview || avatarUrl;
+
+      // Multi-Layer Sync: Write to localStorage, public.profiles, public.sellers, auth.updateUser(), refreshSession(), and broadcast
+      const { profile: updatedProfile, authUser } = await syncProfile(user.id, {
+        full_name: fullName,
+        avatar_url: finalAvatarUrl,
+      });
+
+      const resolvedAvatar = updatedProfile?.avatar_url || finalAvatarUrl;
+      const resolvedName = updatedProfile?.full_name || fullName;
+
+      // Update Local Page State
+      setAvatarUrl(resolvedAvatar);
+      setFullName(resolvedName);
+      setSelectedFile(null);
+      setFilePreview(null);
+      if (authUser) setUser(authUser);
+
+      setStatusMessage({ type: 'success', text: 'Profile changes saved successfully!' });
     } catch (err) {
-      console.error('Profile update error:', err);
-      setStatusMessage({ type: 'error', text: err.message || 'Failed to save profile changes.' });
+      console.error('Profile save error:', err);
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Failed to save profile changes. Please try again.',
+      });
     } finally {
       setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -215,8 +245,7 @@ export default function SettingsPage() {
     );
   }
 
-  const userMeta = user?.user_metadata || {};
-  const avatarUrl = userMeta.avatar_url || userMeta.picture || null;
+  const activeAvatarDisplay = filePreview || avatarUrl;
   const initial = (fullName || user?.email || 'U').charAt(0).toUpperCase();
 
   return (
@@ -304,11 +333,15 @@ export default function SettingsPage() {
             className={`mb-6 p-4 rounded-xl text-xs sm:text-sm flex items-start gap-3 ${
               statusMessage.type === 'success'
                 ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : statusMessage.type === 'info'
+                ? 'bg-blue-50 border border-blue-200 text-blue-800'
                 : 'bg-red-50 border border-red-200 text-red-700'
             }`}
           >
             {statusMessage.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+            ) : statusMessage.type === 'info' ? (
+              <Sparkles className="w-5 h-5 shrink-0 text-blue-600 mt-0.5" />
             ) : (
               <AlertCircle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
             )}
@@ -316,21 +349,21 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Main Settings Card */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 sm:p-8 space-y-8">
+        {/* Main Settings Form */}
+        <form onSubmit={handleSaveProfileChanges} className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 sm:p-8 space-y-8">
           
-          {/* SECTION 1: Avatar Upload Prominent Section */}
+          {/* SECTION 1: Avatar Upload Section */}
           <div className="pb-8 border-b border-slate-100">
             <h2 className="text-base font-bold text-slate-900 mb-4">Profile Avatar</h2>
 
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
               
-              {/* Avatar Preview */}
+              {/* Avatar Preview Box */}
               <div className="relative group shrink-0">
-                {avatarUrl ? (
+                {activeAvatarDisplay ? (
                   <img
-                    src={avatarUrl}
-                    alt={fullName || user.email}
+                    src={activeAvatarDisplay}
+                    alt={fullName || user?.email || 'User Avatar'}
                     className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-emerald-600 shadow-md ring-4 ring-emerald-50"
                   />
                 ) : (
@@ -340,48 +373,47 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {/* Upload Trigger Button & Info */}
+              {/* Upload Trigger & Info */}
               <div className="flex-1 text-center sm:text-left space-y-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Change Profile Picture</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Upload a high-resolution PNG, JPG, or WEBP image (Max 5MB). Your avatar is displayed across the platform and seller listings.
+                    Select a PNG, JPG, or WEBP image (Max 5MB). Click "Save Profile Changes" below to submit your avatar.
                   </p>
                 </div>
 
-                {/* Hidden File Input */}
+                {/* Hidden File Input Trigger */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   accept="image/*"
                   className="hidden"
-                  onChange={handleAvatarFileChange}
+                  onChange={handleAvatarFileSelect}
                 />
 
-                <button
-                  type="button"
-                  disabled={uploadingAvatar}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition shadow-sm inline-flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                >
-                  {uploadingAvatar ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
-                      <span>Uploading Image...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-4 h-4 text-emerald-200" />
-                      <span>Change Profile Picture</span>
-                    </>
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm border border-slate-200 transition shadow-sm inline-flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4 text-emerald-700" />
+                    <span>{selectedFile ? 'Change Selected Image' : 'Select Avatar Image'}</span>
+                  </button>
+
+                  {selectedFile && (
+                    <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 truncate max-w-[220px]">
+                      Selected: {selectedFile.name}
+                    </span>
                   )}
-                </button>
+                </div>
               </div>
 
             </div>
           </div>
 
-          {/* SECTION 2: Seller Identity Status (Read-Only) */}
+          {/* SECTION 2: Seller Identity Status (Read-Only Badge) */}
           <div className="pb-8 border-b border-slate-100">
             <h2 className="text-base font-bold text-slate-900 mb-3">Identity & Verification Status</h2>
             
@@ -414,70 +446,68 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* SECTION 3: Editable Account Details Form */}
-          <div>
+          {/* SECTION 3: Editable Account Details */}
+          <div className="space-y-5">
             <h2 className="text-base font-bold text-slate-900 mb-4">Account Details</h2>
 
-            <form onSubmit={handleSaveProfileDetails} className="space-y-5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Full Name (Editable)
-                </label>
-                <div className="relative flex items-center">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Enter your full name"
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-                  />
-                </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Full Name (Editable)
+              </label>
+              <div className="relative flex items-center">
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Email Address (Read-Only)
-                </label>
-                <div className="relative flex items-center">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                  <input
-                    type="email"
-                    disabled
-                    value={user.email || ''}
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
-                  />
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Email address is linked to your Supabase authentication identity.
-                </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Email Address (Read-Only)
+              </label>
+              <div className="relative flex items-center">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="email"
+                  disabled
+                  value={user?.email || ''}
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
+                />
               </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Email address is linked to your Supabase authentication identity.
+              </p>
+            </div>
 
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
-                      <span>Saving Profile...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 text-emerald-200" />
-                      <span>Save Profile Changes</span>
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="pt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
+                    <span>Saving Profile...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 text-emerald-200" />
+                    <span>Save Profile Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
 
-            </form>
           </div>
 
-        </div>
+        </form>
 
       </main>
     </div>
