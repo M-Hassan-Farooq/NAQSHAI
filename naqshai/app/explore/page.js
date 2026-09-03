@@ -6,6 +6,7 @@ import { GoogleMap, Polygon, Marker, StreetViewPanorama, GoogleMapsMarkerCluster
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
+import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home, Loader2, RefreshCw, User, LogOut } from 'lucide-react';
 
 const mapContainerStyle = {
@@ -691,6 +692,13 @@ function ExploreContent() {
                   </span>
                 </div>
               </div>
+
+              {/* Interactive Neighborhood Amenity Scoring */}
+              <AmenityScoreCard
+                plotId={selectedPlot.id}
+                lat={selectedPlot.center?.lat}
+                lng={selectedPlot.center?.lng}
+              />
 
               {/* Landmarks & Proximity */}
               <div className="space-y-1.5">

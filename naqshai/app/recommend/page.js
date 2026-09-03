@@ -475,8 +475,34 @@ function ChatInterface() {
             </header>
 
             {/* Chat Canvas (Scrollbar anchored to extreme right edge of screen) */}
-            <main className="flex-1 overflow-y-auto w-full">
-                <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6 w-full">
+            <main className="flex-1 overflow-y-auto w-full relative">
+                {/* Left Side Mascot Decoration (Subtle Watermark on Wide Screens) */}
+                <div 
+                    aria-hidden="true" 
+                    className="hidden xl:flex pointer-events-none fixed left-4 2xl:left-10 top-1/2 -translate-y-1/2 z-0 select-none opacity-15 transition-opacity"
+                >
+                    <img
+                        src="/mascot.png"
+                        alt=""
+                        className="w-32 xl:w-40 2xl:w-52 h-auto object-contain drop-shadow-sm"
+                        draggable={false}
+                    />
+                </div>
+
+                {/* Right Side Mascot Decoration (Subtle Watermark on Wide Screens - mirrored) */}
+                <div 
+                    aria-hidden="true" 
+                    className="hidden xl:flex pointer-events-none fixed right-6 2xl:right-12 top-1/2 -translate-y-1/2 z-0 select-none opacity-15 transition-opacity scale-x-[-1]"
+                >
+                    <img
+                        src="/mascot.png"
+                        alt=""
+                        className="w-32 xl:w-40 2xl:w-52 h-auto object-contain drop-shadow-sm"
+                        draggable={false}
+                    />
+                </div>
+
+                <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6 w-full relative z-10">
                     {messages.map((msg, idx) => (
                         <div
                             key={idx}
