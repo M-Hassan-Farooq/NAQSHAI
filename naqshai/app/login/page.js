@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -193,8 +194,8 @@ function LoginContent() {
       {/* Brand Header */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
         <Link href="/" className="inline-flex items-center gap-2 group">
-          <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 shadow-sm group-hover:bg-emerald-100 transition">
-            <Sparkles className="w-6 h-6" />
+          <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm">
+            <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
           </div>
           <span className="font-extrabold text-2xl text-slate-900 tracking-tight">NAQSHAI</span>
         </Link>

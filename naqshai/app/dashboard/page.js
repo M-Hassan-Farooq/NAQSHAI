@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
 import {
   Sparkles,
+  Home,
   Plus,
   ClipboardList,
   MapPin,
@@ -186,8 +188,8 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-sm group-hover:bg-emerald-100 transition">
-                <Sparkles className="w-5 h-5" />
+              <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm">
+                <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
               </div>
               <span className="font-bold text-lg text-slate-900 tracking-tight">NAQSHAI</span>
             </Link>
@@ -197,6 +199,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center gap-1.5"
+            >
+              <Home className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Home</span>
+            </Link>
             <button
               onClick={() => router.push('/explore')}
               className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"

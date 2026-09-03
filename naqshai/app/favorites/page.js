@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useFavorites } from '@/context/FavoritesContext';
 import UserNav from '@/components/UserNav';
 import { 
   Heart, 
+  Home,
   MapPin, 
   ArrowLeft, 
   ShieldCheck, 
@@ -106,6 +108,14 @@ export default function FavoritesPage() {
 
         {/* User Navigation */}
         <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-700 px-3.5 py-1.5 rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+          >
+            <Home className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Home</span>
+          </Link>
+
           <button
             type="button"
             onClick={() => router.push('/recommend')}

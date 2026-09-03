@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
@@ -68,8 +69,8 @@ export default function Home() {
         <div className="w-full pl-4 pr-6 md:pl-6 md:pr-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-sm group-hover:bg-emerald-100 transition">
-                <Sparkles className="w-5 h-5" />
+              <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm">
+                <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
               </div>
               <span className="font-bold text-lg text-slate-900 tracking-tight">NAQSHAI</span>
             </Link>
@@ -133,49 +134,66 @@ export default function Home() {
           <circle cx="500" cy="280" r="220" strokeWidth="1" strokeDasharray="6 6" />
         </svg>
 
-        <div className="relative max-w-5xl mx-auto text-center flex flex-col items-center">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-semibold text-emerald-800 shadow-sm mb-6">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-            AI-Driven Geospatial Land Intelligence
+        <div className="relative max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-8 md:gap-12">
+          {/* Left Side: First Mascot Image (Transparent PNG, Blended with Background) */}
+          <div className="w-full lg:w-auto flex justify-center shrink-0">
+            <div className="relative transform hover:scale-105 transition-transform duration-300">
+              <Image
+                src="/home page 1.png"
+                alt="NAQSHAI Mascot Thinking"
+                width={320}
+                height={320}
+                className="object-contain opacity-80 hover:opacity-100 transition-opacity duration-300 drop-shadow-md"
+                priority
+              />
+            </div>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15] max-w-4xl">
-            Geospatial Intelligence for <span className="text-emerald-700">Pakistan&apos;s Real Estate</span>.
-          </h1>
-
-          <p className="mt-5 text-base sm:text-lg md:text-xl text-slate-600 max-w-2xl leading-relaxed">
-            AI-powered land advisory, automated flood risk analysis, and interactive 3D terrain inspection designed for smart plot discovery.
-          </p>
-
-          <div className="mt-8 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-            <Link
-              href="/recommend"
-              className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl shadow-md transition text-sm"
-            >
-              <span>Launch AI Plot Advisor</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/explore"
-              className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-semibold px-6 py-3.5 rounded-xl shadow-sm transition text-sm"
-            >
-              <MapPin className="w-4 h-4 text-emerald-700" />
-              <span>Inspect 3D Map</span>
-            </Link>
-          </div>
-
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 border-t border-slate-200/80 pt-6 max-w-2xl w-full">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Multilingual Gemini AI</span>
+          {/* Right Side: Hero Text & CTAs */}
+          <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-semibold text-emerald-800 shadow-sm mb-6">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+              AI-Driven Geospatial Land Intelligence
             </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Flood Plain & Noise Metrics</span>
+
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15] max-w-4xl">
+              Geospatial Intelligence for <span className="text-emerald-700">Pakistan&apos;s Real Estate</span>.
+            </h1>
+
+            <p className="mt-5 text-base sm:text-lg md:text-xl text-slate-600 max-w-2xl leading-relaxed">
+              AI-powered land advisory, automated flood risk analysis, and interactive 3D terrain inspection designed for smart plot discovery.
+            </p>
+
+            <div className="mt-8 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+              <Link
+                href="/recommend"
+                className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl shadow-md transition text-sm"
+              >
+                <span>Launch AI Plot Advisor</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                href="/explore"
+                className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-semibold px-6 py-3.5 rounded-xl shadow-sm transition text-sm"
+              >
+                <MapPin className="w-4 h-4 text-emerald-700" />
+                <span>Inspect 3D Map</span>
+              </Link>
             </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>3D Plot Polygons</span>
+
+            <div className="mt-12 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-xs text-slate-500 border-t border-slate-200/80 pt-6 max-w-2xl w-full">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Multilingual Gemini AI</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Flood Plain & Noise Metrics</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>3D Plot Polygons</span>
+              </div>
             </div>
           </div>
         </div>
@@ -262,6 +280,72 @@ export default function Home() {
               <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
                 Gemini 2.5 Multi-Script
               </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Feature Overview Spotlight (Second Mascot on Scrolled Right Side) */}
+      <section className="py-20 px-4 bg-slate-900 text-white border-y border-slate-800 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-10 md:gap-16">
+          {/* Left Side: Features Text */}
+          <div className="flex-1 space-y-6 text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-400 shadow-xs">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              Smart Plot Discovery & Verified Intelligence
+            </div>
+
+            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+              Unlock Verified Land Insights & Interactive 3D Maps
+            </h2>
+
+            <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-2xl">
+              NAQSHAI empowers home builders, real estate investors, and plot buyers with direct access to verified geospatial data. Eliminate uncertainty around land elevation, flood hazard zones, or ambient noise buffers before making critical property decisions.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 text-left">
+              <div className="p-4 bg-slate-800/90 border border-slate-700/80 rounded-2xl space-y-1.5">
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  3D Satellite Polygons
+                </h3>
+                <p className="text-xs text-slate-300 leading-normal">
+                  Interactive plot boundaries mapped directly over terrain contours with dimensions and orientation.
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-800/90 border border-slate-700/80 rounded-2xl space-y-1.5">
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  Direct Owner Connect
+                </h3>
+                <p className="text-xs text-slate-300 leading-normal">
+                  Contact verified plot owners and agencies directly via instant WhatsApp communication links.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-center lg:justify-start">
+              <Link
+                href="/explore"
+                className="inline-flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-6 py-3.5 rounded-xl shadow-lg transition text-sm"
+              >
+                <span>Explore Interactive 3D Map</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Right Side: Second Mascot Image (Transparent PNG, Blended with Dark Background) */}
+          <div className="w-full lg:w-auto flex justify-center shrink-0">
+            <div className="relative transform hover:scale-105 transition-transform duration-300">
+              <Image
+                src="/home page 2.png"
+                alt="NAQSHAI Mascot with Key"
+                width={320}
+                height={320}
+                className="object-contain opacity-80 hover:opacity-100 transition-opacity duration-300 drop-shadow-xl"
+              />
             </div>
           </div>
         </div>
@@ -387,7 +471,9 @@ export default function Home() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="space-y-2 max-w-md">
             <div className="flex items-center justify-center md:justify-start gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-700" />
+              <div className="relative w-7 h-7 overflow-hidden rounded-lg border border-emerald-500/20 shadow-sm">
+                <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
+              </div>
               <span className="font-bold text-sm text-slate-900 tracking-tight">NAQSHAI</span>
             </div>
             <p className="text-slate-500 leading-relaxed">

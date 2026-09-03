@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { GoogleMap, Polygon, Marker, StreetViewPanorama, GoogleMapsMarkerClusterer } from '@react-google-maps/api';
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
@@ -29,7 +31,6 @@ import {
   Navigation,
   Compass,
   SlidersHorizontal,
-  Building2,
   Layers,
   GripVertical
 } from 'lucide-react';
@@ -678,9 +679,15 @@ function ExploreContent() {
                 </button>
 
                 <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-                  <span className="font-bold text-sm text-slate-900 tracking-tight flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4 text-emerald-700" />
-                    NAQSHAI Explorer
+                  <span className="font-bold text-sm text-slate-900 tracking-tight flex items-center gap-2">
+                    <Image
+                      src="/explorer.jpeg"
+                      alt="NAQSHAI Explorer Logo"
+                      width={32}
+                      height={32}
+                      className="rounded-md object-cover"
+                    />
+                    <span>NAQSHAI Explorer</span>
                   </span>
                   <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full hidden sm:inline-block">
                     {plotsLoading ? 'Loading…' : `${plots.length} Verified Plots`}
@@ -696,13 +703,13 @@ function ExploreContent() {
                 >
                   List Your Plot
                 </button>
-                <button
-                  onClick={() => router.push('/')}
+                <Link
+                  href="/"
                   className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
                 >
                   <Home className="w-3.5 h-3.5 text-emerald-700" />
                   <span className="hidden sm:inline">Home</span>
-                </button>
+                </Link>
                 <button
                   onClick={() => router.push('/recommend')}
                   className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
@@ -978,24 +985,24 @@ function ExploreContent() {
 
               {/* RIGHT AREA: Interactive Google Maps Viewport */}
               <main className="flex-1 h-full relative overflow-hidden">
-                {/* Floating Google Places Search Bar Overlay */}
-                <div className="absolute top-3.5 left-4 z-20 flex items-center gap-2 max-w-sm sm:max-w-md w-full">
-                  {/* Toggle Sidebar Button when sidebar is collapsed */}
-                  {!isSidebarOpen && (
-                    <button
-                      type="button"
-                      onClick={() => setIsSidebarOpen(true)}
-                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition flex items-center gap-1.5 text-xs font-semibold shrink-0"
-                      title="Show plot list"
-                    >
-                      <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
-                      <span className="hidden sm:inline">Plots</span>
-                    </button>
-                  )}
+                {/* Toggle Sidebar Button when sidebar is collapsed (Anchored Top-Left) */}
+                {!isSidebarOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                    title="Show plot list"
+                  >
+                    <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
+                    <span className="hidden sm:inline">Plots</span>
+                  </button>
+                )}
 
+                {/* Floating Google Places Search Bar Overlay (Centered horizontally over map section) */}
+                <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center justify-center gap-2 max-w-xs sm:max-w-md md:max-w-lg w-full px-4">
                   {/* Hideable Places Search Box with Dropdown Predictions */}
                   {isPlacesSearchOpen ? (
-                    <div ref={placesSearchContainerRef} className="flex-1 relative">
+                    <div ref={placesSearchContainerRef} className="flex-1 relative w-full">
                       <form
                         onSubmit={handlePlacesSearchSubmit}
                         className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3.5 py-2 flex items-center gap-2 transition-all focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20"
@@ -1062,7 +1069,7 @@ function ExploreContent() {
                     <button
                       type="button"
                       onClick={() => setIsPlacesSearchOpen(true)}
-                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-sm"
                       title="Show Google Places search bar"
                     >
                       <Compass className="w-4 h-4 text-emerald-700" />
@@ -1071,9 +1078,9 @@ function ExploreContent() {
                   )}
                 </div>
 
-                {/* Active Searched Place Badge */}
+                {/* Active Searched Place Badge (Centered) */}
                 {searchedLocation && (
-                  <div className="absolute top-16 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs">
+                  <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs max-w-xs sm:max-w-md truncate">
                     <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span className="font-semibold text-slate-800 truncate max-w-[220px]">
                       {searchedLocation.name}

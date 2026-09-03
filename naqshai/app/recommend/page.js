@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, Suspense } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
@@ -9,6 +11,7 @@ import {
     Send,
     Sparkles,
     MapPin,
+    Home,
     ShieldCheck,
     ExternalLink,
     ArrowRight,
@@ -407,8 +410,8 @@ function ChatInterface() {
             {/* Top Navbar */}
             <header className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 bg-white shadow-sm shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-sm">
-                        <Sparkles className="w-5 h-5" />
+                    <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm shrink-0">
+                        <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
                     </div>
                     <div>
                         <div className="flex items-center gap-2">
@@ -439,6 +442,14 @@ function ChatInterface() {
                             </button>
                         ))}
                     </div>
+
+                    <Link
+                        href="/"
+                        className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 shadow-sm flex items-center gap-1.5"
+                    >
+                        <Home className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Home</span>
+                    </Link>
 
                     <button
                         onClick={() => router.push('/sell')}
