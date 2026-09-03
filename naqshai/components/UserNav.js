@@ -4,8 +4,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/UserAvatar';
-import { Settings, LogOut, ChevronDown } from 'lucide-react';
+import { Settings, LogOut, ChevronDown, Heart } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
+import { useFavorites } from '@/context/FavoritesContext';
 import { getLocalCachedProfile } from '@/lib/profileHelper';
 
 export default function UserNav({ session, onSignOut, className = '' }) {
@@ -14,6 +15,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
   const dropdownRef = useRef(null);
 
   const { user: contextUser, profile: contextProfile } = useProfile();
+  const { count: favoritesCount } = useFavorites();
   const activeUser = session?.user || contextUser;
 
   // Click-outside listener to close dropdown automatically
@@ -84,6 +86,25 @@ export default function UserNav({ session, onSignOut, className = '' }) {
 
           {/* Menu Items */}
           <div className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDropdownOpen(false);
+                router.push('/favorites');
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 rounded-xl transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20" />
+                <span>My Favorites</span>
+              </div>
+              {favoritesCount > 0 && (
+                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {favoritesCount}
+                </span>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={handleGoToSettings}

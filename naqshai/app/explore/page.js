@@ -7,6 +7,7 @@ import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
 import UserNav from '@/components/UserNav';
 import AmenityScoreCard from '@/components/AmenityScoreCard';
+import { useFavorites } from '@/context/FavoritesContext';
 import {
   Search,
   ShieldAlert,
@@ -18,6 +19,7 @@ import {
   MessageSquare,
   Home,
   Loader2,
+  Heart,
   RefreshCw,
   User,
   PanelLeftClose,
@@ -85,6 +87,9 @@ function ExploreContent() {
   const [isPlacesSearchOpen, setIsPlacesSearchOpen] = useState(true);
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
   const [activeCityFilter, setActiveCityFilter] = useState('ALL');
+
+  // Favorites Hook
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   // Resizable Split Pane States (300px min - 600px max, default 400px)
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -892,9 +897,28 @@ function ExploreContent() {
                                         {plot.name}
                                       </h4>
                                     </div>
-                                    <span className="text-xs font-extrabold text-emerald-700 whitespace-nowrap bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                      {plot.price}
-                                    </span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-xs font-extrabold text-emerald-700 whitespace-nowrap bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                        {plot.price}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleFavorite(plot.id, plot);
+                                        }}
+                                        className="p-1 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                                        title={isFavorite(plot.id) ? 'Remove from favorites' : 'Save to favorites'}
+                                      >
+                                        <Heart
+                                          className={`w-3.5 h-3.5 transition-transform active:scale-125 ${
+                                            isFavorite(plot.id)
+                                              ? 'fill-rose-500 text-rose-500'
+                                              : 'text-slate-400 hover:text-rose-500'
+                                          }`}
+                                        />
+                                      </button>
+                                    </div>
                                   </div>
 
                                   <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
@@ -1215,12 +1239,28 @@ function ExploreContent() {
                             {selectedPlot.price}
                           </span>
                         </div>
-                        <button
-                          onClick={() => setSelectedPlot(null)}
-                          className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(selectedPlot.id, selectedPlot)}
+                            className="p-1.5 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                            title={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
+                          >
+                            <Heart
+                              className={`w-4 h-4 transition-transform active:scale-125 ${
+                                isFavorite(selectedPlot.id)
+                                  ? 'fill-rose-500 text-rose-500'
+                                  : 'text-slate-400'
+                              }`}
+                            />
+                          </button>
+                          <button
+                            onClick={() => setSelectedPlot(null)}
+                            className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition cursor-pointer"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Sidebar Content (Scrollable) */}

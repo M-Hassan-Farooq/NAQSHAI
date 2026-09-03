@@ -1,6 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ProfileProvider } from "@/context/ProfileContext";
+import { FavoritesProvider } from "@/context/FavoritesContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,7 +26,9 @@ export default function RootLayout({ children }) {
     >
       <body className="bg-slate-100 text-slate-600 antialiased min-h-full flex flex-col">
         <ProfileProvider>
-          {children}
+          <FavoritesProvider>
+            {children}
+          </FavoritesProvider>
         </ProfileProvider>
       </body>
     </html>
