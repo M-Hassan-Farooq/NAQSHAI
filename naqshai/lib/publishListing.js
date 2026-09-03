@@ -37,9 +37,12 @@ async function insertPlotWithUniqueId(dbAdmin, baseRecord, plotId) {
 
 /**
  * Upsert the seller profile (keyed to the verified user id) and insert the plot.
+ * @param {boolean} [opts.isVerified=false] mark the plot verified/public. Defaults
+ *   to false so the legacy direct-create path is unchanged; the approval transition
+ *   passes true, since a plot only exists once a listing has been approved.
  * @returns {Promise<{ success: boolean, plotId?: string, sellerId?: string, plot?: object, error?: string }>}
  */
-export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, polygonCoordinates = [], documents = [] }) {
+export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, polygonCoordinates = [], documents = [], isVerified = false }) {
   const sellerName = (seller.fullName || seller.full_name || seller.name || '').trim();
   const sellerPhone = (seller.phoneNumber || seller.phone_number || seller.phone || '').trim();
   const sellerRole = seller.sellerRole || seller.seller_role || seller.role || 'Direct Owner';
@@ -84,7 +87,7 @@ export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, pol
     proximity_notes: plot.proximityNotes || 'Proximity data under verification',
     polygon_coordinates: polygonCoordinates || [],
     documents: documents || [],
-    is_verified: false,
+    is_verified: isVerified,
   };
 
   const { data: plotData, error: pErr, plotId } = await insertPlotWithUniqueId(

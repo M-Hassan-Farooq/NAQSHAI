@@ -37,6 +37,11 @@ const LIFECYCLE = {
     badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     bar: 'bg-emerald-500',
   },
+  rejected: {
+    label: 'Needs Changes',
+    badge: 'bg-red-50 text-red-700 border-red-200',
+    bar: 'bg-red-400',
+  },
 };
 
 function timeAgo(iso) {
@@ -278,6 +283,8 @@ export default function DashboardPage() {
             {drafts.map((d) => {
               const cfg = LIFECYCLE[d.lifecycle] || LIFECYCLE.draft;
               const isDraft = d.lifecycle === 'draft';
+              const isRejected = d.lifecycle === 'rejected';
+              const isEditable = isDraft || isRejected;
               return (
                 <div
                   key={d.id}
@@ -301,7 +308,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
-                  {/* Progress (drafts) or verification state (submitted/published) */}
+                  {/* Progress (drafts), rejection note, or verification state */}
                   {isDraft ? (
                     <div>
                       <div className="flex items-center justify-between text-xs font-medium text-slate-500 mb-1.5">
@@ -315,31 +322,36 @@ export default function DashboardPage() {
                         />
                       </div>
                     </div>
+                  ) : isRejected ? (
+                    <div className="flex items-start gap-2 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                      <span>{d.rejection_reason || 'Needs changes before it can be published. Edit the details and submit again.'}</span>
+                    </div>
                   ) : (
                     <div className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
                       <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                       {d.lifecycle === 'published'
                         ? 'Verified and live on the 3D map.'
-                        : 'Submitted and awaiting AI verification.'}
+                        : 'Submitted — awaiting verification. Not public yet.'}
                     </div>
                   )}
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 pt-1 mt-auto">
-                    {isDraft ? (
+                    {isEditable ? (
                       <>
                         <button
                           onClick={() => router.push(`/sell?draft=${d.id}`)}
                           className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-1.5"
                         >
-                          <span>Resume</span>
+                          <span>{isRejected ? 'Edit & Resubmit' : 'Resume'}</span>
                           <ArrowRight className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDiscard(d.id)}
                           disabled={deletingId === d.id}
                           className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition disabled:opacity-50"
-                          title="Discard draft"
+                          title={isRejected ? 'Discard listing' : 'Discard draft'}
                         >
                           {deletingId === d.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -348,7 +360,7 @@ export default function DashboardPage() {
                           )}
                         </button>
                       </>
-                    ) : (
+                    ) : d.lifecycle === 'published' ? (
                       <button
                         onClick={() =>
                           router.push(
@@ -362,6 +374,10 @@ export default function DashboardPage() {
                         <Eye className="w-4 h-4" />
                         <span>View on 3D Map</span>
                       </button>
+                    ) : (
+                      <span className="flex-1 text-center text-xs font-medium text-slate-500 px-4 py-2">
+                        In review — you&apos;ll be notified once it&apos;s verified.
+                      </span>
                     )}
                   </div>
                 </div>

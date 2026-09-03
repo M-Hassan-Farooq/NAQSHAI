@@ -6,6 +6,11 @@ import { isDraftMeaningful } from '@/lib/draftProgress';
 
 const AUTOSAVE_DELAY = 1200; // debounce window (ms) — autosave, not per-keystroke
 
+// A listing is editable (and therefore autosaveable) while it is a fresh draft or a
+// rejected listing being corrected for resubmission. 'submitted' and 'published' are
+// read-only for the owner.
+const EDITABLE = (s) => s === 'draft' || s === 'rejected';
+
 async function getAuthHeaders() {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
@@ -26,11 +31,12 @@ async function getAuthHeaders() {
  *   - a best-effort save when the tab is hidden / the page is being unloaded
  *
  * saveState: 'idle' | 'saving' | 'saved' | 'error'
- * status:    'draft' | 'submitted' | 'published'
+ * status:    'draft' | 'submitted' | 'published' | 'rejected'
  */
 export function useListingDraft({ enabled = false, resumeId = null, onHydrate } = {}) {
   const [draftId, setDraftId] = useState(resumeId || null);
   const [status, setStatus] = useState('draft');
+  const [rejectionReason, setRejectionReason] = useState(null);
   const [saveState, setSaveState] = useState('idle');
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [initializing, setInitializing] = useState(!!resumeId);
@@ -78,8 +84,10 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
             setDraftIdSafe(json.draft.id);
             updatedAtRef.current = json.draft.updated_at;
             setLastSavedAt(json.draft.updated_at);
-            const st = json.draft.published_plot_id ? 'submitted' : (json.draft.status || 'draft');
+            // status is authoritative now (a public plot only exists once published).
+            const st = json.draft.status || 'draft';
             setStatusSafe(st);
+            setRejectionReason(json.draft.rejection_reason || null);
             onHydrateRef.current?.(json.draft.form_data || {}, {
               isNew: false,
               currentStep: json.draft.current_step || 1,
@@ -98,7 +106,7 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
 
   // ---- The one function that talks to the save API (create-or-update).
   const doSave = useCallback(async (snapshot, { keepalive = false } = {}) => {
-    if (statusRef.current !== 'draft') return false; // never mutate a submitted listing
+    if (!EDITABLE(statusRef.current)) return false; // never mutate a submitted/published listing
     const meaningful = isDraftMeaningful({ ...(snapshot.form_data || {}), currentStep: snapshot.current_step });
     if (!draftIdRef.current && !meaningful) return true; // don't create an empty draft
 
@@ -184,7 +192,7 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
   // ---- Debounced autosave, called on every form change.
   const scheduleSave = useCallback((snapshot) => {
     pendingRef.current = snapshot;
-    if (statusRef.current !== 'draft') return;
+    if (!EDITABLE(statusRef.current)) return;
     setSaveState((s) => (s === 'saved' ? 'idle' : s)); // typing again → no longer "Saved"
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -206,7 +214,7 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
   useEffect(() => {
     if (!enabled) return;
     const flush = () => {
-      if (statusRef.current !== 'draft') return;
+      if (!EDITABLE(statusRef.current)) return;
       const snap = pendingRef.current;
       if (!snap) return;
       const meaningful = isDraftMeaningful({ ...(snap.form_data || {}), currentStep: snap.current_step });
@@ -226,6 +234,7 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
   const markSubmitted = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setStatusSafe('submitted');
+    setRejectionReason(null); // a fresh review cycle clears any prior rejection note
     setSaveState('idle');
   }, [setStatusSafe]);
 
@@ -234,6 +243,7 @@ export function useListingDraft({ enabled = false, resumeId = null, onHydrate } 
   return {
     draftId,
     status,
+    rejectionReason,
     saveState,
     lastSavedAt,
     initializing,

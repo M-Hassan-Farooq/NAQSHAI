@@ -16,7 +16,7 @@ export async function GET(request) {
     const db = getUserClient(token);
     const { data, error } = await db
       .from('listing_drafts')
-      .select('id, status, current_step, form_data, published_plot_id, created_at, updated_at')
+      .select('id, status, current_step, form_data, published_plot_id, rejection_reason, created_at, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
@@ -51,6 +51,7 @@ export async function GET(request) {
         lifecycle,
         current_step: d.current_step,
         published_plot_id: d.published_plot_id,
+        rejection_reason: d.rejection_reason || null,
         progress: computeDraftProgress(d.form_data),
         title: draftTitlePreview(d.form_data),
         created_at: d.created_at,

@@ -70,3 +70,26 @@ export function getAdminClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+/**
+ * Extract the raw bearer token from a request's Authorization header (no verification).
+ */
+export function getBearerToken(request) {
+  const authHeader =
+    request.headers.get('authorization') ||
+    request.headers.get('Authorization') ||
+    '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+/**
+ * Operator/admin gate for privileged workflow transitions (approve / reject).
+ *
+ * There is no user-facing admin role yet, so those operator-only endpoints are
+ * authenticated with the server's Supabase service-role key, which is a server
+ * secret and never reaches the browser. Returns false unless a service-role key is
+ * actually configured AND the presented token matches it exactly.
+ */
+export function isServiceRoleToken(token) {
+  return !!serviceKey && !!token && token === serviceKey;
+}

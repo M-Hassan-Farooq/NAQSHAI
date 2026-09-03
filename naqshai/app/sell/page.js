@@ -131,7 +131,6 @@ export default function SellPlotPage() {
 
   // Loading & Submission State
   const [submitting, setSubmitting] = useState(false);
-  const [submittedPlotId, setSubmittedPlotId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
   // ---- Rehydrate the form from a resumed draft (runs after the draft is fetched).
@@ -155,6 +154,11 @@ export default function SellPlotPage() {
     getDraftId,
     markSubmitted,
   } = draft;
+
+  // Editable while a fresh draft or a rejected listing being corrected; read-only
+  // once submitted or published. Single source of truth for the view-only UI, in
+  // scope for the handlers below and the render.
+  const isReadOnly = draftStatus !== 'draft' && draftStatus !== 'rejected';
 
   // Snapshot the form for the save layer. `form_data` shape is stable across the app.
   const buildSnapshot = useCallback(
@@ -219,12 +223,12 @@ export default function SellPlotPage() {
 
   // ---- Debounced autosave: persist to the DB whenever the form changes.
   useEffect(() => {
-    if (!draftReady || draftStatus !== 'draft') return;
+    if (!draftReady || isReadOnly) return;
     scheduleSave({
       current_step: currentStep,
       form_data: { sellerInfo, plotDetails, polygonCoordinates, uploadedFiles },
     });
-  }, [draftReady, draftStatus, scheduleSave, currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]);
+  }, [draftReady, isReadOnly, scheduleSave, currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]);
 
   const handleSignOut = async () => {
     const confirmed = window.confirm('Are you sure you want to sign out?');
@@ -277,6 +281,7 @@ export default function SellPlotPage() {
   // autosave persists a path (not the bytes) and never re-uploads the file.
   const uploadDocument = async (field, file) => {
     setDocError('');
+    if (isReadOnly) return; // view-only (submitted/published): never upload documents
     const uid = session?.user?.id;
     if (!uid) {
       setDocError('Your session has expired. Please sign in again.');
@@ -325,6 +330,11 @@ export default function SellPlotPage() {
   // Form Validation & Step Navigation
   const handleNextStep = () => {
     setErrorMessage('');
+    if (isReadOnly) {
+      // View-only: allow paging forward to review, but never validate or persist.
+      setCurrentStep((s) => Math.min(s + 1, 3));
+      return;
+    }
     if (currentStep === 1) {
       if (!sellerInfo.fullName || !sellerInfo.phoneNumber) {
         setErrorMessage('Please provide your full name and WhatsApp phone number.');
@@ -342,6 +352,11 @@ export default function SellPlotPage() {
 
   const handlePrevStep = () => {
     setErrorMessage('');
+    if (isReadOnly) {
+      // View-only: allow paging back to review without persisting.
+      setCurrentStep((s) => Math.max(s - 1, 1));
+      return;
+    }
     const prev = Math.max(currentStep - 1, 1);
     saveNow(buildSnapshot(prev));
     setCurrentStep(prev);
@@ -377,7 +392,6 @@ export default function SellPlotPage() {
 
       if (data.success) {
         markSubmitted();
-        setSubmittedPlotId(data.plotId || id);
         setCurrentStep(4);
       } else {
         setErrorMessage(data.error || 'Failed to submit plot listing. Please try again.');
@@ -400,8 +414,6 @@ export default function SellPlotPage() {
       </div>
     );
   }
-
-  const isReadOnly = draftStatus !== 'draft';
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
@@ -516,6 +528,21 @@ export default function SellPlotPage() {
           </div>
         )}
 
+        {draftStatus === 'rejected' && currentStep <= 3 && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-sm flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-semibold">This listing needs changes before it can be published</p>
+              {draft.rejectionReason && (
+                <p className="text-xs text-amber-800 mt-0.5">Reviewer note: {draft.rejectionReason}</p>
+              )}
+              <p className="text-xs text-amber-800 mt-0.5">
+                Update the details below and submit again to send it back for verification.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Title & Introduction */}
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -624,6 +651,7 @@ export default function SellPlotPage() {
           {/* STEP 1: Plot & Seller Details */}
           {currentStep === 1 && (
             <div className="space-y-8">
+              <fieldset disabled={isReadOnly} className="space-y-8 border-0 p-0 m-0 min-w-0 disabled:opacity-70">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 pb-3 border-b border-slate-100">
                   <User className="w-5 h-5 text-emerald-700" />
@@ -787,6 +815,8 @@ export default function SellPlotPage() {
                 </div>
               </div>
 
+              </fieldset>
+
               <div className="flex justify-end pt-4 border-t border-slate-100">
                 <button
                   type="button"
@@ -818,7 +848,7 @@ export default function SellPlotPage() {
                   <button
                     type="button"
                     onClick={handleRemoveLastPoint}
-                    disabled={polygonCoordinates.length === 0}
+                    disabled={isReadOnly || polygonCoordinates.length === 0}
                     className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -828,7 +858,7 @@ export default function SellPlotPage() {
                   <button
                     type="button"
                     onClick={handleClearPolygon}
-                    disabled={polygonCoordinates.length === 0}
+                    disabled={isReadOnly || polygonCoordinates.length === 0}
                     className="px-3.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -855,7 +885,7 @@ export default function SellPlotPage() {
                           center={DEFAULT_CENTER}
                           zoom={15}
                           onLoad={onMapLoad}
-                          onClick={handleMapClick}
+                          onClick={isReadOnly ? undefined : handleMapClick}
                           options={{
                             mapTypeId: 'hybrid',
                             streetViewControl: false,
@@ -884,7 +914,8 @@ export default function SellPlotPage() {
                                 strokeWeight: 2,
                                 fillColor: '#10b981',
                                 fillOpacity: 0.35,
-                                editable: true,
+                                editable: !isReadOnly,
+                                draggable: !isReadOnly,
                               }}
                             />
                           )}
@@ -992,6 +1023,7 @@ export default function SellPlotPage() {
                 </div>
               )}
 
+              <fieldset disabled={isReadOnly} className="border-0 p-0 m-0 min-w-0 disabled:opacity-70">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {/* Allotment Letter Upload */}
                 <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
@@ -1104,6 +1136,7 @@ export default function SellPlotPage() {
                   </div>
                 </div>
               </div>
+              </fieldset>
 
               <div className="flex justify-between pt-4 border-t border-slate-100">
                 <button
@@ -1146,26 +1179,16 @@ export default function SellPlotPage() {
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Listing Submitted Successfully!</h2>
-                <p className="text-xs font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full inline-block mt-2 font-bold">
-                  Plot Reference ID: {submittedPlotId}
-                </p>
+                <h2 className="text-2xl font-bold text-slate-900">Listing Submitted for Verification</h2>
                 <p className="text-sm text-slate-600 mt-3 max-w-md mx-auto leading-relaxed">
-                  Your plot has been saved to the live database and appears on the 3D Map. It stays under review until our AI verification completes — you can track its status any time from My Listings.
+                  Your listing is now <strong>under review</strong>. It is not public yet — once our team verifies it, it will be published to the 3D Map. You can track its status any time from My Listings.
                 </p>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
                 <button
-                  onClick={() => router.push(`/explore?plot=${submittedPlotId}`)}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm"
-                >
-                  Inspect on 3D Map
-                </button>
-
-                <button
                   onClick={() => router.push('/dashboard')}
-                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm"
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm"
                 >
                   Go to My Listings
                 </button>

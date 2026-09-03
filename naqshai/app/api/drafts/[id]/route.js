@@ -61,10 +61,11 @@ export async function PUT(request, { params }) {
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Draft not found' }, { status: 404 });
     }
-    if (existing.status !== 'draft') {
-      // Already submitted/published — the wizard is read-only from here.
+    // A fresh draft or a rejected listing being corrected is editable; a submitted
+    // or published listing is read-only.
+    if (existing.status !== 'draft' && existing.status !== 'rejected') {
       return NextResponse.json(
-        { success: false, error: 'This listing has already been submitted and can no longer be edited as a draft.', draft: existing },
+        { success: false, error: 'This listing has already been submitted and can no longer be edited.', draft: existing },
         { status: 409 }
       );
     }
@@ -118,11 +119,37 @@ export async function DELETE(request, { params }) {
     }
 
     const db = getUserClient(token);
+
+    // Load the current row for ownership + status enforcement.
+    const { data: existing, error: fErr } = await db
+      .from('listing_drafts')
+      .select('id, user_id, status')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (fErr) {
+      return NextResponse.json({ success: false, error: fErr.message }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Draft not found' }, { status: 404 });
+    }
+    // Only a fresh draft or a rejected listing being corrected may be discarded. A
+    // submitted listing is awaiting verification and a published one is live, so
+    // neither can be deleted by the owner (mirrors the PUT read-only guard above).
+    if (existing.status !== 'draft' && existing.status !== 'rejected') {
+      return NextResponse.json(
+        { success: false, error: 'This listing has been submitted and can no longer be deleted.', draft: existing },
+        { status: 409 }
+      );
+    }
+
     const { error } = await db
       .from('listing_drafts')
       .delete()
       .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .in('status', ['draft', 'rejected']); // guard the check->delete window against a concurrent submit
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
