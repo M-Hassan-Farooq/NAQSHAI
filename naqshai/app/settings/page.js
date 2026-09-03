@@ -13,6 +13,7 @@ import {
   AlertCircle,
   User,
   Mail,
+  Phone,
   Loader2,
   CheckCircle2,
   Camera,
@@ -30,6 +31,7 @@ export default function SettingsPage() {
 
   // Form & Profile State
   const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -78,9 +80,11 @@ export default function SettingsPage() {
 
           const userMeta = effectiveUser.user_metadata || {};
           const resolvedFullName = profileRow?.full_name || userMeta.full_name || userMeta.name || '';
+          const resolvedPhoneNumber = profileRow?.phone_number || userMeta.phone_number || effectiveUser.phone || '';
           const resolvedAvatarUrl = profileRow?.avatar_url || userMeta.avatar_url || userMeta.picture || null;
 
           setFullName(resolvedFullName);
+          setPhoneNumber(resolvedPhoneNumber);
           setAvatarUrl(resolvedAvatarUrl);
 
           // Query seller verification status from public.sellers table
@@ -208,15 +212,18 @@ export default function SettingsPage() {
       // Multi-Layer Sync: Write to localStorage, public.profiles, public.sellers, auth.updateUser(), refreshSession(), and broadcast
       const { profile: updatedProfile, authUser } = await syncProfile(user.id, {
         full_name: fullName,
+        phone_number: phoneNumber,
         avatar_url: finalAvatarUrl,
       });
 
       const resolvedAvatar = updatedProfile?.avatar_url || finalAvatarUrl;
       const resolvedName = updatedProfile?.full_name || fullName;
+      const resolvedPhone = updatedProfile?.phone_number || phoneNumber;
 
       // Update Local Page State
       setAvatarUrl(resolvedAvatar);
       setFullName(resolvedName);
+      setPhoneNumber(resolvedPhone);
       setSelectedFile(null);
       setFilePreview(null);
       if (authUser) setUser(authUser);
@@ -287,16 +294,10 @@ export default function SettingsPage() {
               <span>AI Advisor</span>
             </button>
 
-            {session?.user && (
-              <UserNav
-                session={session}
-                onSignOut={handleSignOut}
-                onUserUpdated={(updatedUser) => {
-                  setUser(updatedUser);
-                  setSession((prev) => (prev ? { ...prev, user: updatedUser } : prev));
-                }}
-              />
-            )}
+            <UserNav
+              session={session}
+              onSignOut={handleSignOut}
+            />
           </div>
         </div>
       </header>
@@ -462,6 +463,22 @@ export default function SettingsPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter your full name"
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Phone Number (Editable)
+              </label>
+              <div className="relative flex items-center">
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+92 300 1234567"
                   className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
                 />
               </div>

@@ -444,13 +444,10 @@ export default function SellPlotPage() {
             >
               Explore 3D Map
             </button>
-            {session?.user && (
-              <UserNav
-                session={session}
-                onSignOut={handleSignOut}
-                onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
-              />
-            )}
+            <UserNav
+              session={session}
+              onSignOut={handleSignOut}
+            />
           </div>
         </div>
       </header>

@@ -4,17 +4,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/UserAvatar';
-import { Settings, LogOut, ChevronDown, Heart } from 'lucide-react';
+import { Settings, LogOut, ChevronDown, Heart, User, UserPlus, Phone, Loader2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useFavorites } from '@/context/FavoritesContext';
 import { getLocalCachedProfile } from '@/lib/profileHelper';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function UserNav({ session, onSignOut, className = '' }) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const dropdownRef = useRef(null);
 
-  const { user: contextUser, profile: contextProfile } = useProfile();
+  const { user: contextUser, profile: contextProfile, loading: profileLoading } = useProfile();
   const { count: favoritesCount } = useFavorites();
   const activeUser = session?.user || contextUser;
 
@@ -35,19 +37,24 @@ export default function UserNav({ session, onSignOut, className = '' }) {
     };
   }, []);
 
-  if (!activeUser) return null;
-
-  const localCache = getLocalCachedProfile(activeUser.id);
-  const userMeta = activeUser.user_metadata || {};
-  const activeProfile = contextProfile || localCache;
-  const displayName = activeProfile?.full_name || userMeta.full_name || userMeta.name || activeUser.email || 'Account';
-
   const handleSignOutClick = async () => {
     setIsDropdownOpen(false);
     const confirmed = window.confirm('Are you sure you want to sign out?');
     if (!confirmed) return;
-    if (onSignOut) {
-      await onSignOut();
+
+    setSigningOut(true);
+    try {
+      if (onSignOut) {
+        await onSignOut();
+      } else {
+        await supabase.auth.signOut();
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err) {
+      console.error('Sign out error:', err);
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -56,13 +63,56 @@ export default function UserNav({ session, onSignOut, className = '' }) {
     router.push('/settings');
   };
 
+  // Loading state skeleton
+  if (profileLoading && !session && !contextUser) {
+    return (
+      <div className={`flex items-center gap-2 ${className}`}>
+        <div className="w-8 h-8 rounded-full bg-slate-200 animate-pulse" />
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // GUEST STATE (Unauthenticated User)
+  // -------------------------------------------------------------
+  if (!activeUser) {
+    return (
+      <div className={`flex items-center gap-2 ${className}`}>
+        <Link
+          href="/login"
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition"
+        >
+          <User className="w-3.5 h-3.5 text-emerald-700" />
+          <span>Sign In</span>
+        </Link>
+        <Link
+          href="/login?signup=true"
+          className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded-xl shadow-xs transition"
+        >
+          <UserPlus className="w-3.5 h-3.5 text-emerald-100" />
+          <span>Sign Up</span>
+        </Link>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // AUTHENTICATED STATE (Logged In User)
+  // -------------------------------------------------------------
+  const localCache = getLocalCachedProfile(activeUser.id);
+  const userMeta = activeUser.user_metadata || {};
+  const activeProfile = contextProfile || localCache;
+  const displayName = activeProfile?.full_name || userMeta.full_name || userMeta.name || activeUser.email || 'Account';
+  const phoneNumber = activeProfile?.phone_number || userMeta.phone_number || activeUser.phone;
+
   return (
     <div className={`relative inline-block text-left ${className}`} ref={dropdownRef}>
       {/* Clickable Avatar Trigger Button */}
       <button
         type="button"
         onClick={() => setIsDropdownOpen((prev) => !prev)}
-        className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100/80 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+        disabled={signingOut}
+        className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100/80 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer disabled:opacity-50"
         aria-expanded={isDropdownOpen}
         aria-haspopup="true"
       >
@@ -76,12 +126,18 @@ export default function UserNav({ session, onSignOut, className = '' }) {
 
       {/* Dropdown Menu Overlay */}
       {isDropdownOpen && (
-        <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 shadow-xl rounded-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 shadow-xl rounded-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
           
           {/* Header User Summary */}
           <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl mb-1">
             <p className="text-xs font-bold text-slate-900 truncate">{displayName}</p>
             <p className="text-[11px] text-slate-500 truncate">{activeUser.email}</p>
+            {phoneNumber && (
+              <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-1 font-mono font-medium">
+                <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
+                <span className="truncate">{phoneNumber}</span>
+              </div>
+            )}
           </div>
 
           {/* Menu Items */}
@@ -119,10 +175,15 @@ export default function UserNav({ session, onSignOut, className = '' }) {
             <button
               type="button"
               onClick={handleSignOutClick}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer"
+              disabled={signingOut}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer disabled:opacity-50"
             >
-              <LogOut className="w-4 h-4 text-red-500" />
-              <span>Sign Out</span>
+              {signingOut ? (
+                <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+              ) : (
+                <LogOut className="w-4 h-4 text-red-500" />
+              )}
+              <span>{signingOut ? 'Signing out...' : 'Sign Out'}</span>
             </button>
           </div>
 

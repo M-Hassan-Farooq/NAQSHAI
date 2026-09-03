@@ -205,7 +205,7 @@ export default function DashboardPage() {
               <Plus className="w-3.5 h-3.5" />
               <span>New Listing</span>
             </button>
-            {session?.user && <UserNav session={session} onSignOut={handleSignOut} />}
+            <UserNav session={session} onSignOut={handleSignOut} />
           </div>
         </div>
       </header>

@@ -115,11 +115,9 @@ export default function FavoritesPage() {
             <span>AI Real Estate Advisor</span>
           </button>
 
-          {user && (
-            <UserNav
-              className="bg-white border border-slate-200 shadow-xs rounded-xl px-2 py-0.5"
-            />
-          )}
+          <UserNav
+            className="bg-white border border-slate-200 shadow-xs rounded-xl px-2 py-0.5"
+          />
         </div>
       </header>
 

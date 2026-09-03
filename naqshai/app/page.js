@@ -105,23 +105,12 @@ export default function Home() {
               <span>Launch AI Advisor</span>
             </Link>
 
-            {session?.user ? (
-              <div className="border-l border-slate-200 pl-3 ml-1">
-                <UserNav
-                  session={session}
-                  onSignOut={handleSignOut}
-                  onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
-                />
-              </div>
-            ) : (
-              <Link
-                href="/login?redirect=/"
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm transition border-l border-slate-200 ml-1"
-              >
-                <User className="w-3.5 h-3.5 text-emerald-700" />
-                <span>Sign In</span>
-              </Link>
-            )}
+            <div className="border-l border-slate-200 pl-3 ml-1">
+              <UserNav
+                session={session}
+                onSignOut={handleSignOut}
+              />
+            </div>
           </div>
         </div>
       </header>

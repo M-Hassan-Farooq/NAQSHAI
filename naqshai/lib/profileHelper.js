@@ -53,11 +53,11 @@ export async function getProfile(userId) {
     // 1. Try public.profiles table
     const { data: profilesData, error: profilesErr } = await supabase
       .from('profiles')
-      .select('id, full_name, avatar_url, updated_at')
+      .select('id, full_name, phone_number, avatar_url, created_at, updated_at')
       .eq('id', userId)
       .maybeSingle();
 
-    if (profilesData && (profilesData.full_name || profilesData.avatar_url)) {
+    if (profilesData && (profilesData.full_name || profilesData.avatar_url || profilesData.phone_number)) {
       const merged = { ...localCache, ...profilesData };
       setLocalCachedProfile(userId, merged);
       return merged;
@@ -105,11 +105,12 @@ export async function fetchLatestUserAndProfile(providedUserId = null) {
 /**
  * Dual-Write Sync: Write data BOTH to public.profiles table, public.sellers table, localStorage, and supabase.auth.updateUser()
  */
-export async function syncProfile(userId, { full_name, avatar_url }) {
+export async function syncProfile(userId, { full_name, phone_number, avatar_url }) {
   if (!userId) return { profile: null, authUser: null };
 
   const updateFields = {};
   if (full_name !== undefined) updateFields.full_name = full_name;
+  if (phone_number !== undefined) updateFields.phone_number = phone_number;
   if (avatar_url !== undefined) updateFields.avatar_url = avatar_url;
 
   // 1. Write immediately to localStorage for instant persistence across reloads
@@ -157,6 +158,9 @@ export async function syncProfile(userId, { full_name, avatar_url }) {
     }
     if (full_name !== undefined) {
       updatePayload.full_name = full_name;
+    }
+    if (phone_number !== undefined) {
+      updatePayload.phone_number = phone_number;
     }
 
     const { data, error } = await supabase.auth.updateUser({ data: updatePayload });

@@ -711,22 +711,10 @@ function ExploreContent() {
                   <span className="hidden sm:inline">AI Advisor</span>
                 </button>
 
-                {session?.user ? (
-                  <UserNav
-                    session={session}
-                    onSignOut={handleSignOut}
-                    onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
-                    className="bg-white border border-slate-200 shadow-xs rounded-xl px-2 py-0.5"
-                  />
-                ) : (
-                  <button
-                    onClick={() => router.push('/login?redirect=/explore')}
-                    className="bg-white border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
-                  >
-                    <User className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Sign In</span>
-                  </button>
-                )}
+                <UserNav
+                  session={session}
+                  onSignOut={handleSignOut}
+                />
               </div>
             </header>
 

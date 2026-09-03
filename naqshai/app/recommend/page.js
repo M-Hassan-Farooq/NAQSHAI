@@ -454,23 +454,12 @@ function ChatInterface() {
                         Explore 3D Map <ArrowRight className="w-3.5 h-3.5 text-emerald-700" />
                     </button>
 
-                    {session?.user ? (
-                        <div className="border-l border-slate-200 pl-2">
-                            <UserNav
-                                session={session}
-                                onSignOut={handleSignOut}
-                                onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
-                            />
-                        </div>
-                    ) : (
-                        <button
-                            onClick={() => router.push('/login?redirect=/recommend')}
-                            className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl shadow-sm transition border-l border-slate-200 ml-1"
-                        >
-                            <User className="w-3.5 h-3.5 text-emerald-700" />
-                            <span>Sign In</span>
-                        </button>
-                    )}
+                    <div className="border-l border-slate-200 pl-2">
+                        <UserNav
+                            session={session}
+                            onSignOut={handleSignOut}
+                        />
+                    </div>
                 </div>
             </header>
 
