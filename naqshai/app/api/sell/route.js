@@ -41,33 +41,37 @@ export async function POST(request) {
     const sellerPhone = (seller.phoneNumber || seller.phone_number || seller.phone || '').trim();
     const sellerRole = seller.sellerRole || seller.seller_role || seller.role || 'Direct Owner';
 
-    // 2. Create Auth User identity in auth.users FIRST (satisfies foreign key constraint on sellers.id)
-    const sanitizedPhone = sellerPhone.replace(/[^0-9]/g, '') || Math.floor(Date.now() % 1000000000);
-    const sellerEmail = `seller_${sanitizedPhone}_${Date.now()}@naqshai.internal`;
+    // 2. Attach authenticated user.id if provided, or create Auth User identity as fallback
+    const authenticatedUserId = body.sellerId || seller.userId || seller.id || body.userId;
+    let userId = authenticatedUserId || null;
 
-    let userId = null;
-    try {
-      const { data: authUser, error: authErr } = await dbClient.auth.admin.createUser({
-        email: sellerEmail,
-        email_confirm: true,
-        user_metadata: { full_name: sellerName, phone_number: sellerPhone },
-      });
-
-      if (authErr) {
-        console.error('Supabase Auth User Creation Error:', authErr.message || authErr);
-      } else if (authUser && authUser.user) {
-        userId = authUser.user.id;
-      }
-    } catch (authException) {
-      console.error('Supabase Auth Exception:', authException.message);
-    }
-
-    // Fallback UUID if auth user creation failed
     if (!userId) {
-      userId = crypto.randomUUID();
+      const sanitizedPhone = sellerPhone.replace(/[^0-9]/g, '') || Math.floor(Date.now() % 1000000000);
+      const sellerEmail = `seller_${sanitizedPhone}_${Date.now()}@naqshai.internal`;
+
+      try {
+        const { data: authUser, error: authErr } = await dbClient.auth.admin.createUser({
+          email: sellerEmail,
+          email_confirm: true,
+          user_metadata: { full_name: sellerName, phone_number: sellerPhone },
+        });
+
+        if (authErr) {
+          console.error('Supabase Auth User Creation Error:', authErr.message || authErr);
+        } else if (authUser && authUser.user) {
+          userId = authUser.user.id;
+        }
+      } catch (authException) {
+        console.error('Supabase Auth Exception:', authException.message);
+      }
+
+      // Fallback UUID if auth user creation failed
+      if (!userId) {
+        userId = crypto.randomUUID();
+      }
     }
 
-    // 3. Insert seller into 'sellers' table FIRST
+    // 3. Insert or update seller in 'sellers' table using authenticated user.id (seller_id)
     const sellerRecord = {
       id: userId,
       full_name: sellerName,
@@ -78,11 +82,11 @@ export async function POST(request) {
 
     const { data: sellerData, error: sErr } = await dbClient
       .from('sellers')
-      .insert([sellerRecord])
+      .upsert([sellerRecord], { onConflict: 'id' })
       .select();
 
     if (sErr) {
-      console.error('Supabase Sellers Insert Error:', sErr.message || sErr);
+      console.error('Supabase Sellers Upsert Error:', sErr.message || sErr);
       return NextResponse.json(
         {
           success: false,
@@ -93,9 +97,9 @@ export async function POST(request) {
       );
     }
 
-    // 4. Capture generated UUID `id` returned from successful seller insertion
+    // 4. Capture verified UUID `id` (authenticated user.id) returned from seller upsert
     const capturedSellerId = (sellerData && sellerData[0] && sellerData[0].id) ? sellerData[0].id : userId;
-    console.log('Successfully created seller profile in sellers table with ID:', capturedSellerId);
+    console.log('Successfully attached authenticated seller profile with ID (seller_id):', capturedSellerId);
 
     // 5. Cleanly format unique Plot ID and title
     const rawPlotNum = (plot.plotNumber || '').trim();

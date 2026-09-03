@@ -1,4 +1,10 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+import UserNav from '@/components/UserNav';
 import {
   Sparkles,
   ArrowRight,
@@ -14,10 +20,45 @@ import {
   HelpCircle,
   ExternalLink,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  User,
+  LogOut
 } from 'lucide-react';
 
 export default function Home() {
+  const router = useRouter();
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSession() {
+      try {
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        if (isMounted) setSession(activeSession);
+      } catch (e) {
+        console.error('Session error on Home page:', e);
+      }
+    }
+    fetchSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (isMounted) setSession(currentSession);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    const confirmed = window.confirm('Are you sure you want to sign out?');
+    if (!confirmed) return;
+    await supabase.auth.signOut();
+    setSession(null);
+    router.refresh();
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900">
       
@@ -62,6 +103,24 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
               <span>Launch AI Advisor</span>
             </Link>
+
+            {session?.user ? (
+              <div className="border-l border-slate-200 pl-3 ml-1">
+                <UserNav
+                  session={session}
+                  onSignOut={handleSignOut}
+                  onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
+                />
+              </div>
+            ) : (
+              <Link
+                href="/login?redirect=/"
+                className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm transition border-l border-slate-200 ml-1"
+              >
+                <User className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Sign In</span>
+              </Link>
+            )}
           </div>
         </div>
       </header>

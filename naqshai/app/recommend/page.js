@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+import UserNav from '@/components/UserNav';
 import {
     Bot,
     Send,
@@ -12,7 +14,9 @@ import {
     ArrowRight,
     RefreshCw,
     Phone,
-    CheckCircle2
+    CheckCircle2,
+    User,
+    LogOut
 } from 'lucide-react';
 
 const QUICK_QUESTIONS = {
@@ -54,6 +58,7 @@ function ChatInterface() {
     const searchParams = useSearchParams();
     const contextPlotId = searchParams.get('context');
 
+    const [session, setSession] = useState(null);
     const [language, setLanguage] = useState('Auto');
     const [messages, setMessages] = useState([
         {
@@ -66,6 +71,36 @@ function ChatInterface() {
     const [loading, setLoading] = useState(false);
     const chatEndRef = useRef(null);
     const didAutoTriggerRef = useRef(false);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function fetchSession() {
+            try {
+                const { data: { session: activeSession } } = await supabase.auth.getSession();
+                if (isMounted) setSession(activeSession);
+            } catch (err) {
+                console.error('Session error on Recommend page:', err);
+            }
+        }
+        fetchSession();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+            if (isMounted) setSession(currentSession);
+        });
+
+        return () => {
+            isMounted = false;
+            subscription?.unsubscribe();
+        };
+    }, []);
+
+    const handleSignOut = async () => {
+        const confirmed = window.confirm('Are you sure you want to sign out?');
+        if (!confirmed) return;
+        await supabase.auth.signOut();
+        setSession(null);
+        router.refresh();
+    };
 
     const handleLanguageChange = (langOption) => {
         setLanguage(langOption);
@@ -188,6 +223,24 @@ function ChatInterface() {
                     >
                         Explore 3D Map <ArrowRight className="w-3.5 h-3.5 text-emerald-700" />
                     </button>
+
+                    {session?.user ? (
+                        <div className="border-l border-slate-200 pl-2">
+                            <UserNav
+                                session={session}
+                                onSignOut={handleSignOut}
+                                onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
+                            />
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => router.push('/login?redirect=/recommend')}
+                            className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl shadow-sm transition border-l border-slate-200 ml-1"
+                        >
+                            <User className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Sign In</span>
+                        </button>
+                    )}
                 </div>
             </header>
 

@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GoogleMap, Polygon, Marker } from '@react-google-maps/api';
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
+import { supabase } from '@/lib/supabaseClient';
+import UserNav from '@/components/UserNav';
 import {
   Sparkles,
   ArrowLeft,
@@ -25,7 +27,9 @@ import {
   Compass,
   AlertCircle,
   HelpCircle,
-  X
+  X,
+  Loader2,
+  LogOut
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
@@ -44,6 +48,10 @@ function formatPkr(num) {
 
 export default function SellPlotPage() {
   const router = useRouter();
+
+  // Authentication State
+  const [session, setSession] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Step state: 1 = Details, 2 = Boundary Map, 3 = Documents, 4 = Success
   const [currentStep, setCurrentStep] = useState(1);
@@ -82,6 +90,58 @@ export default function SellPlotPage() {
   const [submittedPlotId, setSubmittedPlotId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Route Protection: Check active user session
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkAuthSession() {
+      try {
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        if (!activeSession) {
+          router.push('/login?redirect=/sell');
+        } else if (isMounted) {
+          setSession(activeSession);
+          const userMeta = activeSession.user?.user_metadata || {};
+          setSellerInfo((prev) => ({
+            ...prev,
+            fullName: prev.fullName || userMeta.full_name || userMeta.name || activeSession.user?.email?.split('@')[0] || '',
+            phoneNumber: prev.phoneNumber || userMeta.phone_number || '',
+          }));
+        }
+      } catch (err) {
+        console.error('Session verification error:', err);
+        router.push('/login?redirect=/sell');
+      } finally {
+        if (isMounted) setCheckingAuth(false);
+      }
+    }
+
+    checkAuthSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/');
+      } else if (!currentSession) {
+        router.push('/login?redirect=/sell');
+      } else if (isMounted) {
+        setSession(currentSession);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
+  }, [router]);
+
+  const handleSignOut = async () => {
+    const confirmed = window.confirm('Are you sure you want to sign out?');
+    if (!confirmed) return;
+    await supabase.auth.signOut();
+    setSession(null);
+    router.push('/');
+  };
+
   // Map callbacks
   const onMapLoad = useCallback((mapInstance) => {
     mapRef.current = mapInstance;
@@ -111,7 +171,6 @@ export default function SellPlotPage() {
         [field]: file.name,
       }));
     }
-    // Reset the native input value so the same file can be re-selected after removal
     e.target.value = '';
   };
 
@@ -151,7 +210,11 @@ export default function SellPlotPage() {
 
     try {
       const payload = {
-        seller: sellerInfo,
+        sellerId: session?.user?.id,
+        seller: {
+          ...sellerInfo,
+          userId: session?.user?.id,
+        },
         plot: plotDetails,
         polygonCoordinates: polygonCoordinates,
         documents: [
@@ -182,6 +245,17 @@ export default function SellPlotPage() {
       setSubmitting(false);
     }
   };
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="flex items-center gap-3 bg-white border border-slate-200 px-6 py-4 rounded-2xl shadow-sm">
+          <Loader2 className="w-5 h-5 text-emerald-700 animate-spin" />
+          <span className="text-sm font-medium text-slate-700">Verifying seller authorization...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
@@ -215,6 +289,13 @@ export default function SellPlotPage() {
               <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
               <span>AI Advisor</span>
             </button>
+            {session?.user && (
+              <UserNav
+                session={session}
+                onSignOut={handleSignOut}
+                onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
+              />
+            )}
           </div>
         </div>
       </header>

@@ -4,7 +4,9 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from 'next/navigation';
 import { GoogleMap, Polygon, Marker, StreetViewPanorama, GoogleMapsMarkerClusterer } from '@react-google-maps/api';
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
-import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home, Loader2, RefreshCw } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import UserNav from '@/components/UserNav';
+import { Search, ShieldAlert, Phone, MapPin, Eye, X, ArrowLeft, MessageSquare, Home, Loader2, RefreshCw, User, LogOut } from 'lucide-react';
 
 const mapContainerStyle = {
   width: '100%',
@@ -49,12 +51,44 @@ function ExploreContent() {
   const plotParam = searchParams ? searchParams.get('plot') : null;
 
   const [map, setMap] = useState(null);
+  const [session, setSession] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [is3DMode, setIs3DMode] = useState(false);
   const [hoveredPlotId, setHoveredPlotId] = useState(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM); // drives the marker-layer ↔ polygon transition
+
+  // Auth session state check
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSession() {
+      try {
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        if (isMounted) setSession(activeSession);
+      } catch (err) {
+        console.error('Session error on Explore page:', err);
+      }
+    }
+    fetchSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (isMounted) setSession(currentSession);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    const confirmed = window.confirm('Are you sure you want to sign out?');
+    if (!confirmed) return;
+    await supabase.auth.signOut();
+    setSession(null);
+    router.refresh();
+  };
 
   // Database-backed plot data.
   const [plots, setPlots] = useState([]);
@@ -321,6 +355,23 @@ function ExploreContent() {
           <ArrowLeft className="w-4 h-4 text-emerald-700" />
           <span>Back to AI Advisor</span>
         </button>
+
+        {session?.user ? (
+          <UserNav
+            session={session}
+            onSignOut={handleSignOut}
+            onUserUpdated={(updatedUser) => setSession((prev) => ({ ...prev, user: updatedUser }))}
+            className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-2 py-1"
+          />
+        ) : (
+          <button
+            onClick={() => router.push('/login?redirect=/explore')}
+            className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-sm rounded-xl px-4 py-2.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer"
+          >
+            <User className="w-4 h-4 text-emerald-700" />
+            <span>Sign In</span>
+          </button>
+        )}
       </div>
 
       {/* 3. Floating Command Center (Search & Filters) */}
