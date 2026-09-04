@@ -3,6 +3,7 @@ import "./globals.css";
 import { ProfileProvider } from "@/context/ProfileContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import MobileNav from "@/components/MobileNav";
+import FavoriteSyncNotice from "@/components/FavoriteSyncNotice";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({ children }) {
         <ProfileProvider>
           <FavoritesProvider>
             <MobileNav />
+            <FavoriteSyncNotice />
             {children}
           </FavoritesProvider>
         </ProfileProvider>

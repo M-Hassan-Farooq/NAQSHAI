@@ -14,6 +14,7 @@ export function FavoritesProvider({ children }) {
   const [favoritePlotIds, setFavoritePlotIds] = useState(new Set());
   const [favoritePlots, setFavoritePlots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncNotice, setSyncNotice] = useState(null);
 
   // 1. Listen to Supabase Auth State
   useEffect(() => {
@@ -40,7 +41,7 @@ export function FavoritesProvider({ children }) {
   }, []);
 
   // 2. Fetch User Favorites (from server if authenticated, fallback to local storage)
-  const fetchFavorites = useCallback(async () => {
+  const fetchFavorites = useCallback(async (signal) => {
     if (!session?.access_token) {
       // Unauthenticated: load from localStorage
       try {
@@ -62,6 +63,7 @@ export function FavoritesProvider({ children }) {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
+        signal,
       });
 
       if (res.ok) {
@@ -74,6 +76,7 @@ export function FavoritesProvider({ children }) {
         }
       }
     } catch (err) {
+      if (err?.name === 'AbortError') return;
       console.warn('[FavoritesContext] Failed to load remote favorites:', err);
     } finally {
       setLoading(false);
@@ -81,7 +84,9 @@ export function FavoritesProvider({ children }) {
   }, [session?.access_token]);
 
   useEffect(() => {
-    fetchFavorites();
+    const controller = new AbortController();
+    fetchFavorites(controller.signal);
+    return () => controller.abort();
   }, [fetchFavorites]);
 
   // 3. Check if plot is in favorites
@@ -133,15 +138,20 @@ export function FavoritesProvider({ children }) {
           if (!res.ok) {
             // Revert on failure
             console.warn('[FavoritesContext] Toggle sync failed, reverting optimistic state');
+            setSyncNotice({ type: 'error', text: 'Could not sync this favorite. Your saved list was restored.' });
             fetchFavorites();
+          } else {
+            setSyncNotice({ type: 'success', text: wasFavorite ? 'Removed from your synced favorites.' : 'Saved to your synced favorites.' });
           }
         } catch (e) {
           console.warn('[FavoritesContext] Network error syncing favorite:', e);
+          setSyncNotice({ type: 'error', text: 'Could not sync this favorite. Check your connection and retry.' });
           fetchFavorites();
         }
       } else {
         // If not authenticated, inform the user they can sign in to sync
         console.log('[FavoritesContext] Saved locally. Sign in to sync across devices.');
+        setSyncNotice({ type: 'info', text: 'Saved on this device. Sign in to sync across devices.' });
       }
     },
     [favoritePlotIds, session?.access_token, fetchFavorites]
@@ -154,10 +164,12 @@ export function FavoritesProvider({ children }) {
       isFavorite,
       toggleFavorite,
       refreshFavorites: fetchFavorites,
+      syncNotice,
+      clearSyncNotice: () => setSyncNotice(null),
       loading,
       count: favoritePlotIds.size,
     }),
-    [favoritePlotIds, favoritePlots, isFavorite, toggleFavorite, fetchFavorites, loading]
+    [favoritePlotIds, favoritePlots, isFavorite, toggleFavorite, fetchFavorites, syncNotice, loading]
   );
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;

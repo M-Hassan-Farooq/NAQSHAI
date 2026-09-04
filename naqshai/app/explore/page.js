@@ -219,10 +219,11 @@ function ExploreContent() {
 
   // Data fetching
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/plots', { cache: 'no-store' });
+        const res = await fetch('/api/plots', { cache: 'no-store', signal: controller.signal });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
@@ -240,6 +241,7 @@ function ExploreContent() {
           }
         }
       } catch (err) {
+        if (err?.name === 'AbortError') return;
         if (cancelled) return;
         console.error('Failed to load registered plots:', err);
         setPlotsError('We couldn’t load the registered plots. Please try again.');
@@ -250,6 +252,7 @@ function ExploreContent() {
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [reloadKey]);
 
