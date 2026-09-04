@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
-import { persistListing, normalizeDocuments } from '@/lib/publishListing';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,83 +28,23 @@ export async function POST(request, { params }) {
 
     const dbAdmin = getAdminClient();
 
-    const { data: draft, error: fErr } = await dbAdmin
-      .from('listing_drafts')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    const { data, error } = await dbAdmin.rpc('approve_listing', { p_draft_id: id });
 
-    if (fErr) {
-      return NextResponse.json({ success: false, error: fErr.message }, { status: 500 });
-    }
-    if (!draft) {
-      return NextResponse.json({ success: false, error: 'Draft not found' }, { status: 404 });
-    }
-    if (draft.status !== 'submitted') {
+    if (error) {
+      const isStateConflict = /only submitted/i.test(error.message || '');
       return NextResponse.json(
-        { success: false, error: `Only submitted listings can be approved (current status: ${draft.status}).` },
-        { status: 409 }
+        { success: false, error: isStateConflict ? error.message : 'Could not approve this listing.' },
+        { status: isStateConflict ? 409 : 500 }
       );
     }
 
-    const fd = draft.form_data || {};
-    const seller = fd.sellerInfo || {};
-    const plot = fd.plotDetails || {};
-    const polygonCoordinates = Array.isArray(fd.polygonCoordinates) ? fd.polygonCoordinates : [];
-
-    // Defensive: a submitted listing should already be complete, but never publish
-    // a partial one.
-    if (!seller.fullName || !seller.phoneNumber || !plot.city || !plot.society || !plot.plotNumber || !plot.pricePkr) {
-      return NextResponse.json(
-        { success: false, error: 'This listing is missing required fields and cannot be approved.' },
-        { status: 400 }
-      );
-    }
-
-    // Create the canonical plot for the listing's OWNER (uid = draft.user_id), marked
-    // verified so it appears as published/verified on the public map.
-    const result = await persistListing(dbAdmin, {
-      uid: draft.user_id,
-      seller,
-      plot,
-      polygonCoordinates,
-      documents: normalizeDocuments(fd.uploadedFiles),
-      isVerified: true,
-    });
-
-    if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 500 });
-    }
-
-    // Link the plot and mark the draft published. Guarded by status='submitted' so a
-    // double-approval race cannot double-create; verified by requiring a returned row.
-    const { data: updated, error: uErr } = await dbAdmin
-      .from('listing_drafts')
-      .update({ status: 'published', published_plot_id: result.plotId, rejection_reason: null })
-      .eq('id', id)
-      .eq('status', 'submitted')
-      .select('id, status, published_plot_id')
-      .maybeSingle();
-
-    if (uErr || !updated) {
-      // Roll the new plot back so nothing is left orphaned/public without a published draft.
-      const { error: rbErr } = await dbAdmin.from('plots').delete().eq('id', result.plotId);
-      if (rbErr) {
-        console.error(`[drafts/approve] rollback of plot ${result.plotId} failed:`, rbErr.message);
-      }
-      return NextResponse.json(
-        {
-          success: false,
-          error: uErr
-            ? `Could not finalize approval: ${uErr.message}`
-            : 'Could not finalize approval (the listing was no longer in a submitted state). No changes were made.',
-        },
-        { status: 500 }
-      );
+    const approved = Array.isArray(data) ? data[0] : data;
+    if (!approved?.plot_id) {
+      return NextResponse.json({ success: false, error: 'Approval did not return a published plot.' }, { status: 500 });
     }
 
     return NextResponse.json(
-      { success: true, status: updated.status, plotId: result.plotId },
+      { success: true, status: 'published', plotId: approved.plot_id },
       { status: 200 }
     );
   } catch (err) {

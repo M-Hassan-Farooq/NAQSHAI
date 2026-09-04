@@ -1,6 +1,6 @@
-// Shared logic to turn a completed listing into rows in public.sellers + public.plots.
-// Used by BOTH the hardened /api/sell route and the draft submit route so the two
-// paths stay identical and secure. `uid` here is ALWAYS a server-verified user id.
+// Legacy helper for turning a reviewed listing into rows in public.sellers +
+// public.plots. Canonical plot creation now lives in the atomic approve_listing
+// database function; `uid` here is ALWAYS a server-verified user id.
 
 /**
  * Flatten the wizard's uploadedFiles object into the JSONB documents array that
