@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const operatorPassphrase = process.env.OPERATOR_PASSPHRASE || '';
 
 /**
  * Verify the request's bearer token against Supabase and return the real user.
@@ -92,4 +93,25 @@ export function getBearerToken(request) {
  */
 export function isServiceRoleToken(token) {
   return !!serviceKey && !!token && token === serviceKey;
+}
+
+/**
+ * Operator gate for the human-facing review portal (/review).
+ *
+ * A single operator authenticates by presenting a shared passphrase
+ * (OPERATOR_PASSPHRASE), sent as a bearer token from the review page. The
+ * passphrase is a server-only secret — it is never prefixed NEXT_PUBLIC_, so it
+ * never ships in the client bundle; the operator types it at runtime. We also
+ * accept the service-role key so any existing server-to-server caller keeps
+ * working. Returns false unless one of those secrets is actually configured AND
+ * the presented token matches it exactly.
+ *
+ * NOTE: passing the gate only proves "an operator". The privileged database work
+ * behind it still runs through getAdminClient() (service role), so the operator
+ * portal additionally requires SUPABASE_SERVICE_ROLE_KEY to be configured for its
+ * cross-user reads / document signing / approval writes to succeed.
+ */
+export function isOperatorToken(token) {
+  if (isServiceRoleToken(token)) return true;
+  return !!operatorPassphrase && !!token && token === operatorPassphrase;
 }

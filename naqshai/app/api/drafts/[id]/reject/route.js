@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getBearerToken, isServiceRoleToken, getAdminClient } from '@/lib/authServer';
+import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/drafts/[id]/reject — operator-only. Rejects a SUBMITTED listing so the
 // owner can correct it and resubmit. No public plot is ever involved (rejected
 // listings are never published and never appear on the Explorer). Authenticated
-// with the server's service-role key, same as approve.
+// with an operator secret (the shared review passphrase, or the service-role key),
+// same as approve.
 //
 // Body: { reason?: string } — an optional reviewer note stored on the draft and
 // surfaced to the owner in the wizard and My Listings.
@@ -14,7 +15,7 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
 
-    if (!isServiceRoleToken(getBearerToken(request))) {
+    if (!isOperatorToken(getBearerToken(request))) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 

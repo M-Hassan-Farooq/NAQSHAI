@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getBearerToken, isServiceRoleToken, getAdminClient } from '@/lib/authServer';
+import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 import { persistListing, normalizeDocuments } from '@/lib/publishListing';
 
 export const dynamic = 'force-dynamic';
@@ -11,8 +11,9 @@ export const dynamic = 'force-dynamic';
 // public Explorer (they simply have no plot row until this runs).
 //
 // There is no user-facing admin role yet, so this endpoint is authenticated with
-// the server's Supabase service-role key (never exposed to the browser) rather
-// than a user session — an operator calls it to perform verification.
+// an operator secret (the shared review passphrase, or the server's Supabase
+// service-role key) — never a normal user session — and the privileged work runs
+// through getAdminClient(), whose key never reaches the browser.
 //
 // Safety: the plot is created first, then the draft is linked under a
 // status='submitted' guard. If the link does not persist (error OR zero rows) we
@@ -22,7 +23,7 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
 
-    if (!isServiceRoleToken(getBearerToken(request))) {
+    if (!isOperatorToken(getBearerToken(request))) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
