@@ -284,6 +284,15 @@ export default function SellPlotPage() {
   const uploadDocument = async (field, file) => {
     setDocError('');
     if (isReadOnly) return; // view-only (submitted/published): never upload documents
+    const isAllowedType = file.type === 'application/pdf' || file.type.startsWith('image/');
+    if (!isAllowedType) {
+      setDocError('Please choose a PDF or image file for your verification document.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setDocError('Each verification document must be smaller than 10 MB.');
+      return;
+    }
     const uid = session?.user?.id;
     if (!uid) {
       setDocError('Your session has expired. Please sign in again.');
@@ -300,12 +309,14 @@ export default function SellPlotPage() {
     const path = `${uid}/${folder}/${field}-${Date.now()}-${safeName}`;
 
     setDocUploading((p) => ({ ...p, [field]: true }));
+    setDocError(`Uploading ${file.name}...`);
     try {
       const { error } = await supabase.storage
         .from('plot-documents')
         .upload(path, file, { cacheControl: '3600', upsert: true });
       if (error) throw error;
       setUploadedFiles((prev) => ({ ...prev, [field]: { path, name: file.name, size: file.size } }));
+      setDocError('');
     } catch (err) {
       setDocError(`Could not upload ${file.name}: ${err?.message || 'please try again.'}`);
     } finally {
