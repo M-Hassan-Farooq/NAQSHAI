@@ -19,6 +19,8 @@ import {
   User,
   Phone,
   Building2,
+  Trash2,
+  ChevronDown,
 } from 'lucide-react';
 
 // Operator review console. A single operator unlocks it with the shared passphrase
@@ -97,6 +99,8 @@ export default function ReviewPage() {
 
   // Queue state
   const [listings, setListings] = useState([]);
+  const [verifiedPlots, setVerifiedPlots] = useState([]);
+  const [expandedListingId, setExpandedListingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -124,15 +128,18 @@ export default function ReviewPage() {
         setPassphrase('');
         setGateError('That passphrase was not accepted.');
         setListings([]);
+        setVerifiedPlots([]);
         return false;
       }
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         setError(json.error || 'Could not load the review queue.');
         setListings([]);
+        setVerifiedPlots([]);
         return false;
       }
       setListings(json.listings || []);
+      setVerifiedPlots(json.verifiedPlots || []);
       setAuthed(true);
       setPassphrase(pass);
       try { sessionStorage.setItem(PASS_STORAGE_KEY, pass); } catch (_) {}
@@ -181,6 +188,7 @@ export default function ReviewPage() {
     setPassphrase('');
     setPassInput('');
     setListings([]);
+    setVerifiedPlots([]);
     setGateError('');
     setNotice('');
   };
@@ -229,6 +237,30 @@ export default function ReviewPage() {
       }
     } catch {
       setError('Network error while rejecting the listing.');
+    } finally {
+      setAction({ id: null, type: null });
+    }
+  };
+
+  const handleRemoveVerifiedPlot = async (plot) => {
+    if (!window.confirm(`Remove ${plot.title} from the live marketplace?`)) return;
+    setNotice('');
+    setError('');
+    setAction({ id: plot.id, type: 'remove' });
+    try {
+      const res = await fetch(`/api/review/plots/${encodeURIComponent(plot.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${passphrase}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        setVerifiedPlots((prev) => prev.filter((item) => item.id !== plot.id));
+        setNotice(`${plot.title} was removed from the live marketplace.`);
+      } else {
+        setError(json.error || 'Could not remove this verified plot.');
+      }
+    } catch {
+      setError('Network error while removing the verified plot.');
     } finally {
       setAction({ id: null, type: null });
     }
@@ -408,15 +440,21 @@ export default function ReviewPage() {
               const centroid = polygonCentroid(l.polygon);
               const busy = action.id === l.id;
               const isRejecting = rejectingId === l.id;
+              const isExpanded = expandedListingId === l.id;
               return (
                 <div
                   key={l.id}
-                  className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 sm:p-6"
+                  className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4 sm:p-5"
                 >
                   {/* Header row */}
-                  <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedListingId(isExpanded ? null : l.id)}
+                    className="w-full text-left flex items-start justify-between gap-3 pb-1"
+                    aria-expanded={isExpanded}
+                  >
                     <div className="min-w-0">
-                      <h3 className="text-lg font-bold text-slate-900 truncate flex items-center gap-1.5">
+                      <h3 className="text-base font-bold text-slate-900 truncate flex items-center gap-1.5">
                         <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
                         {l.title}
                       </h3>
@@ -424,13 +462,20 @@ export default function ReviewPage() {
                         <Clock className="w-3.5 h-3.5" />
                         Submitted {timeAgo(l.updated_at)}
                       </p>
+                      <p className="text-xs text-slate-500 mt-1 truncate">
+                        {l.plot.city || '—'} · {l.plot.sizeDimensions || 'Size not provided'} · {formatPkr(l.plot.pricePkr)}
+                      </p>
                     </div>
-                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0 bg-sky-50 text-sky-800 border-sky-200">
-                      Awaiting review
-                    </span>
-                  </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-sky-50 text-sky-800 border-sky-200">
+                        Awaiting review
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </div>
+                  </button>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4">
+                  {isExpanded && <div className="mt-4 pt-4 border-t border-slate-100">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     {/* Seller + plot details */}
                     <div className="md:col-span-2 space-y-4">
                       <div>
@@ -624,11 +669,86 @@ export default function ReviewPage() {
                       </button>
                     </div>
                   )}
+                  </div>}
                 </div>
               );
             })}
           </div>
         )}
+
+        <section className="mt-12">
+          <div className="flex items-end justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+                <CheckCircle2 className="w-6 h-6 text-emerald-700" />
+                Verified plots on sale
+              </h2>
+              <p className="text-sm text-slate-600 mt-1">Manage every verified listing currently visible to buyers.</p>
+            </div>
+            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
+              {verifiedPlots.length} live
+            </span>
+          </div>
+
+          {verifiedPlots.length === 0 ? (
+            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-8 text-center text-sm text-slate-500">
+              No verified plots are currently on sale.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {verifiedPlots.map((plot) => {
+                const busy = action.id === plot.id && action.type === 'remove';
+                return (
+                  <article key={plot.id} className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                          <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
+                          {plot.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {plot.city || '—'} · {plot.society || 'Society not provided'}
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full shrink-0">
+                        Verified
+                      </span>
+                    </div>
+
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 pt-3 border-t border-slate-100 text-sm">
+                      <div>
+                        <dt className="text-xs text-slate-400">Price</dt>
+                        <dd className="font-semibold text-slate-800">{formatPkr(plot.pricePkr)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-slate-400">Size</dt>
+                        <dd className="font-medium text-slate-700">{plot.sizeDimensions || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-slate-400">Seller</dt>
+                        <dd className="font-medium text-slate-700 truncate">{plot.seller.fullName || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-slate-400">Phone</dt>
+                        <dd className="font-medium text-slate-700 truncate">{plot.seller.phoneNumber || '—'}</dd>
+                      </div>
+                    </dl>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveVerifiedPlot(plot)}
+                      disabled={busy}
+                      className="mt-4 w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 font-semibold px-4 py-2 rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Remove from sale
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

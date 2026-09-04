@@ -37,6 +37,16 @@ export async function GET(request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    const { data: verifiedRows, error: verifiedError } = await dbAdmin
+      .from('plots')
+      .select('id, seller_id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, updated_at, sellers ( phone_number, full_name )')
+      .eq('is_verified', true)
+      .order('created_at', { ascending: false });
+
+    if (verifiedError) {
+      return NextResponse.json({ success: false, error: verifiedError.message }, { status: 500 });
+    }
+
     const rows = data || [];
 
     const listings = await Promise.all(
@@ -99,7 +109,28 @@ export async function GET(request) {
       })
     );
 
-    return NextResponse.json({ success: true, listings });
+    const verifiedPlots = (verifiedRows || []).map((row) => ({
+      id: row.id,
+      title: row.title || row.id,
+      city: row.city || '',
+      society: row.title?.split(' - ')[1]?.split(',')[0]?.trim() || '',
+      pricePkr: row.price_pkr,
+      sizeDimensions: row.size_dimensions || '',
+      category: row.category || '',
+      floodRisk: row.flood_risk || '',
+      noiseLevel: row.noise_level || '',
+      elevationProfile: row.elevation_profile || '',
+      proximityNotes: row.proximity_notes || '',
+      polygon: Array.isArray(row.polygon_coordinates) ? row.polygon_coordinates : [],
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      seller: {
+        fullName: row.sellers?.full_name || '',
+        phoneNumber: row.sellers?.phone_number || '',
+      },
+    }));
+
+    return NextResponse.json({ success: true, listings, verifiedPlots });
   } catch (err) {
     return NextResponse.json({ success: false, error: err?.message || 'Internal Server Error' }, { status: 500 });
   }
