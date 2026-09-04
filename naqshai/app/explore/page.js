@@ -40,6 +40,21 @@ const mapContainerStyle = {
   height: '100%',
 };
 
+const STREET_VIEW_OPTIONS = {
+  pov: { heading: 100, pitch: 0 },
+  zoom: 1,
+  disableDefaultUI: false,
+};
+
+const BASE_MAP_OPTIONS = {
+  disableDefaultUI: false,
+  zoomControl: true,
+  mapTypeControl: true,
+  streetViewControl: false,
+  fullscreenControl: false,
+};
+
+
 // Fallback camera only — used before plots load or when no plot has geometry.
 const defaultCenter = { lat: 33.6844, lng: 73.0479 };
 const DEFAULT_ZOOM = 12;
@@ -80,8 +95,59 @@ function ExploreContent() {
   const [session, setSession] = useState(null);
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [is3DMode, setIs3DMode] = useState(false);
+  const [streetViewStatus, setStreetViewStatus] = useState('IDLE'); // 'IDLE' | 'CHECKING' | 'READY' | 'UNAVAILABLE' | 'ERROR'
   const [hoveredPlotId, setHoveredPlotId] = useState(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  const mapOptions = useMemo(
+    () => ({
+      ...BASE_MAP_OPTIONS,
+      mapTypeId: is3DMode ? 'hybrid' : 'roadmap',
+      tilt: is3DMode ? 45 : 0,
+      heading: is3DMode ? 45 : 0,
+    }),
+    [is3DMode]
+  );
+
+  const handlePanoLoad = useCallback((pano) => {
+    if (!pano || typeof window === 'undefined' || !window.google?.maps) return;
+    pano.addListener('status_changed', () => {
+      try {
+        if (pano.getStatus() !== window.google.maps.StreetViewStatus.OK) {
+          setStreetViewStatus('UNAVAILABLE');
+        }
+      } catch (_) {}
+    });
+  }, []);
+
+
+  // Verify Street View availability before rendering panorama to prevent 429 or black screen
+  useEffect(() => {
+    if (!is3DMode || !selectedPlot?.center || typeof window === 'undefined' || !window.google?.maps) {
+      setStreetViewStatus('IDLE');
+      return;
+    }
+
+    setStreetViewStatus('CHECKING');
+    try {
+      const svService = new window.google.maps.StreetViewService();
+      svService.getPanorama(
+        { location: selectedPlot.center, radius: 100 },
+        (data, status) => {
+          if (status === window.google.maps.StreetViewStatus.OK && data) {
+            setStreetViewStatus('READY');
+          } else {
+            console.warn('[StreetView] Panorama status:', status);
+            setStreetViewStatus('UNAVAILABLE');
+          }
+        }
+      );
+    } catch (err) {
+      console.warn('[StreetView] Availability check exception:', err);
+      setStreetViewStatus('ERROR');
+    }
+  }, [is3DMode, selectedPlot?.center]);
+
 
   // Split-Screen Interface States
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -1110,14 +1176,7 @@ function ExploreContent() {
                   onLoad={onLoad}
                   onUnmount={onUnmount}
                   onZoomChanged={handleZoomChanged}
-                  options={{
-                    disableDefaultUI: false,
-                    zoomControl: true,
-                    mapTypeControl: true,
-                    streetViewControl: false,
-                    fullscreenControl: false,
-                    mapTypeId: is3DMode ? 'hybrid' : 'roadmap',
-                  }}
+                  options={mapOptions}
                 >
                   {/* Searched Location Marker */}
                   {searchedLocation && (
@@ -1157,18 +1216,59 @@ function ExploreContent() {
                       );
                     })}
 
-                  {/* 3. Street View 3D Panorama */}
-                  {is3DMode && selectedPlot?.center && (
+                  {/* 3. Street View 3D Panorama (Only rendered when verified ready to prevent 429/black screen) */}
+                  {is3DMode && selectedPlot?.center && streetViewStatus === 'READY' && (
                     <StreetViewPanorama
                       position={selectedPlot.center}
                       visible={is3DMode}
-                      options={{
-                        pov: { heading: 100, pitch: 0 },
-                        zoom: 1,
-                      }}
+                      options={STREET_VIEW_OPTIONS}
+                      onLoad={handlePanoLoad}
                     />
                   )}
+
                 </GoogleMap>
+
+                {/* 3D Walkthrough Status / Fallback Overlay */}
+                {is3DMode && streetViewStatus !== 'READY' && streetViewStatus !== 'IDLE' && (
+                  <div className="absolute top-16 right-4 z-30 max-w-sm w-full">
+                    <div className="bg-white/95 backdrop-blur-md text-slate-800 rounded-2xl p-4 shadow-xl text-center space-y-3 border border-slate-200">
+                      {streetViewStatus === 'CHECKING' ? (
+                        <div className="flex flex-col items-center gap-2 py-2">
+                          <Loader2 className="w-6 h-6 text-emerald-700 animate-spin" />
+                          <h3 className="text-xs font-bold">Verifying 3D Walkthrough Coverage...</h3>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-left">
+                          <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                            <Compass className="w-4 h-4 text-emerald-700" />
+                            <span>3D Aerial Satellite Walkthrough Active</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Ground-level Street View tiles are unavailable or rate-limited for this plot. Showing 45° 3D Satellite Terrain & boundaries instead.
+                          </p>
+                          <div className="flex gap-2 pt-1 w-full">
+                            <button
+                              type="button"
+                              onClick={() => setStreetViewStatus('IDLE')}
+                              className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-1.5 rounded-lg text-xs transition"
+                            >
+                              Dismiss Notice
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIs3DMode(false)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition border border-slate-200"
+                            >
+                              Exit 3D View
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+
 
                 {/* Data status overlays */}
                 {(plotsLoading || plotsError || showEmptyState) && (

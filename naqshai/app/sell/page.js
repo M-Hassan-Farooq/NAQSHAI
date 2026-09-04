@@ -34,6 +34,12 @@ import {
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
 const DEFAULT_CENTER = { lat: 33.6844, lng: 73.0479 };
+const SELL_MAP_OPTIONS = {
+  mapTypeId: 'hybrid',
+  streetViewControl: false,
+  mapTypeControl: true,
+};
+
 
 function formatPkr(num) {
   if (!num || isNaN(num)) return '';
@@ -936,11 +942,7 @@ export default function SellPlotPage() {
                           zoom={15}
                           onLoad={onMapLoad}
                           onClick={isReadOnly ? undefined : handleMapClick}
-                          options={{
-                            mapTypeId: 'hybrid',
-                            streetViewControl: false,
-                            mapTypeControl: true,
-                          }}
+                          options={SELL_MAP_OPTIONS}
                         >
                           {/* Search Bar Overlay */}
                           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-72 sm:w-96 px-4">

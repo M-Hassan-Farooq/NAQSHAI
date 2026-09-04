@@ -7,14 +7,20 @@ import { Loader2, AlertCircle } from 'lucide-react';
 const MAP_LIBRARIES = ['places'];
 const SCRIPT_ID = 'google-map-script';
 
-function InternalLoader({ children }) {
+export function GoogleMapsSafeLoader({ children }) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
   const { isLoaded, loadError } = useJsApiLoader({
     id: SCRIPT_ID,
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+    googleMapsApiKey: apiKey,
     libraries: MAP_LIBRARIES,
   });
 
-  // 3. Error Guard: Return safe error UI if script fails to load
+  const isMapConstructorReady =
+    (isLoaded || (typeof window !== 'undefined' && Boolean(window.google?.maps?.Map))) &&
+    typeof window !== 'undefined' &&
+    Boolean(window.google?.maps?.Map);
+
   if (loadError) {
     if (typeof children === 'function') {
       return children({ isLoaded: false, loadError });
@@ -31,9 +37,6 @@ function InternalLoader({ children }) {
       </div>
     );
   }
-
-  // 2. Load Guard: Check both isLoaded AND window.google.maps.Map constructor
-  const isMapConstructorReady = isLoaded && typeof window !== 'undefined' && Boolean(window.google?.maps?.Map);
 
   if (!isMapConstructorReady) {
     if (typeof children === 'function') {
@@ -56,25 +59,8 @@ function InternalLoader({ children }) {
   return children;
 }
 
-export function GoogleMapsSafeLoader({ children }) {
-  const isReady = typeof window !== 'undefined' && Boolean(window.google?.maps?.Map);
-
-  if (isReady) {
-    if (typeof children === 'function') {
-      return children({ isLoaded: true, loadError: null });
-    }
-    return children;
-  }
-
-  return <InternalLoader>{children}</InternalLoader>;
-}
-
 export function useGoogleMaps() {
   const isAvailable = typeof window !== 'undefined' && Boolean(window.google?.maps?.Map);
-
-  if (isAvailable) {
-    return { isLoaded: true, loadError: null };
-  }
-
-  return { isLoaded: false, loadError: null };
+  return { isLoaded: isAvailable, loadError: null };
 }
+

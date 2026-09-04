@@ -8,10 +8,18 @@ import { createClient } from '@supabase/supabase-js';
 // its access token as an `Authorization: Bearer <token>` header. We verify that
 // token here with getUser(token). We NEVER trust an owner id supplied in the body.
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const operatorPassphrase = process.env.OPERATOR_PASSPHRASE || '';
+
+function getValidUrl(url) {
+  if (!url || typeof url !== 'string' || !url.trim()) return '';
+  const trimmed = url.trim();
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`;
+}
+
+const supabaseUrl = getValidUrl(rawUrl);
 
 /**
  * Verify the request's bearer token against Supabase and return the real user.
@@ -44,7 +52,8 @@ export async function getUserFromRequest(request) {
     }
     return { user: data.user, token, error: null };
   } catch (err) {
-    return { user: null, token: null, error: err?.message || 'Auth verification failed' };
+    console.warn('[authServer] Token verification network error:', err?.message || err);
+    return { user: null, token: null, error: err?.message || 'Auth verification failed due to network reset' };
   }
 }
 
