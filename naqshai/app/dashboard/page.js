@@ -26,21 +26,25 @@ import {
 const LIFECYCLE = {
   draft: {
     label: 'Draft',
+    description: 'Continue where you left off.',
     badge: 'bg-amber-50 text-amber-800 border-amber-200',
     bar: 'bg-amber-400',
   },
   submitted: {
     label: 'Submitted · Under Review',
+    description: 'Our team is checking your listing. It is not public yet.',
     badge: 'bg-sky-50 text-sky-800 border-sky-200',
     bar: 'bg-sky-500',
   },
   published: {
     label: 'Published · Verified',
+    description: 'Your verified listing is live on the 3D map.',
     badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     bar: 'bg-emerald-500',
   },
   rejected: {
     label: 'Needs Changes',
+    description: 'Update the requested details and resubmit.',
     badge: 'bg-red-50 text-red-700 border-red-200',
     bar: 'bg-red-400',
   },
@@ -316,6 +320,8 @@ export default function DashboardPage() {
                       {cfg.label}
                     </span>
                   </div>
+
+                  <p className="text-xs text-slate-600 -mt-2">{cfg.description}</p>
 
                   {/* Progress (drafts), rejection note, or verification state */}
                   {isDraft ? (
