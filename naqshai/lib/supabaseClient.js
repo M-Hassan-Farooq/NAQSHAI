@@ -1,3 +1,4 @@
+import { createBrowserClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 
 const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -86,13 +87,62 @@ async function resilientFetch(input, init) {
   }
 }
 
-// Standard client for public frontend requests
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: { fetch: resilientFetch },
+// Browser Singleton Instance to prevent Multiple GoTrueClient instances warning & state corruption
+let browserClientInstance = null;
+
+export function getSupabaseBrowserClient() {
+  if (typeof window === 'undefined') {
+    return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      global: { fetch: resilientFetch },
+    });
+  }
+
+  if (!browserClientInstance) {
+    browserClientInstance = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      global: { fetch: resilientFetch },
+    });
+  }
+
+  return browserClientInstance;
+}
+
+// Standard frontend client export (proxying to the browser singleton instance)
+export const supabase = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseBrowserClient();
+    const value = client[prop];
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
+    return value;
+  }
 });
 
-// Server-side admin client (uses service role key if provided, fallback to anon key)
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { persistSession: false },
-  global: { fetch: resilientFetch },
+// Server-side admin client lazy instantiation (prevents instantiating GoTrueClient in browser)
+let adminClientInstance = null;
+
+export function getSupabaseAdminClient() {
+  if (typeof window !== 'undefined') {
+    console.warn('[Supabase Client] Admin client should not be initialized in browser context.');
+    return null;
+  }
+  if (!adminClientInstance) {
+    adminClientInstance = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: resilientFetch },
+    });
+  }
+  return adminClientInstance;
+}
+
+export const supabaseAdmin = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseAdminClient();
+    if (!client) return undefined;
+    const value = client[prop];
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
+    return value;
+  }
 });
