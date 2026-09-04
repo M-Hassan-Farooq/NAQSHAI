@@ -242,9 +242,13 @@ function ChatInterface() {
         }
     }, [contextPlotId]);
 
+    const lastQueryRef = useRef('');
+
     const handleSend = async (textToSend) => {
         const query = textToSend || input;
         if (!query.trim() || loading) return;
+
+        lastQueryRef.current = query;
 
         // 1. Zero-Delay Fast Path for Casual Queries:
         // Purely conversational inputs, greetings, or pleasantries bypass all vector search, DB queries, and fake loading spinners entirely.
@@ -272,12 +276,19 @@ function ChatInterface() {
         setInput('');
         setLoading(true);
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, 14000);
+
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ messages: updatedMessages, language: language }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
@@ -287,7 +298,8 @@ function ChatInterface() {
                     {
                         role: 'assistant',
                         content: safeReply,
-                        recommendedPlots: []
+                        recommendedPlots: [],
+                        showRetry: true
                     }
                 ]);
                 setLoading(false);
@@ -385,16 +397,35 @@ function ChatInterface() {
                 }
             }
         } catch (err) {
+            clearTimeout(timeoutId);
             console.error('[ChatInterface] fetch error:', err);
-            const fallbackReply = 'Maazrat, request process karne me masla aya. Dobara koshish karein.';
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: 'assistant',
-                    content: fallbackReply,
-                    recommendedPlots: []
+            const isTimeout = err?.name === 'AbortError';
+            const fallbackReply = isTimeout
+                ? 'The request timed out due to network latency. Please check your connection and click Retry.'
+                : 'Maazrat, request process karne me masla aya. Baraye mehrbani dobara koshish karein.';
+
+            setMessages((prev) => {
+                const next = [...prev];
+                const lastIdx = next.length - 1;
+                if (lastIdx >= 0 && next[lastIdx].role === 'assistant' && next[lastIdx].content === '') {
+                    next[lastIdx] = {
+                        role: 'assistant',
+                        content: fallbackReply,
+                        recommendedPlots: [],
+                        showRetry: true
+                    };
+                    return next;
                 }
-            ]);
+                return [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        content: fallbackReply,
+                        recommendedPlots: [],
+                        showRetry: true
+                    }
+                ];
+            });
 
             if (wasVoiceInputRef.current) {
                 wasVoiceInputRef.current = false;
@@ -509,31 +540,44 @@ function ChatInterface() {
                                 >
                                     <div>{msg.content}</div>
 
-                                    {/* Text-to-Speech (Audio Output) Speaker Button */}
-                                    {msg.role === 'assistant' && msg.content && (
-                                        <div className="flex items-center justify-end mt-2 pt-1 border-t border-slate-100/80">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleToggleSpeak(msg.content, idx)}
-                                                className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-                                                    speakingIdx === idx
-                                                        ? 'bg-emerald-100 text-emerald-800 font-semibold'
-                                                        : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-100'
-                                                }`}
-                                                title={speakingIdx === idx ? 'Stop reading aloud' : 'Listen to message (Text-to-Speech)'}
-                                            >
-                                                {speakingIdx === idx ? (
-                                                    <>
-                                                        <VolumeX className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
-                                                        <span>Stop Reading</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Volume2 className="w-3.5 h-3.5" />
-                                                        <span>Read Aloud</span>
-                                                    </>
-                                                )}
-                                            </button>
+                                    {/* Text-to-Speech (Audio Output) Speaker Button & Retry Action */}
+                                    {msg.role === 'assistant' && (msg.content || msg.showRetry) && (
+                                        <div className="flex items-center justify-between gap-2 mt-2 pt-1 border-t border-slate-100/80">
+                                            {msg.showRetry ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSend(lastQueryRef.current)}
+                                                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition shadow-xs cursor-pointer"
+                                                >
+                                                    <RefreshCw className="w-3.5 h-3.5" />
+                                                    <span>Retry Request</span>
+                                                </button>
+                                            ) : <div />}
+
+                                            {msg.content && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleSpeak(msg.content, idx)}
+                                                    className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+                                                        speakingIdx === idx
+                                                            ? 'bg-emerald-100 text-emerald-800 font-semibold'
+                                                            : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-100'
+                                                    }`}
+                                                    title={speakingIdx === idx ? 'Stop reading aloud' : 'Listen to message (Text-to-Speech)'}
+                                                >
+                                                    {speakingIdx === idx ? (
+                                                        <>
+                                                            <VolumeX className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
+                                                            <span>Stop Reading</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Volume2 className="w-3.5 h-3.5" />
+                                                            <span>Read Aloud</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>

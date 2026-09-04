@@ -26,6 +26,23 @@ function extractSociety(title) {
   return (afterDash.split(',')[0] || '').trim();
 }
 
+/**
+ * Utility wrapper to enforce strict execution timeouts for DB queries and LLM generation
+ */
+function withTimeout(promise, ms, fallbackValue) {
+  let timer;
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      resolve(fallbackValue);
+    }, ms);
+  });
+
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    timeoutPromise
+  ]);
+}
+
 // Instantiate Edge-compatible Supabase Client
 function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -254,15 +271,26 @@ export async function POST(req) {
       try {
         const db = getSupabaseClient();
         if (db) {
-          const vectorMatches = await searchVectorPlots(ai, db, String(lastUserQuery)).catch(() => null);
+          // 4-second maximum timeout for vector similarity search
+          const vectorMatches = await withTimeout(
+            searchVectorPlots(ai, db, String(lastUserQuery)),
+            4000,
+            null
+          ).catch(() => null);
+
           if (vectorMatches && vectorMatches.length > 0) {
             liveInventory = vectorMatches;
           } else {
-            liveInventory = await fetchOptimizedInventory(db).catch(() => []);
+            // 4-second maximum timeout for fallback active inventory search
+            liveInventory = await withTimeout(
+              fetchOptimizedInventory(db),
+              4000,
+              []
+            ).catch(() => []);
           }
         }
       } catch (dbErr) {
-        console.warn('[api/chat] Database lookup bypassed due to error:', dbErr?.message || dbErr);
+        console.warn('[api/chat] Database lookup bypassed due to error/timeout:', dbErr?.message || dbErr);
         liveInventory = [];
       }
     }
@@ -342,13 +370,13 @@ Return a single valid JSON object with:
       };
     });
 
-    // Attempt generation with active Gemini models (resilient fallback loop)
+    // Attempt generation with active Gemini models (resilient fallback loop with 8s per-model timeout)
     let generatedText = null;
     let lastError = null;
 
     for (const modelName of SUPPORTED_GEMINI_MODELS) {
       try {
-        const response = await ai.models.generateContent({
+        const generatePromise = ai.models.generateContent({
           model: modelName,
           contents: contents,
           config: {
@@ -381,9 +409,14 @@ Return a single valid JSON object with:
           }
         });
 
+        // Enforce 8-second limit per model call
+        const response = await withTimeout(generatePromise, 8000, null);
+
         if (response && response.text) {
           generatedText = response.text;
           break;
+        } else {
+          console.warn(`[api/chat] Gemini model '${modelName}' timed out or returned empty response.`);
         }
       } catch (modelErr) {
         lastError = modelErr;
@@ -392,12 +425,17 @@ Return a single valid JSON object with:
     }
 
     if (!generatedText) {
-      console.error('[api/chat] All Gemini model fallbacks failed. Last error:', lastError?.message || lastError);
+      console.error('[api/chat] All Gemini model fallbacks failed or timed out. Returning fallback response.');
+      const fallbackReply = liveInventory.length > 0
+        ? 'NAQSHAI AI is experiencing high demand. Here are the top verified plot listings matching your criteria from our active inventory.'
+        : 'NAQSHAI AI is currently experiencing high demand. Please try asking your real estate question again in a few moments.';
+        
       return new Response(
         JSON.stringify({
-          reply: 'Hello! I am currently experiencing high demand. Please try asking your real estate question again in a few moments.',
-          recommendedPlots: [],
-          success: false
+          reply: fallbackReply,
+          recommendedPlots: liveInventory.slice(0, 3),
+          isFallback: true,
+          success: true
         }),
         { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
       );
