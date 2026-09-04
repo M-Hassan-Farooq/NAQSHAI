@@ -273,6 +273,9 @@ export default function GuideChatbot() {
     }
 
     // 2. Query /api/chat with Gemini for custom questions
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
     try {
       const chatPayload = newMessages.map((m) => ({
         role: m.role,
@@ -286,7 +289,9 @@ export default function GuideChatbot() {
           messages: chatPayload,
           language: 'English',
         }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
       if (data && data.reply) {
@@ -315,18 +320,23 @@ export default function GuideChatbot() {
         ]);
       }
     } catch (err) {
+      clearTimeout(timeoutId);
+      const isTimeout = err?.name === 'AbortError';
       console.warn('Guide chat API notice:', err);
       setMessages((prev) => [
         ...prev,
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content:
-            'I am here to guide you through NAQSHAI! Use the 3D Map to inspect plot elevations, or the AI Advisor to find plots tailored to your budget and risk preferences.',
+          content: isTimeout
+            ? 'Request timed out due to network delay. Please check your connection and click Retry below.'
+            : 'I am here to guide you through NAQSHAI! Use the 3D Map to inspect plot elevations, or the AI Advisor to find plots tailored to your budget and risk preferences.',
           actions: [
             { label: 'Open 3D Map', href: '/explore' },
             { label: 'AI Advisor', href: '/recommend' },
           ],
+          showRetry: true,
+          lastQuery: trimmed
         },
       ]);
     } finally {
@@ -500,31 +510,44 @@ export default function GuideChatbot() {
                     </div>
                   )}
 
-                  {/* Text-to-Speech Speaker Button */}
-                  {msg.role === 'assistant' && msg.content && (
-                    <div className="mt-2 pt-1 border-t border-slate-200/60 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSpeak(msg.content, msg.id)}
-                        className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md transition cursor-pointer ${
-                          speakingId === msg.id
-                            ? 'bg-emerald-100 text-emerald-800 font-semibold'
-                            : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-200/50'
-                        }`}
-                        title={speakingId === msg.id ? 'Stop reading' : 'Read aloud'}
-                      >
-                        {speakingId === msg.id ? (
-                          <>
-                            <VolumeX className="w-3 h-3 text-emerald-700 animate-pulse" />
-                            <span>Stop</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3 h-3" />
-                            <span>Listen</span>
-                          </>
-                        )}
-                      </button>
+                  {/* Text-to-Speech Speaker Button & Retry Action */}
+                  {msg.role === 'assistant' && (msg.content || msg.showRetry) && (
+                    <div className="mt-2 pt-1 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                      {msg.showRetry ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSendQuery(msg.lastQuery)}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-0.5 rounded-md transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Retry</span>
+                        </button>
+                      ) : <div />}
+
+                      {msg.content && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSpeak(msg.content, msg.id)}
+                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md transition cursor-pointer ${
+                            speakingId === msg.id
+                              ? 'bg-emerald-100 text-emerald-800 font-semibold'
+                              : 'text-slate-400 hover:text-emerald-700 hover:bg-slate-200/50'
+                          }`}
+                          title={speakingId === msg.id ? 'Stop reading' : 'Read aloud'}
+                        >
+                          {speakingId === msg.id ? (
+                            <>
+                              <VolumeX className="w-3 h-3 text-emerald-700 animate-pulse" />
+                              <span>Stop</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="w-3 h-3" />
+                              <span>Listen</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
