@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
+import { normalizeDocuments, persistListing } from '@/lib/publishListing';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,58 @@ export async function POST(request, { params }) {
       });
       const rpcMissing = error.code === '42883' || /approve_listing|function.*does not exist/i.test(error.message || '');
       const isStateConflict = /only submitted/i.test(error.message || '');
+      if (rpcMissing) {
+        const { data: draft, error: draftError } = await dbAdmin
+          .from('listing_drafts')
+          .select('id, user_id, status, form_data')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (draftError) {
+          return NextResponse.json({ success: false, error: draftError.message }, { status: 500 });
+        }
+        if (!draft) {
+          return NextResponse.json({ success: false, error: 'Draft not found' }, { status: 404 });
+        }
+        if (draft.status !== 'submitted') {
+          return NextResponse.json(
+            { success: false, error: `Only submitted listings can be approved (current status: ${draft.status}).` },
+            { status: 409 }
+          );
+        }
+
+        const formData = draft.form_data || {};
+        const published = await persistListing(dbAdmin, {
+          uid: draft.user_id,
+          seller: formData.sellerInfo || {},
+          plot: formData.plotDetails || {},
+          polygonCoordinates: formData.polygonCoordinates || [],
+          documents: normalizeDocuments(formData.uploadedFiles),
+          isVerified: true,
+        });
+
+        if (!published.success) {
+          return NextResponse.json({ success: false, error: published.error || 'Could not publish this listing.' }, { status: 500 });
+        }
+
+        const { data: updatedDraft, error: updateError } = await dbAdmin
+          .from('listing_drafts')
+          .update({ status: 'published', published_plot_id: published.plotId, rejection_reason: null })
+          .eq('id', id)
+          .eq('status', 'submitted')
+          .select('id')
+          .maybeSingle();
+
+        if (updateError || !updatedDraft) {
+          await dbAdmin.from('plots').delete().eq('id', published.plotId);
+          return NextResponse.json(
+            { success: false, error: updateError?.message || 'Could not finalize the approved listing.' },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({ success: true, status: 'published', plotId: published.plotId }, { status: 200 });
+      }
       return NextResponse.json(
         {
           success: false,

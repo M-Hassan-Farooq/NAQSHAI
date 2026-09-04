@@ -109,6 +109,7 @@ export default function ReviewPage() {
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [notice, setNotice] = useState('');
+  const [removalTarget, setRemovalTarget] = useState(null);
 
   // The passphrase we authenticate with lives in a ref-like state that we never
   // render into an input, so it is not echoed back to the screen.
@@ -243,7 +244,6 @@ export default function ReviewPage() {
   };
 
   const handleRemoveVerifiedPlot = async (plot) => {
-    if (!window.confirm(`Remove ${plot.title} from the live marketplace?`)) return;
     setNotice('');
     setError('');
     setAction({ id: plot.id, type: 'remove' });
@@ -255,6 +255,7 @@ export default function ReviewPage() {
       const json = await res.json().catch(() => ({}));
       if (res.ok && json.success) {
         setVerifiedPlots((prev) => prev.filter((item) => item.id !== plot.id));
+        setRemovalTarget(null);
         setNotice(`${plot.title} was removed from the live marketplace.`);
       } else {
         setError(json.error || 'Could not remove this verified plot.');
@@ -739,7 +740,7 @@ export default function ReviewPage() {
 
                     <button
                       type="button"
-                      onClick={() => handleRemoveVerifiedPlot(plot)}
+                      onClick={() => setRemovalTarget(plot)}
                       disabled={busy}
                       className="mt-4 w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 font-semibold px-4 py-2 rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-60"
                     >
@@ -752,6 +753,41 @@ export default function ReviewPage() {
             </div>
           )}
         </section>
+
+        {removalTarget && (
+          <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div role="dialog" aria-modal="true" aria-labelledby="remove-plot-title" className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 id="remove-plot-title" className="text-lg font-bold text-slate-900">Remove plot from sale?</h2>
+                  <p className="text-sm text-slate-600 mt-1">{removalTarget.title} will be removed from the live marketplace and map.</p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setRemovalTarget(null)}
+                  disabled={action.type === 'remove'}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveVerifiedPlot(removalTarget)}
+                  disabled={action.type === 'remove'}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-2 disabled:opacity-60"
+                >
+                  {action.type === 'remove' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Remove plot
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
