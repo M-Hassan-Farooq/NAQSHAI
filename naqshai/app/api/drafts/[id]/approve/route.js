@@ -31,10 +31,24 @@ export async function POST(request, { params }) {
     const { data, error } = await dbAdmin.rpc('approve_listing', { p_draft_id: id });
 
     if (error) {
+      console.error('[drafts/approve] approve_listing RPC failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      const rpcMissing = error.code === '42883' || /approve_listing|function.*does not exist/i.test(error.message || '');
       const isStateConflict = /only submitted/i.test(error.message || '');
       return NextResponse.json(
-        { success: false, error: isStateConflict ? error.message : 'Could not approve this listing.' },
-        { status: isStateConflict ? 409 : 500 }
+        {
+          success: false,
+          error: rpcMissing
+            ? 'Approval is not configured yet. Apply migration 08_atomic_listing_approval.sql in Supabase.'
+            : isStateConflict
+            ? error.message
+            : 'Could not approve this listing.',
+        },
+        { status: rpcMissing ? 503 : isStateConflict ? 409 : 500 }
       );
     }
 

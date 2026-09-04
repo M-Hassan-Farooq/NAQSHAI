@@ -66,7 +66,7 @@ export async function getProfile(userId) {
     // 2. Try public.sellers table
     const { data: sellerData } = await supabase
       .from('sellers')
-      .select('full_name, avatar_url')
+      .select('full_name')
       .eq('id', userId)
       .maybeSingle();
 
