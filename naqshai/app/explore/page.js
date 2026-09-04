@@ -101,6 +101,12 @@ function ExploreContent() {
   const [hoveredPlotId, setHoveredPlotId] = useState(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
 
+  // Split-Screen Interface States
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isPlacesSearchOpen, setIsPlacesSearchOpen] = useState(true);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+  const [activeCityFilter, setActiveCityFilter] = useState('ALL');
+
   const mapOptions = useMemo(
     () => ({
       ...BASE_MAP_OPTIONS,
@@ -152,13 +158,6 @@ function ExploreContent() {
       setStreetViewStatus('ERROR');
     }
   }, [is3DMode, selectedPlot?.center]);
-
-
-  // Split-Screen Interface States
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isPlacesSearchOpen, setIsPlacesSearchOpen] = useState(true);
-  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
-  const [activeCityFilter, setActiveCityFilter] = useState('ALL');
 
   // Favorites Hook
   const { isFavorite, toggleFavorite } = useFavorites();
