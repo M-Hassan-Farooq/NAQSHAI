@@ -105,10 +105,13 @@ function ExploreContent() {
     () => ({
       ...BASE_MAP_OPTIONS,
       mapTypeId: is3DMode ? 'hybrid' : 'roadmap',
+      mapTypeControlOptions: {
+        position: selectedPlot && isSidebarOpen ? 9 : 3,
+      },
       tilt: is3DMode ? 45 : 0,
       heading: is3DMode ? 45 : 0,
     }),
-    [is3DMode]
+    [is3DMode, selectedPlot, isSidebarOpen]
   );
 
   const handlePanoLoad = useCallback((pano) => {
@@ -1018,21 +1021,14 @@ function ExploreContent() {
 
               {/* RIGHT AREA: Interactive Google Maps Viewport */}
               <main className="flex-1 h-full relative overflow-hidden">
-                {/* Toggle Sidebar Button when sidebar is collapsed (Anchored Top-Left) */}
-                {!isSidebarOpen && (
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarOpen(true)}
-                    className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer"
-                    title="Show plot list"
-                  >
-                    <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
-                    <span className="hidden sm:inline">Plots</span>
-                  </button>
-                )}
-
                 {/* Floating Google Places Search Bar Overlay (Centered horizontally over map section) */}
-                <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center justify-center gap-2 max-w-xs sm:max-w-md md:max-w-lg w-full px-4">
+                <div
+                  className={`absolute top-4 z-10 flex items-center justify-center gap-2 max-w-xs sm:max-w-md md:max-w-lg px-4 transition-[left,right,transform] duration-300 ${
+                    selectedPlot && isSidebarOpen
+                      ? 'left-0 right-96 w-auto translate-x-0'
+                      : 'left-1/2 right-auto w-full -translate-x-1/2'
+                  }`}
+                >
                   {/* Hideable Places Search Box with Dropdown Predictions */}
                   {isPlacesSearchOpen ? (
                     <div ref={placesSearchContainerRef} className="flex-1 relative w-full">
