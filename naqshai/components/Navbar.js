@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import UserNav from '@/components/UserNav';
+import ScrollProgressBar from '@/components/ScrollProgressBar';
 import { Home, MapPin, Sparkles, PlusCircle } from 'lucide-react';
 
 export default function Navbar({
@@ -25,7 +26,7 @@ export default function Navbar({
   ];
 
   return (
-    <header className={`h-14 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 flex items-center justify-between z-50 shrink-0 shadow-xs sticky top-0 ${className}`}>
+    <header className={`relative h-14 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 flex items-center justify-between z-50 shrink-0 shadow-xs sticky top-0 ${className}`}>
       {/* Left Section: Brand Logo & Optional Page Badge */}
       <div className="flex items-center gap-3">
         {leftSlot}
@@ -102,6 +103,9 @@ export default function Navbar({
         {/* User Account Dropdown */}
         <UserNav session={session} onSignOut={onSignOut} />
       </div>
+
+      {/* Scroll Progress Indicator Bar */}
+      <ScrollProgressBar />
     </header>
   );
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getSupabaseBrowserClient } from '@/lib/supabaseClient';
 import {
   Sparkles,
   Mail,
@@ -19,13 +19,12 @@ import {
 } from 'lucide-react';
 
 function getSiteUrl() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
   let url = process.env.NEXT_PUBLIC_SITE_URL;
   if (!url || !url.trim()) {
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      url = window.location.origin;
-    } else {
-      url = 'http://localhost:3000';
-    }
+    url = 'http://localhost:3000';
   }
   return url.replace(/\/$/, '');
 }
@@ -47,6 +46,15 @@ function LoginContent() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
+
+  const urlErrorParam = searchParams ? searchParams.get('error') : null;
+
+  // Set error message if redirected back with an auth error parameter
+  useEffect(() => {
+    if (urlErrorParam) {
+      setErrorMessage(decodeURIComponent(urlErrorParam));
+    }
+  }, [urlErrorParam]);
 
   // Check if user is already authenticated
   useEffect(() => {
@@ -100,7 +108,7 @@ function LoginContent() {
       if (isSignUp) {
         // Handle Supabase Sign Up
         const siteUrl = getSiteUrl();
-        const emailRedirectTo = `${siteUrl}${redirectPath}`;
+        const emailRedirectTo = `${siteUrl}/auth/callback?next=${encodeURIComponent(redirectPath)}`;
 
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -150,19 +158,30 @@ function LoginContent() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async (e) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    if (loading) return;
+
     setErrorMessage('');
     setInfoMessage('');
     setLoading(true);
 
     try {
-      const siteUrl = getSiteUrl();
-      const redirectTo = `${siteUrl}${redirectPath}`;
+      const client = getSupabaseBrowserClient();
+      const origin = typeof window !== 'undefined' ? window.location.origin : getSiteUrl();
+      // Route explicitly to OAuth server callback handler using current origin
+      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(redirectPath)}`;
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await client.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       });
 
