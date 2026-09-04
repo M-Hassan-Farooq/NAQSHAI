@@ -5,7 +5,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import Navbar from '@/components/Navbar';
 import UserNav from '@/components/UserNav';
+
 import GuideChatbot from '@/components/GuideChatbot';
 import {
   Sparkles,
@@ -64,57 +66,11 @@ export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900">
       
-      {/* 1. Top Navigation Bar */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
-        <div className="w-full pl-4 pr-6 md:pl-6 md:pr-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2 group">
-              <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm">
-                <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
-              </div>
-              <span className="font-bold text-lg text-slate-900 tracking-tight">NAQSHAI</span>
-            </Link>
-          </div>
-
-          {/* Anchor Navigation Links */}
-          <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
-            <a href="#overview" className="hover:text-emerald-700 transition">Overview</a>
-            <a href="#risk-intelligence" className="hover:text-emerald-700 transition">Risk Intelligence</a>
-            <a href="#how-it-works" className="hover:text-emerald-700 transition">How It Works</a>
-            <a href="#faqs" className="hover:text-emerald-700 transition">FAQs</a>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <Link
-              href="/sell"
-              className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm"
-            >
-              List Your Plot
-            </Link>
-            <Link
-              href="/explore"
-              className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-lg shadow-sm transition"
-            >
-              <MapPin className="w-3.5 h-3.5 text-emerald-700" />
-              <span>3D Map</span>
-            </Link>
-            <Link
-              href="/recommend"
-              className="flex items-center gap-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded-lg shadow-sm transition"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Launch AI Advisor</span>
-            </Link>
-
-            <div className="border-l border-slate-200 pl-3 ml-1">
-              <UserNav
-                session={session}
-                onSignOut={handleSignOut}
-              />
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Standardized Top Navigation Bar */}
+      <Navbar
+        session={session}
+        onSignOut={handleSignOut}
+      />
 
       {/* 2. Hero Section with Cartographic Topographic Watermark */}
       <section id="overview" className="relative bg-slate-100 py-20 md:py-28 px-4 overflow-hidden border-b border-slate-200 scroll-mt-28">

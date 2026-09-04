@@ -7,7 +7,9 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { GoogleMap, Polygon, Marker, StreetViewPanorama, GoogleMapsMarkerClusterer } from '@react-google-maps/api';
 import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
+import Navbar from '@/components/Navbar';
 import UserNav from '@/components/UserNav';
+
 import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { useFavorites } from '@/context/FavoritesContext';
 import {
@@ -725,74 +727,33 @@ function ExploreContent() {
 
         return (
           <div className="relative w-full h-screen overflow-hidden font-sans bg-slate-100 text-slate-800 flex flex-col">
-            {/* Top Navigation Bar */}
-            <header className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between z-20 shrink-0 shadow-xs">
-              <div className="flex items-center gap-3">
+            {/* Standardized Top Navigation Bar */}
+            <Navbar
+              session={session}
+              onSignOut={handleSignOut}
+              badgeText={plotsLoading ? 'Loading…' : `${plots.length} Verified Plots`}
+              leftSlot={
                 <button
                   type="button"
                   onClick={() => setIsSidebarOpen((prev) => !prev)}
-                  className="p-2 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition flex items-center gap-1.5 text-xs font-semibold"
+                  className="p-1.5 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition flex items-center gap-1 text-xs font-semibold shrink-0"
                   title={isSidebarOpen ? 'Collapse plot list to maximize map' : 'Expand plot list'}
                 >
                   {isSidebarOpen ? (
                     <>
                       <PanelLeftClose className="w-4 h-4 text-emerald-700" />
-                      <span className="hidden sm:inline">Maximize Map</span>
+                      <span className="hidden lg:inline">Maximize Map</span>
                     </>
                   ) : (
                     <>
                       <PanelLeftOpen className="w-4 h-4 text-emerald-700" />
-                      <span className="hidden sm:inline">Show Plots</span>
+                      <span className="hidden lg:inline">Show Plots</span>
                     </>
                   )}
                 </button>
+              }
+            />
 
-                <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-                  <span className="font-bold text-sm text-slate-900 tracking-tight flex items-center gap-2">
-                    <Image
-                      src="/explorer.jpeg"
-                      alt="NAQSHAI Explorer Logo"
-                      width={32}
-                      height={32}
-                      className="rounded-md object-cover"
-                    />
-                    <span>NAQSHAI Explorer</span>
-                  </span>
-                  <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full hidden sm:inline-block">
-                    {plotsLoading ? 'Loading…' : `${plots.length} Verified Plots`}
-                  </span>
-                </div>
-              </div>
-
-              {/* Navigation Action Links */}
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => router.push('/sell')}
-                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
-                >
-                  List Your Plot
-                </button>
-                <Link
-                  href="/"
-                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
-                >
-                  <Home className="w-3.5 h-3.5 text-emerald-700" />
-                  <span className="hidden sm:inline">Home</span>
-                </Link>
-                <button
-                  onClick={() => router.push('/recommend')}
-                  className="bg-white hover:bg-slate-50 border border-slate-200 shadow-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5 text-emerald-700" />
-                  <span className="hidden sm:inline">AI Advisor</span>
-                </button>
-
-                <UserNav
-                  session={session}
-                  onSignOut={handleSignOut}
-                />
-              </div>
-            </header>
 
             {/* Split View Body: Left Sidebar + Right Map */}
             <div className="flex-1 flex overflow-hidden relative">

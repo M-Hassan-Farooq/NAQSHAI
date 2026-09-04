@@ -126,7 +126,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
 
       {/* Dropdown Menu Overlay */}
       {isDropdownOpen && (
-        <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 shadow-xl rounded-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 shadow-xl rounded-2xl p-2 z-50 pointer-events-auto animate-in fade-in zoom-in-95 duration-150">
           
           {/* Header User Summary */}
           <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl mb-1">
