@@ -56,8 +56,6 @@ export default function Home() {
   }, []);
 
   const handleSignOut = async () => {
-    const confirmed = window.confirm('Are you sure you want to sign out?');
-    if (!confirmed) return;
     await supabase.auth.signOut();
     setSession(null);
     router.refresh();

@@ -419,6 +419,7 @@ export default function GuideChatbot() {
                 type="button"
                 onClick={handleResetChat}
                 title="Restart conversation"
+                aria-label="Restart conversation"
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -427,6 +428,7 @@ export default function GuideChatbot() {
                 type="button"
                 onClick={() => setIsOpen(false)}
                 title="Minimize chat"
+                aria-label="Minimize chat window"
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition"
               >
                 <X className="w-4 h-4" />
@@ -578,6 +580,7 @@ export default function GuideChatbot() {
               <button
                 type="button"
                 onClick={() => setVoiceError('')}
+                aria-label="Dismiss error notice"
                 className="text-red-500 hover:text-red-700 text-[10px] font-bold cursor-pointer"
               >
                 ✕
@@ -602,6 +605,7 @@ export default function GuideChatbot() {
                   ? "Listening... speak now"
                   : "Ask about 3D map, flood risk, or plots..."
               }
+              aria-label="Ask AI Assistant a question"
               className={`flex-1 bg-white border rounded-xl px-3 py-2 text-xs focus:outline-none transition text-slate-800 placeholder-slate-400 ${
                 isListening
                   ? 'border-red-400 ring-2 ring-red-100 bg-red-50/20'
@@ -619,6 +623,7 @@ export default function GuideChatbot() {
                   : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 hover:text-emerald-700'
               }`}
               title={isListening ? 'Stop listening' : 'Speak your query (Speech to Text)'}
+              aria-label={isListening ? 'Stop speech recognition' : 'Activate speech recognition'}
             >
               {isListening ? (
                 <MicOff className="w-3.5 h-3.5" />
@@ -632,6 +637,7 @@ export default function GuideChatbot() {
               disabled={!inputText.trim() || loading}
               className="p-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white rounded-xl shadow-sm transition flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
               title="Send Message"
+              aria-label="Send Message"
             >
               <Send className="w-3.5 h-3.5" />
             </button>

@@ -784,6 +784,7 @@ function ExploreContent() {
                         <button
                           type="button"
                           onClick={() => setSidebarSearchQuery('')}
+                          aria-label="Clear search query"
                           className="text-slate-400 hover:text-slate-600"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -1302,6 +1303,7 @@ function ExploreContent() {
                             onClick={() => toggleFavorite(selectedPlot.id, selectedPlot)}
                             className="p-1.5 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-500 transition cursor-pointer"
                             title={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
+                            aria-label={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
                           >
                             <Heart
                               className={`w-4 h-4 transition-transform active:scale-125 ${
@@ -1312,7 +1314,9 @@ function ExploreContent() {
                             />
                           </button>
                           <button
+                            type="button"
                             onClick={() => setSelectedPlot(null)}
+                            aria-label="Close plot details panel"
                             className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition cursor-pointer"
                           >
                             <X className="w-5 h-5" />
