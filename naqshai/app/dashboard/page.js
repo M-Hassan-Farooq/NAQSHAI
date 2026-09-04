@@ -24,6 +24,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 
+const REMOVE_CONFIRMATION = 'I want to remove my listing';
+
 // Presentation config for each lifecycle state.
 const LIFECYCLE = {
   draft: {
@@ -77,6 +79,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState(null);
+  const [removalTarget, setRemovalTarget] = useState(null);
+  const [removalPhrase, setRemovalPhrase] = useState('');
 
   const loadDrafts = useCallback(async () => {
     setLoading(true);
@@ -152,8 +156,6 @@ export default function DashboardPage() {
   };
 
   const handleDiscard = async (id) => {
-    const confirmed = window.confirm('Discard this draft? This cannot be undone.');
-    if (!confirmed) return;
     setDeletingId(id);
     try {
       const { data: { session: current } } = await supabase.auth.getSession();
@@ -165,6 +167,8 @@ export default function DashboardPage() {
       const json = await res.json().catch(() => ({}));
       if (res.ok && json.success) {
         setDrafts((prev) => prev.filter((d) => d.id !== id));
+        setRemovalTarget(null);
+        setRemovalPhrase('');
       } else {
         setError(json.error || 'Could not discard the draft.');
       }
@@ -173,6 +177,12 @@ export default function DashboardPage() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const openRemovalDialog = (listing) => {
+    setRemovalPhrase('');
+    setRemovalTarget(listing);
+    setError('');
   };
 
   if (checkingAuth) {
@@ -332,7 +342,7 @@ export default function DashboardPage() {
                           <ArrowRight className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDiscard(d.id)}
+                          onClick={() => openRemovalDialog(d)}
                           disabled={deletingId === d.id}
                           className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition disabled:opacity-50"
                           title={isRejected ? 'Discard listing' : 'Discard draft'}
@@ -345,19 +355,29 @@ export default function DashboardPage() {
                         </button>
                       </>
                     ) : d.lifecycle === 'published' ? (
-                      <button
-                        onClick={() =>
-                          router.push(
-                            d.published_plot_id
-                              ? `/explore?plot=${d.published_plot_id}`
-                              : '/explore'
-                          )
-                        }
-                        className="flex-1 bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold px-4 py-2 rounded-xl text-sm transition flex items-center justify-center gap-1.5"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span>View on 3D Map</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={() =>
+                            router.push(
+                              d.published_plot_id
+                                ? `/explore?plot=${d.published_plot_id}`
+                                : '/explore'
+                            )
+                          }
+                          className="flex-1 bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold px-4 py-2 rounded-xl text-sm transition flex items-center justify-center gap-1.5"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>View on 3D Map</span>
+                        </button>
+                        <button
+                          onClick={() => openRemovalDialog(d)}
+                          disabled={deletingId === d.id}
+                          className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition disabled:opacity-50"
+                          title="Remove listing"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
                     ) : (
                       <span className="flex-1 text-center text-xs font-medium text-slate-500 px-4 py-2">
                         In review — you&apos;ll be notified once it&apos;s verified.
@@ -367,6 +387,52 @@ export default function DashboardPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {removalTarget && (
+          <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div role="dialog" aria-modal="true" aria-labelledby="remove-listing-title" className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 id="remove-listing-title" className="text-lg font-bold text-slate-900">Are you sure you want to remove your listing?</h2>
+                  <p className="text-sm text-slate-600 mt-1">{removalTarget.title} will be permanently removed from your listings and the marketplace.</p>
+                </div>
+              </div>
+              <label htmlFor="remove-listing-phrase" className="block text-xs font-semibold text-slate-700 mt-5 mb-1.5">
+                Type <span className="font-mono text-red-600">{REMOVE_CONFIRMATION}</span> to continue.
+              </label>
+              <input
+                id="remove-listing-phrase"
+                type="text"
+                value={removalPhrase}
+                onChange={(e) => setRemovalPhrase(e.target.value)}
+                autoComplete="off"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+              />
+              <div className="flex justify-end gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => setRemovalTarget(null)}
+                  disabled={deletingId === removalTarget.id}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDiscard(removalTarget.id)}
+                  disabled={removalPhrase !== REMOVE_CONFIRMATION || deletingId === removalTarget.id}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deletingId === removalTarget.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Remove listing
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

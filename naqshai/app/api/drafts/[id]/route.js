@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUserFromRequest, getUserClient } from '@/lib/authServer';
+import { getUserFromRequest, getUserClient, getAdminClient } from '@/lib/authServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -134,14 +134,40 @@ export async function DELETE(request, { params }) {
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Draft not found' }, { status: 404 });
     }
-    // Only a fresh draft or a rejected listing being corrected may be discarded. A
-    // submitted listing is awaiting verification and a published one is live, so
-    // neither can be deleted by the owner (mirrors the PUT read-only guard above).
-    if (existing.status !== 'draft' && existing.status !== 'rejected') {
-      return NextResponse.json(
-        { success: false, error: 'This listing has been submitted and can no longer be deleted.', draft: existing },
-        { status: 409 }
-      );
+    if (existing.status === 'published') {
+      const { data: publishedDraft, error: publishedDraftError } = await db
+        .from('listing_drafts')
+        .select('id, published_plot_id')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (publishedDraftError) {
+        return NextResponse.json({ success: false, error: publishedDraftError.message }, { status: 500 });
+      }
+
+      if (publishedDraft?.published_plot_id) {
+        const { error: plotError } = await getAdminClient()
+          .from('plots')
+          .delete()
+          .eq('id', publishedDraft.published_plot_id);
+        if (plotError) {
+          return NextResponse.json({ success: false, error: plotError.message }, { status: 500 });
+        }
+      }
+
+      const { error: publishedDeleteError } = await db
+        .from('listing_drafts')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .eq('status', 'published');
+
+      if (publishedDeleteError) {
+        return NextResponse.json({ success: false, error: publishedDeleteError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
     const { error } = await db
@@ -149,7 +175,7 @@ export async function DELETE(request, { params }) {
       .delete()
       .eq('id', id)
       .eq('user_id', user.id)
-      .in('status', ['draft', 'rejected']); // guard the check->delete window against a concurrent submit
+      .in('status', ['draft', 'rejected', 'submitted']); // guard the check->delete window against concurrent changes
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
