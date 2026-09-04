@@ -342,10 +342,22 @@ export default function SellPlotPage() {
         setErrorMessage('Please provide your full name and WhatsApp phone number.');
         return;
       }
+      if (!/^\+?[0-9\s()-]{7,20}$/.test(sellerInfo.phoneNumber.trim())) {
+        setErrorMessage('Please enter a valid phone number, for example +923001234567.');
+        return;
+      }
       if (!plotDetails.society || !plotDetails.plotNumber || !plotDetails.pricePkr) {
         setErrorMessage('Please fill in society name, plot number, and demand price.');
         return;
       }
+      if (!Number.isFinite(Number(plotDetails.pricePkr)) || Number(plotDetails.pricePkr) <= 0) {
+        setErrorMessage('Demand price must be greater than zero.');
+        return;
+      }
+    }
+    if (currentStep === 2 && polygonCoordinates.length < 3) {
+      setErrorMessage('Please mark at least 3 boundary points before continuing.');
+      return;
     }
     const next = Math.min(currentStep + 1, 3);
     saveNow(buildSnapshot(next)); // persist progress on navigation
@@ -370,6 +382,15 @@ export default function SellPlotPage() {
     setErrorMessage('');
 
     try {
+      if (!uploadedFiles.allotmentLetter) {
+        setErrorMessage('Please upload the allotment or transfer letter before submitting.');
+        return;
+      }
+      if (Object.values(docUploading).some(Boolean)) {
+        setErrorMessage('Please wait for document uploads to finish before submitting.');
+        return;
+      }
+
       // Make sure the newest form state is persisted and a draft row exists.
       await saveNow(buildSnapshot(currentStep));
       const id = getDraftId();
@@ -563,6 +584,15 @@ export default function SellPlotPage() {
           <p className="text-xs text-slate-500 mt-2">
             Your progress saves automatically — you can leave and pick up right where you left off.
           </p>
+          {session?.user && !isReadOnly && (
+            <div className="mt-3 flex justify-center md:hidden">
+              <SaveIndicator
+                state={draft.saveState}
+                lastSavedAt={draft.lastSavedAt}
+                onRetry={() => saveNow(buildSnapshot(currentStep))}
+              />
+            </div>
+          )}
         </div>
 
         {/* 2. Step Progress Bar */}
