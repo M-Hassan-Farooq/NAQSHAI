@@ -869,6 +869,7 @@ function ExploreContent() {
                             return (
                               <div
                                 key={plot.id}
+                                aria-label={`${plot.name}, ${plot.price}, ${plot.city}`}
                                 className={`rounded-xl border p-3.5 transition flex flex-col justify-between space-y-2.5 shadow-xs ${
                                   isSelected
                                     ? 'border-emerald-600 bg-emerald-50/20 ring-1 ring-emerald-500/30'
@@ -902,6 +903,7 @@ function ExploreContent() {
                                           e.stopPropagation();
                                           toggleFavorite(plot.id, plot);
                                         }}
+                                        aria-label={isFavorite(plot.id) ? `Remove ${plot.name} from favorites` : `Save ${plot.name} to favorites`}
                                         className="p-1 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition cursor-pointer"
                                         title={isFavorite(plot.id) ? 'Remove from favorites' : 'Save to favorites'}
                                       >
@@ -950,6 +952,7 @@ function ExploreContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleSeeOnMap(plot)}
+                                    aria-label={`View ${plot.name} on the map`}
                                     className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
                                       isSelected
                                         ? 'bg-emerald-700 text-white shadow-xs'
@@ -1166,7 +1169,7 @@ function ExploreContent() {
 
                 {/* Data status overlays */}
                 {(plotsLoading || plotsError || showEmptyState) && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-4">
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-4" aria-live="polite" aria-atomic="true">
                     <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg rounded-2xl px-6 py-5 max-w-sm w-full text-center">
                       {plotsLoading ? (
                         <div className="flex flex-col items-center gap-3">
