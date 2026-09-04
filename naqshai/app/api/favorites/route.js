@@ -22,7 +22,10 @@ export async function GET(request) {
 
     if (favError) {
       console.warn('[api/favorites] Error loading favorites:', favError.message);
-      return NextResponse.json({ success: true, favorites: [], plots: [] }, { status: 200 });
+      return NextResponse.json(
+        { success: false, error: 'Could not load your favorites right now.' },
+        { status: 500 }
+      );
     }
 
     const favoriteIds = (favData || []).map((row) => row.plot_id);

@@ -48,8 +48,17 @@ function parseSociety(title) {
   return (afterDash.split(',')[0] || '').trim();
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const requestedPage = Number.parseInt(searchParams.get('page') || '1', 10);
+    const requestedLimit = Number.parseInt(searchParams.get('limit') || '100', 10);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 100;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
     const db = supabaseAdmin || supabase;
 
     // Single query. Registered = the row exists in `plots`. Seller phone is
@@ -60,7 +69,8 @@ export async function GET() {
       .select(
         'id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, sellers ( phone_number, full_name )'
       )
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) {
       console.error('Error fetching plots:', error.message || error);
@@ -102,7 +112,10 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ plots }, { status: 200 });
+    return NextResponse.json({
+      plots,
+      pagination: { page, limit, returned: plots.length, hasMore: plots.length === limit },
+    }, { status: 200 });
   } catch (err) {
     console.error('API Error in /api/plots:', err);
     return NextResponse.json(

@@ -200,6 +200,16 @@ export async function POST(req) {
       );
     }
 
+    if (messages.length > 30 || messages.some((message) => {
+      const content = typeof message?.content === 'string' ? message.content : '';
+      return content.length > 4000;
+    })) {
+      return new Response(
+        JSON.stringify({ error: 'Messages are too large.', reply: 'Please shorten your message history and try again.', recommendedPlots: [] }),
+        { status: 413, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.error('[api/chat] GEMINI_API_KEY is missing.');
