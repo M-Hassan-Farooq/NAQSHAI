@@ -681,9 +681,9 @@ export default function ReviewPage() {
             <div>
               <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-2">
                 <CheckCircle2 className="w-6 h-6 text-emerald-700" />
-                Verified plots on sale
+                All plots on sale
               </h2>
-              <p className="text-sm text-slate-600 mt-1">Manage every verified listing currently visible to buyers.</p>
+              <p className="text-sm text-slate-600 mt-1">Manage every listing currently visible to buyers. Verification status is shown on each plot.</p>
             </div>
             <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
               {verifiedPlots.length} live
@@ -710,8 +710,11 @@ export default function ReviewPage() {
                           {plot.city || '—'} · {plot.society || 'Society not provided'}
                         </p>
                       </div>
-                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full shrink-0">
-                        Verified
+                      <span className={`text-[11px] font-semibold px-2 py-1 rounded-full shrink-0 ${plot.isVerified
+                        ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
+                        : 'text-amber-800 bg-amber-50 border border-amber-200'
+                      }`}>
+                        {plot.isVerified ? 'Verified' : 'Needs verification'}
                       </span>
                     </div>
 

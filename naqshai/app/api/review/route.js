@@ -40,7 +40,6 @@ export async function GET(request) {
     const { data: verifiedRows, error: verifiedError } = await dbAdmin
       .from('plots')
       .select('id, seller_id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, updated_at, sellers ( phone_number, full_name )')
-      .eq('is_verified', true)
       .order('created_at', { ascending: false });
 
     if (verifiedError) {
@@ -112,6 +111,7 @@ export async function GET(request) {
     const verifiedPlots = (verifiedRows || []).map((row) => ({
       id: row.id,
       title: row.title || row.id,
+      isVerified: !!row.is_verified,
       city: row.city || '',
       society: row.title?.split(' - ')[1]?.split(',')[0]?.trim() || '',
       pricePkr: row.price_pkr,
