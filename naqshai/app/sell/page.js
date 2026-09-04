@@ -117,7 +117,7 @@ export default function SellPlotPage() {
 
   const [plotDetails, setPlotDetails] = useState({
     city: 'Islamabad',
-    society: 'Gulberg Greens',
+    society: '',
     plotNumber: '',
     sizeDimensions: '10 Marla (35x70)',
     category: 'Residential',
