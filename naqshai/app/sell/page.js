@@ -258,17 +258,19 @@ export default function SellPlotPage() {
   };
 
   const onPlaceChanged = () => {
-    if (autocompleteRef.current !== null) {
-      const place = autocompleteRef.current.getPlace();
-      if (place.geometry && place.geometry.location) {
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
+    if (!autocompleteRef.current) return;
 
-        if (mapRef.current) {
-          mapRef.current.panTo({ lat, lng });
-          mapRef.current.setZoom(18);
-        }
-      }
+    const place = autocompleteRef.current.getPlace?.();
+    const location = place?.geometry?.location;
+    if (!location || typeof location.lat !== 'function' || typeof location.lng !== 'function') return;
+
+    const lat = location.lat();
+    const lng = location.lng();
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    if (mapRef.current) {
+      mapRef.current.panTo({ lat, lng });
+      mapRef.current.setZoom(18);
     }
   };
 
