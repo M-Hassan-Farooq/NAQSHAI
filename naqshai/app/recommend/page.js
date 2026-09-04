@@ -5,19 +5,22 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import Navbar from '@/components/Navbar';
 import UserNav from '@/components/UserNav';
 import {
-    Bot,
-    Send,
-    Sparkles,
-    MapPin,
-    Home,
-    ShieldCheck,
-    ExternalLink,
-    ArrowRight,
-    RefreshCw,
-    Phone,
-    CheckCircle2,
+  Bot,
+  Send,
+  Sparkles,
+  MapPin,
+  Home,
+  ShieldCheck,
+  ExternalLink,
+  ArrowRight,
+  RefreshCw,
+  Phone,
+  CheckCircle2,
+  Compass,
+
     User,
     LogOut,
     Mic,
@@ -407,72 +410,13 @@ function ChatInterface() {
 
     return (
         <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-100 text-slate-800 font-sans">
-            {/* Top Navbar */}
-            <header className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 bg-white shadow-sm shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="relative w-9 h-9 overflow-hidden rounded-xl border border-emerald-500/20 shadow-sm shrink-0">
-                        <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h1 className="font-bold text-base text-slate-900">NAQSHAI Smart Match</h1>
-                            <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                Live Database
-                            </span>
-                        </div>
-                        <p className="text-xs text-slate-500">Multilingual AI Plot Discovery (English / اردو / Roman Urdu)</p>
-                    </div>
-                </div>
+            {/* Standardized Top Navbar */}
+            <Navbar
+                session={session}
+                onSignOut={handleSignOut}
+                badgeText="AI Advisor"
+            />
 
-                <div className="flex items-center gap-3">
-                    {/* Language Toggle Group */}
-                    <div className="flex items-center p-1 bg-slate-200/80 border border-slate-300/80 rounded-xl text-xs font-medium">
-                        {['Auto', 'EN', 'UR', 'RO'].map((langOption) => (
-                            <button
-                                key={langOption}
-                                type="button"
-                                onClick={() => handleLanguageChange(langOption)}
-                                className={`px-2.5 py-1 rounded-lg transition-all ${
-                                    language === langOption
-                                        ? 'bg-emerald-700 text-white shadow-sm font-semibold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/50'
-                                }`}
-                            >
-                                {langOption}
-                            </button>
-                        ))}
-                    </div>
-
-                    <Link
-                        href="/"
-                        className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 shadow-sm flex items-center gap-1.5"
-                    >
-                        <Home className="w-3.5 h-3.5 text-emerald-700" />
-                        <span>Home</span>
-                    </Link>
-
-                    <button
-                        onClick={() => router.push('/sell')}
-                        className="bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 shadow-sm"
-                    >
-                        List Your Plot
-                    </button>
-
-                    <button
-                        onClick={() => router.push('/explore')}
-                        className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 transition shrink-0 shadow-sm"
-                    >
-                        Explore 3D Map <ArrowRight className="w-3.5 h-3.5 text-emerald-700" />
-                    </button>
-
-                    <div className="border-l border-slate-200 pl-2">
-                        <UserNav
-                            session={session}
-                            onSignOut={handleSignOut}
-                        />
-                    </div>
-                </div>
-            </header>
 
             {/* Chat Canvas (Scrollbar anchored to extreme right edge of screen) */}
             <main className="flex-1 overflow-y-auto w-full relative">
@@ -503,6 +447,46 @@ function ChatInterface() {
                 </div>
 
                 <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6 w-full relative z-10">
+                    {/* Chat Header Box with Relocated Language Controls */}
+                    <div className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-xs rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 sticky top-2 z-20">
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0 shadow-xs">
+                                <Bot className="w-4.5 h-4.5 text-emerald-700" />
+                            </div>
+                            <div>
+                                <h2 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                                    <span>NAQSHAI AI Discovery</span>
+                                    <span className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                        Live Database
+                                    </span>
+                                </h2>
+                                <p className="text-[11px] text-slate-500">Ask in English, Urdu (اردو), or Roman Urdu</p>
+                            </div>
+                        </div>
+
+                        {/* Relocated Language Selector Control Group */}
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 border border-slate-200 rounded-xl text-xs">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono px-1.5 hidden sm:inline">
+                                Language:
+                            </span>
+                            {['Auto', 'EN', 'UR', 'RO'].map((langOption) => (
+                                <button
+                                    key={langOption}
+                                    type="button"
+                                    onClick={() => handleLanguageChange(langOption)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                        language === langOption
+                                            ? 'bg-emerald-700 text-white shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                    }`}
+                                    title={`Set AI response language to ${langOption}`}
+                                >
+                                    {langOption}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {messages.map((msg, idx) => (
                         <div
                             key={idx}
