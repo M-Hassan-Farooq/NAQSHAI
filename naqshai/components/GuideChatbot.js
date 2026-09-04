@@ -288,6 +288,7 @@ export default function GuideChatbot() {
         body: JSON.stringify({
           messages: chatPayload,
           language: 'English',
+          isGuide: true,
         }),
         signal: controller.signal
       });
@@ -295,6 +296,18 @@ export default function GuideChatbot() {
 
       const data = await res.json();
       if (data && data.reply) {
+        const lowerReply = data.reply.toLowerCase();
+        const needsAdvisorRouting =
+          lowerReply.includes('ai plot advisor') ||
+          lowerReply.includes('ai advisor') ||
+          lowerReply.includes('onboarding guide') ||
+          lowerReply.includes('real estate queries') ||
+          lowerReply.includes('plot database');
+
+        const actions = needsAdvisorRouting
+          ? [{ label: 'Launch AI Plot Advisor', href: '/recommend' }]
+          : (data.actions || []);
+
         setMessages((prev) => [
           ...prev,
           {
@@ -302,6 +315,7 @@ export default function GuideChatbot() {
             role: 'assistant',
             content: data.reply,
             recommendedPlots: data.recommendedPlots || [],
+            actions,
           },
         ]);
       } else {

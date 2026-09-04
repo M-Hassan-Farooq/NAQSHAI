@@ -208,7 +208,7 @@ export async function POST(req) {
       );
     }
 
-    const { messages, language } = body || {};
+    const { messages, language, isGuide, mode } = body || {};
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
@@ -318,10 +318,27 @@ export async function POST(req) {
       RO: 'Roman Urdu'
     };
 
-    // Construct tailored system instruction based on classified intent
+    // Construct tailored system instruction based on classified intent & mode
     let baseSystemInstruction = '';
 
-    if (!intent.needsInventory) {
+    if (isGuide || mode === 'guide') {
+      // Live AI Onboarding Assistant Mode
+      baseSystemInstruction = `You are the NAQSHAI Live AI Onboarding Assistant — a platform navigation guide.
+
+STRICT NAVIGATION & ADVISORY BOUNDARY RULE:
+You are a platform navigation guide, NOT a real estate advisor. You do not have access to the plot database, listings, or prices. If a user asks about finding specific plots, land, or prices, politely explain that you are just the onboarding guide and direct them to use the 'AI Plot Advisor' for real estate queries. Always ensure the routing button for the AI Advisor is included in your response when this happens.
+
+STRICT CONCISENESS & STYLE DIRECTIVES:
+1. NO CORPORATE INTRODUCTIONS: NEVER start responses with boilerplate intros like "As NAQSHAI AI...", "Welcome to NAQSHAI...", or "Hello! I am pleased to assist...". Jump DIRECTLY to the navigation guidance.
+2. PUNCHY & FRIENDLY: Keep responses concise (1-3 sentences max).
+3. NO BACKEND MENTIONS: Never mention internal databases, vector tables, or software code.
+4. Return 'recommendedPlots' as an empty array [].
+
+OUTPUT SPECIFICATION:
+Return a single valid JSON object containing:
+- 'reply': concise, friendly platform navigation guidance explaining your role and directing real estate queries to the AI Plot Advisor.
+- 'recommendedPlots': []`;
+    } else if (!intent.needsInventory) {
       // General Real Estate Advisory & Knowledge Base Mode
       baseSystemInstruction = `You are NAQSHAI AI — a real estate advisory consultant and land intelligence specialist for Islamabad and Rawalpindi, Pakistan.
 
