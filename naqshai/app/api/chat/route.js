@@ -271,20 +271,20 @@ export async function POST(req) {
       try {
         const db = getSupabaseClient();
         if (db) {
-          // 4-second maximum timeout for vector similarity search
+          // 10-second maximum timeout for vector similarity search
           const vectorMatches = await withTimeout(
             searchVectorPlots(ai, db, String(lastUserQuery)),
-            4000,
+            10000,
             null
           ).catch(() => null);
 
           if (vectorMatches && vectorMatches.length > 0) {
             liveInventory = vectorMatches;
           } else {
-            // 4-second maximum timeout for fallback active inventory search
+            // 10-second maximum timeout for fallback active inventory search
             liveInventory = await withTimeout(
               fetchOptimizedInventory(db),
-              4000,
+              10000,
               []
             ).catch(() => []);
           }
@@ -409,8 +409,8 @@ Return a single valid JSON object with:
           }
         });
 
-        // Enforce 8-second limit per model call
-        const response = await withTimeout(generatePromise, 8000, null);
+        // Enforce 45-second limit per model call to allow Gemini AI adequate reasoning time
+        const response = await withTimeout(generatePromise, 45000, null);
 
         if (response && response.text) {
           generatedText = response.text;
