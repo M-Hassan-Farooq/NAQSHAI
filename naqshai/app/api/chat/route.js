@@ -457,15 +457,19 @@ Return a single valid JSON object with:
     if (!generatedText) {
       console.error('[api/chat] All Gemini model fallbacks failed or timed out.', lastError?.message || lastError);
       // Two distinct outcomes:
-      //  - If we have live inventory, we can still return something genuinely
-      //    useful (real listings), so that is a legitimate 200 success.
-      //  - If we have nothing to return, the model layer truly failed: respond
-      //    503 so res.ok is false and monitoring counts it, while keeping a
-      //    friendly `reply` for the UI to display.
+      //  - If we have live inventory, return clean recommendation text and top verified listings (200 success).
+      //  - If no inventory is available, respond 503 with a clean, neutral prompt.
       if (liveInventory.length > 0) {
+        let cleanReply = 'Here are the top verified plot listings matching your criteria from our active inventory.';
+        if (language === 'UR') {
+          cleanReply = 'یہاں آپ کے معیار کے مطابق ہماری فعال انوینٹری سے بہترین تصدیق شدہ پلاٹ کی فہرستیں درج ہیں۔';
+        } else if (language === 'RO') {
+          cleanReply = 'Aap ki criteria ke mutabiq hamari active inventory se top verified plot listings ye hain:';
+        }
+
         return new Response(
           JSON.stringify({
-            reply: 'NAQSHAI AI is experiencing high demand. Here are the top verified plot listings matching your criteria from our active inventory.',
+            reply: cleanReply,
             recommendedPlots: liveInventory.slice(0, 3),
             isFallback: true,
             success: true
@@ -474,9 +478,16 @@ Return a single valid JSON object with:
         );
       }
 
+      let noMatchReply = 'Please try asking your real estate question again in a few moments.';
+      if (language === 'UR') {
+        noMatchReply = 'براہ کرم کچھ دیر بعد دوبارہ اپنا سوال پوچھیں۔';
+      } else if (language === 'RO') {
+        noMatchReply = 'Baraye mehrbani thori der baad dobara koshish karein.';
+      }
+
       return new Response(
         JSON.stringify({
-          reply: 'NAQSHAI AI is currently experiencing high demand. Please try asking your real estate question again in a few moments.',
+          reply: noMatchReply,
           recommendedPlots: [],
           isFallback: true
         }),
