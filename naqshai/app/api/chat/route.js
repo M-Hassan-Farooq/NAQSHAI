@@ -236,12 +236,15 @@ export async function POST(req) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.error('[api/chat] GEMINI_API_KEY is missing.');
+      // 503: a server misconfiguration, not a client error. `reply` is retained so
+      // the UI still shows a friendly message, but the status now reflects failure
+      // (both /recommend's res.ok check and uptime monitoring can see it).
       return new Response(
         JSON.stringify({
-          reply: 'Gemini API Key is not configured. Please check environment variables.',
+          reply: 'The AI service is temporarily unavailable. Please try again shortly.',
           recommendedPlots: []
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 503, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -451,19 +454,32 @@ Return a single valid JSON object with:
     }
 
     if (!generatedText) {
-      console.error('[api/chat] All Gemini model fallbacks failed or timed out. Returning fallback response.');
-      const fallbackReply = liveInventory.length > 0
-        ? 'NAQSHAI AI is experiencing high demand. Here are the top verified plot listings matching your criteria from our active inventory.'
-        : 'NAQSHAI AI is currently experiencing high demand. Please try asking your real estate question again in a few moments.';
-        
+      console.error('[api/chat] All Gemini model fallbacks failed or timed out.', lastError?.message || lastError);
+      // Two distinct outcomes:
+      //  - If we have live inventory, we can still return something genuinely
+      //    useful (real listings), so that is a legitimate 200 success.
+      //  - If we have nothing to return, the model layer truly failed: respond
+      //    503 so res.ok is false and monitoring counts it, while keeping a
+      //    friendly `reply` for the UI to display.
+      if (liveInventory.length > 0) {
+        return new Response(
+          JSON.stringify({
+            reply: 'NAQSHAI AI is experiencing high demand. Here are the top verified plot listings matching your criteria from our active inventory.',
+            recommendedPlots: liveInventory.slice(0, 3),
+            isFallback: true,
+            success: true
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+        );
+      }
+
       return new Response(
         JSON.stringify({
-          reply: fallbackReply,
-          recommendedPlots: liveInventory.slice(0, 3),
-          isFallback: true,
-          success: true
+          reply: 'NAQSHAI AI is currently experiencing high demand. Please try asking your real estate question again in a few moments.',
+          recommendedPlots: [],
+          isFallback: true
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+        { status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
       );
     }
 
@@ -489,13 +505,15 @@ Return a single valid JSON object with:
 
   } catch (err) {
     console.error('[api/chat] Handled error in chat API:', err?.message || err);
+    // 500 with a friendly `reply` retained: the UI still shows a message, but the
+    // status honestly reports the failure so it isn't invisible to monitoring.
     return new Response(
       JSON.stringify({
         reply: 'Maazrat, request process karne me masla aya. Baraye mehrbani dobara koshish karein.',
         recommendedPlots: [],
         error: err?.message || 'Internal Server Error'
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
