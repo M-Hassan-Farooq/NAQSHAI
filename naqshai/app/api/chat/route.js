@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import { getFastConversationalReply } from '@/lib/conversationHelper';
+import { embedText } from '@/lib/plotEmbedding';
 
 // Enable Edge Runtime to minimize cold starts & latency
 export const runtime = 'edge';
@@ -105,11 +106,11 @@ function classifyQueryIntent(messages) {
  */
 async function searchVectorPlots(ai, db, queryText) {
   try {
-    const embedRes = await ai.models.embedContent({
-      model: 'text-embedding-004',
-      contents: queryText,
-    });
-    const embedding = embedRes?.embedding?.values;
+    // embedText reads the correct @google/genai v2.19 response shape
+    // (res.embeddings[0].values) and pins 768 dims to match the plots column.
+    // The previous inline call read res.embedding.values (singular), which does
+    // not exist in this SDK, so the query embedding was always undefined.
+    const embedding = await embedText(ai, queryText);
     if (embedding && Array.isArray(embedding)) {
       const { data, error } = await db.rpc('match_plots', {
         query_embedding: embedding,

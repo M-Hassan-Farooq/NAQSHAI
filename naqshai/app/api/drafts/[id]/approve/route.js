@@ -1,8 +1,31 @@
 import { NextResponse } from 'next/server';
+import { GoogleGenAI } from '@google/genai';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 import { normalizeDocuments, persistListing } from '@/lib/publishListing';
+import { embedPlotRow } from '@/lib/plotEmbedding';
 
 export const dynamic = 'force-dynamic';
+
+// Best-effort: embed a freshly-approved plot for pgvector semantic search. Never
+// throws and never blocks approval — a plot without an embedding simply won't
+// appear in vector results until backfilled, and the chatbot falls back to
+// recency-based inventory regardless.
+async function embedApprovedPlot(dbAdmin, plotId) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !plotId) return;
+    const { data: plot, error } = await dbAdmin
+      .from('plots')
+      .select('id, title, city, category, size_dimensions, proximity_notes, flood_risk, noise_level, elevation_profile')
+      .eq('id', plotId)
+      .maybeSingle();
+    if (error || !plot) return;
+    const ai = new GoogleGenAI({ apiKey });
+    await embedPlotRow(dbAdmin, ai, plot);
+  } catch (err) {
+    console.warn('[drafts/approve] embedding notice:', err?.message || err);
+  }
+}
 
 // POST /api/drafts/[id]/approve — operator-only. Approves a SUBMITTED listing:
 // creates/links the canonical, verified public plot and moves the draft to
@@ -90,6 +113,9 @@ export async function POST(request, { params }) {
           );
         }
 
+        // Best-effort semantic-search embedding; never blocks the approval response.
+        await embedApprovedPlot(dbAdmin, published.plotId);
+
         return NextResponse.json({ success: true, status: 'published', plotId: published.plotId }, { status: 200 });
       }
       return NextResponse.json(
@@ -109,6 +135,9 @@ export async function POST(request, { params }) {
     if (!approved?.plot_id) {
       return NextResponse.json({ success: false, error: 'Approval did not return a published plot.' }, { status: 500 });
     }
+
+    // Best-effort semantic-search embedding; never blocks the approval response.
+    await embedApprovedPlot(dbAdmin, approved.plot_id);
 
     return NextResponse.json(
       { success: true, status: 'published', plotId: approved.plot_id },

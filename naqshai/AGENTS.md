@@ -18,3 +18,13 @@
 - **API Responses**: Always wrap API route handlers (`/api/*`) in clean `try/catch` blocks and return consistent JSON structures.
 - **No Hallucinated Packages**: Use only installed libraries (`@google/genai`, `@react-google-maps/api`, `@supabase/supabase-js`, `lucide-react`).
 - **File Discipline**: Never overwrite working map configurations or clear existing coordinates unless instructed.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
