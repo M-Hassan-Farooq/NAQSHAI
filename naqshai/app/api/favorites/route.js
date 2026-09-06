@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getUserFromRequest, getAdminClient } from '@/lib/authServer';
+import { getUserFromRequest, getUserClient } from '@/lib/authServer';
 
 export async function GET(request) {
   try {
-    const { user, error: authError } = await getUserFromRequest(request);
+    const { user, token, error: authError } = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized. Please sign in to view your favorites.', detail: authError },
@@ -11,7 +11,10 @@ export async function GET(request) {
       );
     }
 
-    const db = getAdminClient();
+    // User-scoped client: RLS ("auth.uid() = user_id") enforces that a user can
+    // only ever read their own favorites, instead of relying solely on the
+    // .eq('user_id', ...) filter below. Defense in depth.
+    const db = getUserClient(token);
 
     // 1. Fetch user's favorited plot IDs
     const { data: favData, error: favError } = await db
@@ -64,7 +67,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { user, error: authError } = await getUserFromRequest(request);
+    const { user, token, error: authError } = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized. Please sign in to save plots to favorites.', detail: authError },
@@ -82,7 +85,9 @@ export async function POST(request) {
       );
     }
 
-    const db = getAdminClient();
+    // User-scoped client so RLS enforces ownership on both the read-back and the
+    // insert/delete below (WITH CHECK / USING auth.uid() = user_id).
+    const db = getUserClient(token);
 
     // 1. Check if favorite already exists
     const { data: existing, error: checkError } = await db
