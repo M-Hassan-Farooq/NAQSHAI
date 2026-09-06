@@ -22,6 +22,27 @@ function getValidUrl(url) {
 const supabaseUrl = getValidUrl(rawUrl);
 
 /**
+ * Constant-time string comparison. Avoids the early-exit timing side-channel of
+ * `===` when comparing a caller-supplied token against a server secret (the
+ * operator passphrase in particular may be lower-entropy). Runtime-agnostic:
+ * no Node `crypto` dependency, so it is safe in both Node and Edge routes.
+ *
+ * Compares over a fixed number of iterations regardless of where the first
+ * mismatch is; a length difference still returns false but is folded into the
+ * accumulator so the comparison work does not short-circuit.
+ */
+function timingSafeEqual(a, b) {
+  const sa = typeof a === 'string' ? a : '';
+  const sb = typeof b === 'string' ? b : '';
+  const len = Math.max(sa.length, sb.length);
+  let diff = sa.length ^ sb.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (sa.charCodeAt(i) || 0) ^ (sb.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+/**
  * Verify the request's bearer token against Supabase and return the real user.
  * @returns {Promise<{ user: object|null, token: string|null, error: string|null }>}
  */
@@ -111,7 +132,7 @@ export function getBearerToken(request) {
  * actually configured AND the presented token matches it exactly.
  */
 export function isServiceRoleToken(token) {
-  return !!serviceKey && !!token && token === serviceKey;
+  return !!serviceKey && !!token && timingSafeEqual(token, serviceKey);
 }
 
 /**
@@ -132,5 +153,5 @@ export function isServiceRoleToken(token) {
  */
 export function isOperatorToken(token) {
   if (isServiceRoleToken(token)) return true;
-  return !!operatorPassphrase && !!token && token === operatorPassphrase;
+  return !!operatorPassphrase && !!token && timingSafeEqual(token, operatorPassphrase);
 }
