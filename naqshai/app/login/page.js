@@ -19,14 +19,16 @@ import {
 } from 'lucide-react';
 
 function getSiteUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/$/, '');
+  }
+
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin.replace(/\/$/, '');
   }
-  let url = process.env.NEXT_PUBLIC_SITE_URL;
-  if (!url || !url.trim()) {
-    url = 'http://localhost:3000';
-  }
-  return url.replace(/\/$/, '');
+
+  return 'http://localhost:3000';
 }
 
 function LoginContent() {
