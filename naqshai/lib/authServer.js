@@ -70,13 +70,23 @@ export function getUserClient(token) {
 }
 
 /**
- * A privileged client (service role when available) for writes into the
- * permissive plots/sellers tables at submit time. Falls back to the anon key,
- * which still works because those tables have public insert policies.
+ * A privileged (service-role) client for operator/approval work and other
+ * cross-user or RLS-bypassing operations (document signing, approve/reject).
+ *
+ * This intentionally does NOT fall back to the anon key. A silent anon fallback
+ * would let privileged code run with no privileges — reads/writes would then be
+ * silently constrained (or rejected) by RLS, producing confusing partial
+ * failures instead of a clear "misconfigured" signal. Since 07_lock_down_plot_writes
+ * revoked anon/authenticated writes on plots, the old fallback couldn't perform
+ * its job anyway. Fail fast so a missing SUPABASE_SERVICE_ROLE_KEY is obvious.
  */
 export function getAdminClient() {
-  const key = serviceKey || anonKey;
-  return createClient(supabaseUrl, key, {
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error(
+      '[authServer] getAdminClient requires SUPABASE_SERVICE_ROLE_KEY (and NEXT_PUBLIC_SUPABASE_URL) to be configured on the server.'
+    );
+  }
+  return createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
