@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin, supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 // Always read fresh data from the database (never statically cached).
 export const dynamic = 'force-dynamic';
@@ -59,7 +59,11 @@ export async function GET(request) {
       : 100;
     const from = (page - 1) * limit;
     const to = from + limit - 1;
-    const db = supabaseAdmin || supabase;
+    // Public map feed: read as anon so the public-read RLS on `plots` and
+    // `sellers` applies. No service role here — this endpoint exposes only
+    // already-public data, and dropping the privileged client means a future
+    // filter/policy regression can't leak anything RLS would otherwise hide.
+    const db = supabase;
 
     // Single query. Registered = the row exists in `plots`. Seller phone is
     // embedded via the plots.seller_id -> sellers.id foreign key for the
