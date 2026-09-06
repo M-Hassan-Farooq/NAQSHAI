@@ -5,10 +5,16 @@ import { getFastConversationalReply } from '@/lib/conversationHelper';
 // Enable Edge Runtime to minimize cold starts & latency
 export const runtime = 'edge';
 
-// Active Gemini models list with fallback priority
+// Active Gemini models list with fallback priority.
+// These must be real, published model IDs — the previous 'gemini-3.6/3.7-flash'
+// values do not exist, so every generation call failed and the assistant silently
+// fell back to canned replies. gemini-2.5-flash is the primary (matches the
+// "Gemini 2.5" advertised on the landing page); the -lite/-8b entries are cheaper
+// fallbacks tried in order if the primary is unavailable or times out.
 const SUPPORTED_GEMINI_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.7-flash'
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash'
 ];
 
 function formatPkr(num) {
