@@ -292,7 +292,16 @@ function ChatInterface() {
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
-                const safeReply = errorData.reply || 'Maazrat, request process karne me masla aya. Dobara koshish karein.';
+                let safeReply = errorData.reply || '';
+                if (!safeReply || safeReply.toLowerCase().includes('few moments') || safeReply.toLowerCase().includes('high demand')) {
+                    if (language === 'UR') {
+                        safeReply = 'میں اسلام آباد اور راولپنڈی میں رئیل اسٹیٹ انٹیلی جنس میں آپ کی مدد کر سکتا ہوں! مخصوص CDA سیکٹرز (F-6, G-11)، بحریہ ٹاؤن، یا DHA کے بارے میں پوچھیں۔';
+                    } else if (language === 'RO') {
+                        safeReply = 'Main Islamabad aur Rawalpindi mein real estate intelligence mein aap ki madad kar sakta hoon! Specific CDA sectors (F-6, G-11), Bahria Town, ya DHA ke baarey mein poochain.';
+                    } else {
+                        safeReply = 'I can assist you with real estate intelligence across Islamabad & Rawalpindi! Try asking about specific CDA sectors (F-6, G-11), Bahria Town, DHA, or monsoon flood risk zones.';
+                    }
+                }
                 setMessages((prev) => [
                     ...prev,
                     {

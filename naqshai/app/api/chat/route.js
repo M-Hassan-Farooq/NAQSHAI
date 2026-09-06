@@ -275,9 +275,9 @@ export async function POST(req) {
     let liveInventory = [];
 
     // 3. Strict Intent Routing:
-    // Only query Supabase when explicit active inventory search is requested.
-    // General advisory, conceptual questions, and greetings bypass the database completely!
-    if (intent.needsInventory) {
+    // Only query Supabase when explicit active inventory search is requested AND we are NOT in onboarding guide mode.
+    // General advisory, conceptual questions, greetings, and onboarding guide requests bypass the database completely!
+    if (intent.needsInventory && !isGuide && mode !== 'guide') {
       try {
         const db = getSupabaseClient();
         if (db) {
@@ -335,21 +335,19 @@ export async function POST(req) {
       // Live AI Onboarding Assistant Mode
       baseSystemInstruction = `You are the NAQSHAI Live AI Onboarding Assistant — a platform navigation guide.
 
-STRICT NAVIGATION & ADVISORY BOUNDARY RULE:
-You are a platform navigation guide, NOT a real estate advisor. You do not have access to the plot database, listings, or prices. If a user asks about finding specific plots, land, or prices, politely explain that you are just the onboarding guide and direct them to use the 'AI Plot Advisor' for real estate queries. Always ensure the routing button for the AI Advisor is included in your response when this happens.
-
-STRICT PLATFORM INVENTORY QUANTITY RULE:
-If a user asks about the quantity of available plots or how many listings the platform has, DO NOT invent exact numbers or use exaggerated terms like 'thousands'. Instead, explicitly state: "We feature a lot of verified plot listings across Islamabad and Rawalpindi..." and keep the rest of your standard routing response.
+STRICT NAVIGATION & FEATURE ROUTING RULES:
+1. LISTING OR SELLING PLOTS: If the user asks about listing, selling, posting, or submitting a plot, direct them specifically to use the 'List Your Plot' page (/sell) to submit plot dimensions, society details, and asking price.
+2. BUYING OR SEARCHING PLOTS: You ONLY provide platform navigation and feature guidance. You DO NOT perform property searches or provide plot listings/prices directly. If a user asks about finding plots, buying land, or searching inventory, explain that you are the onboarding guide and instruct them to check the 'Explore 3D Map' page (/explore) or consult the 'AI Advisor' (/recommend) for plot recommendations.
+3. GENERAL PLATFORM QUESTIONS: Direct users to the relevant page (3D Map, AI Advisor, or List Your Plot).
 
 STRICT CONCISENESS & STYLE DIRECTIVES:
-1. NO CORPORATE INTRODUCTIONS: NEVER start responses with boilerplate intros like "As NAQSHAI AI...", "Welcome to NAQSHAI...", or "Hello! I am pleased to assist...". Jump DIRECTLY to the navigation guidance.
+1. NO CORPORATE INTRODUCTIONS: Jump DIRECTLY to the navigation guidance.
 2. PUNCHY & FRIENDLY: Keep responses concise (1-3 sentences max).
-3. NO BACKEND MENTIONS: Never mention internal databases, vector tables, or software code.
-4. Return 'recommendedPlots' as an empty array [].
+3. NEVER return plot listings or inventory objects. Return 'recommendedPlots' strictly as an empty array [].
 
 OUTPUT SPECIFICATION:
 Return a single valid JSON object containing:
-- 'reply': concise, friendly platform navigation guidance explaining your role and directing real estate queries to the AI Plot Advisor.
+- 'reply': concise, friendly onboarding guidance directing the user to the correct feature (/sell for listing/selling plots, /explore and /recommend for exploring/buying plots).
 - 'recommendedPlots': []`;
     } else if (!intent.needsInventory) {
       // General Real Estate Advisory & Knowledge Base Mode
@@ -439,8 +437,8 @@ Return a single valid JSON object with:
           }
         });
 
-        // Enforce 45-second limit per model call to allow Gemini AI adequate reasoning time
-        const response = await withTimeout(generatePromise, 45000, null);
+        // Enforce 15-second limit per model call to allow fast fallback across supported models
+        const response = await withTimeout(generatePromise, 15000, null);
 
         if (response && response.text) {
           generatedText = response.text;
@@ -456,11 +454,8 @@ Return a single valid JSON object with:
 
     if (!generatedText) {
       console.error('[api/chat] All Gemini model fallbacks failed or timed out.', lastError?.message || lastError);
-      // Two distinct outcomes:
-      //  - If we have live inventory, return clean recommendation text and top verified listings (200 success).
-      //  - If no inventory is available, respond 503 with a clean, neutral prompt.
       if (liveInventory.length > 0) {
-        let cleanReply = 'Here are the top verified plot listings matching your criteria from our active inventory.';
+        let cleanReply = 'Here are top verified plot listings matching your criteria from our active inventory.';
         if (language === 'UR') {
           cleanReply = 'یہاں آپ کے معیار کے مطابق ہماری فعال انوینٹری سے بہترین تصدیق شدہ پلاٹ کی فہرستیں درج ہیں۔';
         } else if (language === 'RO') {
@@ -478,20 +473,35 @@ Return a single valid JSON object with:
         );
       }
 
-      let noMatchReply = 'Please try asking your real estate question again in a few moments.';
+      if (isGuide || mode === 'guide') {
+        return new Response(
+          JSON.stringify({
+            reply: 'NAQSHAI features 3D terrain elevation analysis, verified plot listings, and AI real estate intelligence across Islamabad and Rawalpindi. You can explore interactive 3D maps or launch the AI Plot Advisor for detailed plot recommendations.',
+            recommendedPlots: [],
+            isFallback: true,
+            actions: [
+              { label: '3D Map Explorer', href: '/explore' },
+              { label: 'AI Advisor', href: '/recommend' }
+            ]
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+        );
+      }
+
+      let helpfulAdvisoryReply = 'I can assist you with real estate intelligence across Islamabad & Rawalpindi! Try asking about specific CDA sectors (F-6, G-11), Bahria Town, DHA, or monsoon flood risk zones.';
       if (language === 'UR') {
-        noMatchReply = 'براہ کرم کچھ دیر بعد دوبارہ اپنا سوال پوچھیں۔';
+        helpfulAdvisoryReply = 'میں اسلام آباد اور راولپنڈی میں رئیل اسٹیٹ انٹیلی جنس میں آپ کی مدد کر سکتا ہوں! مخصوص CDA سیکٹرز (F-6, G-11)، بحریہ ٹاؤن، DHA، یا سیلاب کے خطرے والے علاقوں کے بارے میں پوچھیں۔';
       } else if (language === 'RO') {
-        noMatchReply = 'Baraye mehrbani thori der baad dobara koshish karein.';
+        helpfulAdvisoryReply = 'Main Islamabad aur Rawalpindi mein real estate intelligence mein aap ki madad kar sakta hoon! Specific CDA sectors (F-6, G-11), Bahria Town, DHA, ya flood risk zones ke baarey mein poochain.';
       }
 
       return new Response(
         JSON.stringify({
-          reply: noMatchReply,
+          reply: helpfulAdvisoryReply,
           recommendedPlots: [],
           isFallback: true
         }),
-        { status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+        { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
       );
     }
 

@@ -103,6 +103,24 @@ const BUILT_IN_ANSWERS = {
       icon: MapPin,
     },
   },
+  'greeting': {
+    reply:
+      'Hello! Welcome to NAQSHAI. How can I help you explore verified plots, 3D terrain elevation, or flood risk intelligence across Islamabad & Rawalpindi today?',
+    action: {
+      label: 'Launch AI Plot Advisor',
+      href: '/recommend',
+      icon: Sparkles,
+    },
+  },
+  'naqshai-about': {
+    reply:
+      'NAQSHAI is Pakistan\'s pioneer real estate intelligence platform, featuring 3D terrain elevation analysis, verified plot listings, and AI-driven flood risk scoring across Islamabad and Rawalpindi.',
+    action: {
+      label: 'Inspect 3D Map Explorer',
+      href: '/explore',
+      icon: MapPin,
+    },
+  },
 };
 
 export default function GuideChatbot() {
@@ -239,20 +257,42 @@ export default function GuideChatbot() {
     setInputText('');
     setLoading(true);
 
-    // 1. Check for quick question match
+    // 1. Check for quick question match or plot intent
     const lower = trimmed.toLowerCase();
     let matchedKey = null;
 
-    if (lower.includes('3d') || lower.includes('terrain') || lower.includes('contour') || lower.includes('elevation')) {
+    if (lower.includes('list') || lower.includes('sell') || lower.includes('post plot') || lower.includes('post a plot') || lower.includes('add plot') || lower.includes('submit plot')) {
+      matchedKey = 'list-plot';
+    } else if (lower.includes('buy') || lower.includes('inventory') || lower.includes('search plot') || lower.includes('find plot') || lower.includes('explore plot') || lower.includes('plot recommendations')) {
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: "As the NAQSHAI Onboarding Guide, I provide platform navigation and feature guidance. I don't search property listings directly. To explore plots or get tailored recommendations, please check the 'Explore 3D Map' page or consult our 'AI Advisor'.",
+            recommendedPlots: [],
+            actions: [
+              { label: 'Explore 3D Map', href: '/explore', icon: MapPin },
+              { label: 'AI Advisor', href: '/recommend', icon: Sparkles },
+            ],
+          },
+        ]);
+        setLoading(false);
+      }, 400);
+      return;
+    } else if (lower.includes('3d') || lower.includes('terrain') || lower.includes('contour') || lower.includes('elevation')) {
       matchedKey = '3d-map';
     } else if (lower.includes('flood') || lower.includes('risk') || lower.includes('water') || lower.includes('nullah')) {
       matchedKey = 'flood-risk';
-    } else if (lower.includes('list') || lower.includes('sell') || lower.includes('post plot')) {
-      matchedKey = 'list-plot';
     } else if (lower.includes('urdu') || lower.includes('roman') || lower.includes('multilingual') || lower.includes('language') || lower.includes('chat')) {
       matchedKey = 'multilingual-ai';
     } else if (lower.includes('society') || lower.includes('societies') || lower.includes('islamabad') || lower.includes('rawalpindi') || lower.includes('area')) {
       matchedKey = 'societies';
+    } else if (lower === 'hi' || lower === 'hello' || lower === 'hey' || lower.includes('assalam') || lower.includes('aoa') || lower.includes('greetings') || lower.includes('slam') || lower.includes('salaam')) {
+      matchedKey = 'greeting';
+    } else if (lower.includes('what is naqshai') || lower.includes('about naqshai') || lower.includes('naqshai info') || lower.includes('about platform')) {
+      matchedKey = 'naqshai-about';
     }
 
     if (matchedKey && BUILT_IN_ANSWERS[matchedKey]) {
@@ -264,7 +304,11 @@ export default function GuideChatbot() {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
             content: answer.reply,
-            actions: answer.action ? [answer.action] : [],
+            recommendedPlots: [],
+            actions: answer.action ? [answer.action] : [
+              { label: 'Explore 3D Map', href: '/explore' },
+              { label: 'AI Advisor', href: '/recommend' },
+            ],
           },
         ]);
         setLoading(false);
@@ -272,9 +316,9 @@ export default function GuideChatbot() {
       return;
     }
 
-    // 2. Query /api/chat with Gemini for custom questions
+    // 2. Query /api/chat with Gemini for custom questions (with automatic retry)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     try {
       const chatPayload = newMessages.map((m) => ({
@@ -282,71 +326,91 @@ export default function GuideChatbot() {
         content: m.content,
       }));
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: chatPayload,
-          language: 'English',
-          isGuide: true,
-        }),
-        signal: controller.signal
-      });
+      let res;
+      try {
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: chatPayload,
+            language: 'English',
+            isGuide: true,
+          }),
+          signal: controller.signal
+        });
+
+        // Retry 1 time if server error or non-ok response
+        if (!res.ok) {
+          await new Promise((r) => setTimeout(r, 800));
+          res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: chatPayload,
+              language: 'English',
+              isGuide: true,
+            }),
+            signal: controller.signal
+          });
+        }
+      } catch (firstErr) {
+        // Retry once on network exception
+        await new Promise((r) => setTimeout(r, 800));
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: chatPayload,
+            language: 'English',
+            isGuide: true,
+          }),
+          signal: controller.signal
+        });
+      }
       clearTimeout(timeoutId);
 
-      const data = await res.json();
-      if (data && data.reply) {
-        const lowerReply = data.reply.toLowerCase();
-        const needsAdvisorRouting =
-          lowerReply.includes('ai plot advisor') ||
-          lowerReply.includes('ai advisor') ||
-          lowerReply.includes('onboarding guide') ||
-          lowerReply.includes('real estate queries') ||
-          lowerReply.includes('plot database');
+      const data = await res.json().catch(() => ({}));
+      let replyText = data?.reply || '';
 
-        const actions = needsAdvisorRouting
-          ? [{ label: 'Launch AI Plot Advisor', href: '/recommend' }]
-          : (data.actions || []);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: data.reply,
-            recommendedPlots: data.recommendedPlots || [],
-            actions,
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content:
-              'NAQSHAI provides geospatial intelligence, verified plot listings, and 3D terrain elevation across Islamabad and Rawalpindi. You can explore the 3D map or launch the AI Plot Advisor for detailed plot queries.',
-            actions: [
-              { label: '3D Map Explorer', href: '/explore' },
-              { label: 'AI Advisor', href: '/recommend' },
-            ],
-          },
-        ]);
+      // Intercept any leftover 'few moments' warning strings and convert to helpful guide responses
+      if (!replyText || replyText.toLowerCase().includes('few moments') || replyText.toLowerCase().includes('high demand')) {
+        replyText = "As the NAQSHAI Onboarding Guide, I provide platform navigation and feature guidance. To explore plots or get recommendations, please check the 'Explore 3D Map' page or consult our 'AI Advisor'.";
       }
+
+      const lowerReply = replyText.toLowerCase();
+      const isListingQuery = lower.includes('sell') || lower.includes('list') || lower.includes('post plot') || lowerReply.includes('list your plot') || lowerReply.includes('/sell');
+
+      const actions = isListingQuery
+        ? [{ label: 'List Your Plot Now', href: '/sell', icon: PlusCircle }]
+        : (data.actions && data.actions.length > 0
+            ? data.actions
+            : [
+                { label: 'Explore 3D Map', href: '/explore' },
+                { label: 'AI Advisor', href: '/recommend' },
+              ]);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: replyText,
+          recommendedPlots: [],
+          actions,
+        },
+      ]);
     } catch (err) {
       clearTimeout(timeoutId);
-      const isTimeout = err?.name === 'AbortError';
       console.warn('Guide chat API notice:', err);
       setMessages((prev) => [
         ...prev,
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: isTimeout
-            ? 'Request timed out due to network delay. Please check your connection and click Retry below.'
-            : 'I am here to guide you through NAQSHAI! Use the 3D Map to inspect plot elevations, or the AI Advisor to find plots tailored to your budget and risk preferences.',
+          content: "As the NAQSHAI Onboarding Guide, I provide platform navigation and feature guidance. Use the Explore 3D Map page to inspect plot elevations, or the AI Advisor to find plots tailored to your budget and risk preferences.",
+          recommendedPlots: [],
           actions: [
-            { label: 'Open 3D Map', href: '/explore' },
+            { label: 'Explore 3D Map', href: '/explore' },
             { label: 'AI Advisor', href: '/recommend' },
           ],
           showRetry: true,
@@ -498,30 +562,6 @@ export default function GuideChatbot() {
                           <span>{act.label}</span>
                           <ArrowRight className="w-3 h-3 text-emerald-600" />
                         </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Recommended Plots Preview (if returned by AI) */}
-                  {msg.recommendedPlots && msg.recommendedPlots.length > 0 && (
-                    <div className="mt-2.5 pt-2 border-t border-slate-200/80 space-y-1.5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Matched Plots:
-                      </p>
-                      {msg.recommendedPlots.map((plot) => (
-                        <div
-                          key={plot.id}
-                          onClick={() => router.push(`/explore?plot=${plot.id}`)}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:border-emerald-300 transition cursor-pointer"
-                        >
-                          <p className="font-bold text-[11px] text-slate-900 truncate">
-                            {plot.title}
-                          </p>
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 mt-0.5">
-                            <span>{plot.size} • {plot.city}</span>
-                            <span className="font-semibold text-emerald-700">{plot.price}</span>
-                          </div>
-                        </div>
                       ))}
                     </div>
                   )}
