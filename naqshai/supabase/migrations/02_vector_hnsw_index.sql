@@ -16,11 +16,13 @@ ON public.plots
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
--- 4. Add IVFFlat index fallback for sellers / inventory table
-CREATE INDEX IF NOT EXISTS idx_sellers_embedding_ivfflat
-ON public.sellers
-USING ivfflat (user_id)
-WITH (lists = 100);
+-- 4. (Removed) A previous version created an IVFFlat index on public.sellers:
+--      CREATE INDEX ... ON public.sellers USING ivfflat (user_id) WITH (lists=100);
+--    That statement is invalid — ivfflat requires a `vector` column with a vector
+--    opclass (e.g. vector_cosine_ops), but sellers.user_id is a UUID and sellers
+--    has no embedding column at all. It would error on apply (aborting this whole
+--    script). The sellers table plays no part in vector similarity search, so the
+--    index is simply dropped rather than fixed.
 
 -- 5. RPC Function: match_plots for Supabase vector similarity search (Strictly 5 items max)
 CREATE OR REPLACE FUNCTION match_plots(
