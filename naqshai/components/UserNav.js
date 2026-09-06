@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/UserAvatar';
-import { Settings, LogOut, ChevronDown, Heart, User, UserPlus, Phone, Loader2 } from 'lucide-react';
+import { Settings, LogOut, ChevronDown, Heart, User, UserPlus, Phone, Loader2, ClipboardList } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useFavorites } from '@/context/FavoritesContext';
 import { getLocalCachedProfile } from '@/lib/profileHelper';
@@ -147,6 +147,18 @@ export default function UserNav({ session, onSignOut, className = '' }) {
 
             {/* Menu Items */}
             <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDropdownOpen(false);
+                  router.push('/dashboard');
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 rounded-xl transition cursor-pointer"
+              >
+                <ClipboardList className="w-4 h-4 text-emerald-700" />
+                <span>My Listings</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
