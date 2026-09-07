@@ -49,17 +49,19 @@ export async function GET(request) {
           `[api/plots] Plot "${row.id}" has no renderable boundary (${plot.paths.length} valid point(s)); it will load without map geometry.`
         );
       }
-      const seller = row.sellers || null;
 
+      // Overlay dynamically-computed environmental metrics when the stored
+      // flood/noise/elevation values are missing or still "pending", so the map
+      // always shows a meaningful profile instead of "Assessment Pending".
       const env = computeEnvironmentalMetrics({
         id: row.id,
         title: row.title,
-        society: parseSociety(row.title),
+        society: plot.society,
         city: row.city,
         category: row.category,
         size_dimensions: row.size_dimensions,
         proximityNotes: row.proximity_notes,
-        polygonCoordinates: paths
+        polygonCoordinates: plot.paths,
       });
 
       const isPendingOrDefault = (val, defaultVal) => {
@@ -73,25 +75,13 @@ export async function GET(request) {
       const elevation = isPendingOrDefault(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile;
 
       return {
-        id: row.id,
-        name: row.title || row.id,
-        society: parseSociety(row.title),
-        city: row.city || '',
-        price: formatPkr(row.price_pkr),
-        priceValue: Number(row.price_pkr) || 0,
-        center: centroid(paths),
-        paths,
-        hasGeometry,
+        ...plot,
         details: {
-          size: row.size_dimensions || '—',
-          category: row.category || 'Residential',
+          ...plot.details,
           elevation,
           floodRisk,
           noiseLevel,
-          landmarks: row.proximity_notes || 'No proximity data provided.',
         },
-        ownerContact: seller && seller.phone_number ? seller.phone_number : '',
-        isVerified: !!row.is_verified,
       };
     });
 
