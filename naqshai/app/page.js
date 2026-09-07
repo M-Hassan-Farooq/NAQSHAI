@@ -173,7 +173,7 @@ export default function Home() {
               </div>
               <h3 className="font-bold text-base text-slate-900">Flood Risk Analysis</h3>
               <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
-                Evaluates proximity to natural rainwater drains, historical monsoon floodplains, and ridge elevations.
+                Evaluates proximity to natural rainwater drains, historical monsoon floodplains, and terrain elevations.
               </p>
             </div>
             <div className="mt-6 pt-4 border-t border-slate-100">
@@ -189,14 +189,14 @@ export default function Home() {
               <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 mb-4 shadow-sm">
                 <Mountain className="w-6 h-6" />
               </div>
-              <h3 className="font-bold text-base text-slate-900">Elevation & Topography</h3>
+              <h3 className="font-bold text-base text-slate-900">Elevation Profile</h3>
               <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
-                Determines hill slope, ridge contours, and soil elevation levels to ensure safe, cost-effective construction.
+                Determines a plot's terrain elevation in metres above sea level to inform safe, cost-effective construction and drainage planning.
               </p>
             </div>
             <div className="mt-6 pt-4 border-t border-slate-100">
               <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
-                Contour & Slope Profiling
+                Elevation Above Sea Level
               </span>
             </div>
           </div>
@@ -264,7 +264,7 @@ export default function Home() {
                   3D Satellite Polygons
                 </h3>
                 <p className="text-xs text-slate-300 leading-normal">
-                  Interactive plot boundaries mapped directly over terrain contours with dimensions and orientation.
+                  Interactive plot boundaries mapped directly over live terrain with dimensions and orientation.
                 </p>
               </div>
 
@@ -336,7 +336,7 @@ export default function Home() {
               <span className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-800 mb-1">Step 2</span>
               <h3 className="font-bold text-lg text-slate-900">Automated Risk Analysis</h3>
               <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
-                The recommendation engine evaluates matching inventory against flood risk histories, noise buffers, and elevation ridge maps.
+                The recommendation engine evaluates matching inventory against flood risk histories, noise buffers, and terrain elevation profiles.
               </p>
             </div>
 
@@ -394,7 +394,7 @@ export default function Home() {
               <ChevronDown className="w-5 h-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
             </summary>
             <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 mt-1">
-              NAQSHAI analyzes topographically mapped ridge elevations, natural rainwater drainage channels, and historical flood hazard data for premier residential developments across Pakistan.
+              NAQSHAI analyzes zone-based terrain elevation profiles, natural rainwater drainage channels, and historical flood hazard data for premier residential developments across Pakistan.
             </div>
           </details>
 
