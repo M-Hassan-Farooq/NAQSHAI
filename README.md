@@ -179,6 +179,7 @@ storage bucket.
 09_restore_seller_user_id.sql  → sellers.user_id index
 10_create_profiles_table.sql   → profiles hardening
 11_plots_created_at_index.sql  → created_at DESC index
+12_lock_down_seller_writes.sql → owner-scoped sellers RLS (close public-write gap)
 ```
 
 > After seeding plots, populate their embeddings once via the operator-only
@@ -304,7 +305,8 @@ timeouts, and strict "never fabricate inventory" system instructions.
 - **Defense in depth:** bearer-token identity check **and** Postgres RLS.
 - **Least privilege:** the service-role key is server-only; `getSupabaseAdminClient()`
   **fails fast** if it is missing (never silently downgrades to anon).
-- **Gated writes:** clients cannot write `plots`; publication requires operator approval.
+- **Gated writes:** clients cannot write `plots` (publication requires operator
+  approval); `sellers` rows are owner-scoped (`id = auth.uid()`).
 - **Operator gating:** constant-time (`timingSafeEqual`) passphrase comparison.
 - **Redirect safety:** auth callbacks and the login redirect param allow only
   same-origin relative paths.
