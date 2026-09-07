@@ -339,8 +339,9 @@ function ExploreContent() {
   }, []);
 
   const handleSignOut = async () => {
-    const confirmed = window.confirm('Are you sure you want to sign out?');
-    if (!confirmed) return;
+    // UserNav already shows the in-app "Confirm Sign Out" modal before calling
+    // this handler; a second window.confirm() here produced a duplicate native
+    // dialog. Keep this consistent with the other pages (no re-confirm).
     await supabase.auth.signOut();
     setSession(null);
     router.refresh();

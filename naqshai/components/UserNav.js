@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/UserAvatar';
@@ -208,8 +209,13 @@ export default function UserNav({ session, onSignOut, className = '' }) {
         )}
       </div>
 
-      {/* Sign Out Confirmation Dialog Overlay */}
-      {showSignOutConfirm && (
+      {/* Sign Out Confirmation Dialog Overlay.
+          Portaled to <body>: the Navbar header uses backdrop-blur (a
+          backdrop-filter), which creates a containing block that hijacks
+          position:fixed and traps this overlay inside the 56px header,
+          pushing the dialog off-screen. Portaling escapes every ancestor
+          transform/filter so fixed inset-0 is viewport-relative again. */}
+      {showSignOutConfirm && typeof document !== 'undefined' && createPortal(
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150"
           role="dialog"
@@ -257,7 +263,8 @@ export default function UserNav({ session, onSignOut, className = '' }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
