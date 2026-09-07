@@ -209,12 +209,17 @@ export default function FavoritesPage() {
                     </div>
 
                     {/* Risk Tag */}
-                    {(plot.details?.floodRisk || plot.flood_risk) && (
-                      <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Flood: {plot.details?.floodRisk || plot.flood_risk}</span>
-                      </div>
-                    )}
+                    {(() => {
+                      const floodVal = plot.details?.floodRisk || plot.flood_risk || '';
+                      const isPending = !floodVal || typeof floodVal !== 'string' || floodVal.trim() === '' || floodVal.toLowerCase().includes('pending') || floodVal.toLowerCase() === 'n/a';
+                      if (isPending) return null;
+                      return (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Flood: {floodVal}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Actions */}

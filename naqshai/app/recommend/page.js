@@ -39,28 +39,28 @@ import { getFastConversationalReply } from '@/lib/conversationHelper';
 
 const QUICK_QUESTIONS = {
     Auto: [
-        "What plots are available in Islamabad right now?",
+        "Which plot is best in Islamabad right now?",
+        "Pick one top verified plot for me",
         "Show me plots in Rawalpindi with low flood risk",
-        "I need a 5 Marla plot under 1.5 Crore",
-        "Which plots have verified seller contact numbers?"
+        "I need a 5 Marla plot under 1.5 Crore"
     ],
     EN: [
-        "What plots are available in Islamabad right now?",
+        "Which plot is best in Islamabad right now?",
+        "Pick one top verified plot for me",
         "Show me plots in Rawalpindi with low flood risk",
-        "I need a 5 Marla plot under 1.5 Crore",
-        "Which plots have verified seller contact numbers?"
+        "I need a 5 Marla plot under 1.5 Crore"
     ],
     RO: [
-        "Islamabad me abhi konse plots available hain?",
+        "Islamabad me sab se behtareen plot konsa hai?",
+        "Mere liye ek top verified plot select karein",
         "Rawalpindi me low flood risk wale plots dikhayen",
-        "Mujhe 1.5 Crore ke andar 5 Marla plot chahiye",
-        "Konse plots ke verified seller numbers available hain?"
+        "Mujhe 1.5 Crore ke andar 5 Marla plot chahiye"
     ],
     UR: [
-        "اسلام آباد میں اس وقت کون سے پلاٹس دستیاب ہیں؟",
+        "اسلام آباد میں اس وقت سب سے بہترین پلاٹ کون سا ہے؟",
+        "میرے لیے ایک بہترین تصدیق شدہ پلاٹ منتخب کریں",
         "راولپنڈی میں کم سیلاب کے خطرے والے پلاٹس دکھائیں",
-        "مجھے 1.5 کروڑ کے اندر 5 مرلہ کا پلاٹ چاہیے",
-        "کن پلاٹس کے تصدیق شدہ رابطہ نمبر دستیاب ہیں؟"
+        "مجھے 1.5 کروڑ کے اندر 5 مرلہ کا پلاٹ چاہیے"
     ]
 };
 
@@ -593,10 +593,15 @@ function ChatInterface() {
                                 {msg.recommendedPlots?.length > 0 && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
                                         {msg.recommendedPlots.map((plot) => {
-                                            const isLowRisk = plot.floodRisk?.toLowerCase().includes('low');
-                                            const isModerateRisk =
-                                                plot.floodRisk?.toLowerCase().includes('moderate') ||
-                                                plot.floodRisk?.toLowerCase().includes('medium');
+                                            const floodLower = (plot.floodRisk || '').toLowerCase();
+                                            const noiseLower = (plot.noiseLevel || '').toLowerCase();
+
+                                            const isLowRisk = floodLower.includes('low');
+                                            const isHighFlood = floodLower.includes('high') || floodLower.includes('basin');
+                                            const isModerateRisk = floodLower.includes('moderate') || floodLower.includes('medium');
+
+                                            const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
+                                            const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
                                             return (
                                                 <div
@@ -638,19 +643,32 @@ function ChatInterface() {
                                                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                                             <span
                                                                 className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border font-medium ${
-                                                                    isLowRisk
-                                                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                                                    isHighFlood
+                                                                        ? 'bg-red-50 text-red-800 border-red-200'
                                                                         : isModerateRisk
                                                                         ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                                                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                                                 }`}
                                                             >
                                                                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
                                                                 Flood: {plot.floodRisk}
                                                             </span>
-                                                            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border font-medium ${
+                                                                    isHighNoise
+                                                                        ? 'bg-red-50 text-red-800 border-red-200'
+                                                                        : isQuietNoise
+                                                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                                                }`}
+                                                            >
                                                                 Noise: {plot.noiseLevel}
                                                             </span>
+                                                            {(plot.elevation || plot.elevationProfile) && (
+                                                                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                                                                    Elevation: {plot.elevation || plot.elevationProfile}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>

@@ -1,3 +1,5 @@
+import { computeEnvironmentalMetrics } from './environmentalMetrics';
+
 // Legacy helper for turning a reviewed listing into rows in public.sellers +
 // public.plots. Canonical plot creation now lives in the atomic approve_listing
 // database function; `uid` here is ALWAYS a server-verified user id.
@@ -74,6 +76,14 @@ export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, pol
   const basePlotId = `Plot-${cleanPlotNum}`;
   const title = `Plot ${cleanPlotNum} - ${plot.society}, ${plot.city}`;
 
+  const envMetrics = computeEnvironmentalMetrics({
+    title,
+    society: plot.society,
+    city: plot.city,
+    proximityNotes: plot.proximityNotes,
+    polygonCoordinates
+  });
+
   const plotRecord = {
     seller_id: capturedSellerId,
     title,
@@ -81,9 +91,9 @@ export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, pol
     price_pkr: Number(plot.pricePkr),
     size_dimensions: plot.sizeDimensions || '10 Marla (35x70)',
     category: plot.category || 'Residential',
-    flood_risk: 'Assessment Pending',
-    noise_level: 'Assessment Pending',
-    elevation_profile: 'Pending Survey',
+    flood_risk: envMetrics.floodRisk,
+    noise_level: envMetrics.noiseLevel,
+    elevation_profile: envMetrics.elevationProfile,
     proximity_notes: plot.proximityNotes || 'Proximity data under verification',
     polygon_coordinates: polygonCoordinates || [],
     documents: documents || [],

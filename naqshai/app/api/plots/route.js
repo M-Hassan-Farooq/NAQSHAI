@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { formatPlot } from '@/lib/formatPlot';
+import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
 
 // Public map feed. Plot data only changes on operator approve/delete, so instead
 // of re-querying + re-sorting the table on every single visitor's page load, serve
@@ -48,7 +49,50 @@ export async function GET(request) {
           `[api/plots] Plot "${row.id}" has no renderable boundary (${plot.paths.length} valid point(s)); it will load without map geometry.`
         );
       }
-      return plot;
+      const seller = row.sellers || null;
+
+      const env = computeEnvironmentalMetrics({
+        id: row.id,
+        title: row.title,
+        society: parseSociety(row.title),
+        city: row.city,
+        category: row.category,
+        size_dimensions: row.size_dimensions,
+        proximityNotes: row.proximity_notes,
+        polygonCoordinates: paths
+      });
+
+      const isPendingOrDefault = (val, defaultVal) => {
+        if (!val || typeof val !== 'string') return true;
+        const lower = val.trim().toLowerCase();
+        return lower === '' || lower.includes('pending') || lower === 'n/a' || lower === defaultVal.toLowerCase();
+      };
+
+      const floodRisk = isPendingOrDefault(row.flood_risk, 'low hazard') ? env.floodRisk : row.flood_risk;
+      const noiseLevel = isPendingOrDefault(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level;
+      const elevation = isPendingOrDefault(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile;
+
+      return {
+        id: row.id,
+        name: row.title || row.id,
+        society: parseSociety(row.title),
+        city: row.city || '',
+        price: formatPkr(row.price_pkr),
+        priceValue: Number(row.price_pkr) || 0,
+        center: centroid(paths),
+        paths,
+        hasGeometry,
+        details: {
+          size: row.size_dimensions || '—',
+          category: row.category || 'Residential',
+          elevation,
+          floodRisk,
+          noiseLevel,
+          landmarks: row.proximity_notes || 'No proximity data provided.',
+        },
+        ownerContact: seller && seller.phone_number ? seller.phone_number : '',
+        isVerified: !!row.is_verified,
+      };
     });
 
     return NextResponse.json({

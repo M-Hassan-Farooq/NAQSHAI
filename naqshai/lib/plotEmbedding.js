@@ -10,6 +10,8 @@
 // so the vector lives at `res.embeddings[0].values`. The older singular
 // `res.embedding.values` shape does NOT exist in this SDK version.
 
+import { computeEnvironmentalMetrics } from './environmentalMetrics';
+
 export const EMBEDDING_MODEL = 'gemini-embedding-001';
 export const EMBEDDING_DIMENSIONS = 768;
 
@@ -17,15 +19,29 @@ export const EMBEDDING_DIMENSIONS = 768;
 // chatbot reasons over so semantic search matches how users actually ask.
 export function buildPlotEmbeddingText(plot) {
   if (!plot || typeof plot !== 'object') return '';
+
+  const isPending = (val) => !val || typeof val !== 'string' || val.toLowerCase().includes('pending') || val === 'n/a';
+
+  let flood = plot.flood_risk;
+  let noise = plot.noise_level;
+  let elev = plot.elevation_profile;
+
+  if (isPending(flood) || isPending(noise) || isPending(elev)) {
+    const env = computeEnvironmentalMetrics(plot);
+    if (isPending(flood)) flood = env.floodRisk;
+    if (isPending(noise)) noise = env.noiseLevel;
+    if (isPending(elev)) elev = env.elevationProfile;
+  }
+
   const parts = [
     plot.title,
     plot.city,
     plot.category,
     plot.size_dimensions,
     plot.proximity_notes,
-    plot.flood_risk ? `flood risk: ${plot.flood_risk}` : '',
-    plot.noise_level ? `noise level: ${plot.noise_level}` : '',
-    plot.elevation_profile ? `elevation: ${plot.elevation_profile}` : '',
+    flood ? `flood risk: ${flood}` : '',
+    noise ? `noise level: ${noise}` : '',
+    elev ? `elevation: ${elev}` : '',
   ];
   return parts
     .map((p) => (typeof p === 'string' ? p.trim() : ''))

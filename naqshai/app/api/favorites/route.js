@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getUserFromRequest, getUserClient } from '@/lib/authServer';
-import { formatPlot } from '@/lib/formatPlot';
+import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
+
+function parseSociety(title) {
+  if (typeof title !== 'string') return '';
+  const afterDash = title.split(' - ')[1];
+  if (!afterDash) return '';
+  return (afterDash.split(',')[0] || '').trim();
+}
+
+function isPendingOrDefault(val, defaultVal) {
+  if (!val || typeof val !== 'string') return true;
+  const lower = val.trim().toLowerCase();
+  return lower === '' || lower.includes('pending') || lower === 'n/a' || lower === defaultVal.toLowerCase();
+}
 
 export async function GET(request) {
   try {
@@ -49,14 +62,42 @@ export async function GET(request) {
       console.warn('[api/favorites] Error loading plot details:', plotsError.message);
     }
 
-    // Shape the saved rows exactly like /api/plots (shared formatter) so the
-    // favorites UI handles one consistent plot shape, and we don't leak raw
-    // columns (seller full_name, full polygon coords) to the client.
+    const plots = (plotsData || []).map((row) => {
+      const env = computeEnvironmentalMetrics({
+        id: row.id,
+        title: row.title,
+        society: parseSociety(row.title),
+        city: row.city,
+        category: row.category,
+        size_dimensions: row.size_dimensions,
+        proximityNotes: row.proximity_notes,
+        polygonCoordinates: Array.isArray(row.polygon_coordinates) ? row.polygon_coordinates : []
+      });
+
+      const floodRisk = isPendingOrDefault(row.flood_risk, 'low hazard') ? env.floodRisk : row.flood_risk;
+      const noiseLevel = isPendingOrDefault(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level;
+      const elevation = isPendingOrDefault(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile;
+
+      return {
+        ...row,
+        details: {
+          size: row.size_dimensions || '—',
+          category: row.category || 'Residential',
+          elevation,
+          floodRisk,
+          noiseLevel,
+          landmarks: row.proximity_notes || 'No proximity data provided.',
+        },
+        flood_risk: floodRisk,
+        noise_level: noiseLevel,
+        elevation_profile: elevation
+      };
+    });
     return NextResponse.json(
       {
         success: true,
         favorites: favoriteIds,
-        plots: (plotsData || []).map(formatPlot)
+plots
       },
       { status: 200 }
     );

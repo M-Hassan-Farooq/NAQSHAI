@@ -993,7 +993,27 @@ function ExploreContent() {
                         <div className="space-y-2.5">
                           {cityPlots.map((plot) => {
                             const isSelected = selectedPlot?.id === plot.id;
-                            const isLowFlood = plot.details?.floodRisk?.toLowerCase().includes('low');
+                            const floodVal = plot.details?.floodRisk || '';
+                            const noiseVal = plot.details?.noiseLevel || '';
+                            const elevVal = plot.details?.elevation || '';
+
+                            const isPendingValue = (val) => {
+                              if (!val || typeof val !== 'string') return true;
+                              const lower = val.trim().toLowerCase();
+                              return lower === '' || lower.includes('pending') || lower === 'n/a';
+                            };
+
+                            const isFloodPending = isPendingValue(floodVal);
+                            const isNoisePending = isPendingValue(noiseVal);
+                            const isElevPending = isPendingValue(elevVal);
+
+                            const floodLower = floodVal.toLowerCase();
+                            const noiseLower = noiseVal.toLowerCase();
+
+                            const isHighFlood = floodLower.includes('high') || floodLower.includes('basin');
+                            const isModerateFlood = floodLower.includes('moderate') || floodLower.includes('medium');
+                            const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
+                            const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
                             return (
                               <div
@@ -1060,18 +1080,40 @@ function ExploreContent() {
                                   <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                     {plot.details?.size || 'Plot'}
                                   </span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded border font-medium ${
-                                      isLowFlood
-                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                        : 'bg-amber-50 text-amber-800 border-amber-200'
-                                    }`}
-                                  >
-                                    Flood: {plot.details?.floodRisk || 'N/A'}
-                                  </span>
-                                  {plot.details?.elevation && (
-                                    <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                                      {plot.details.elevation}
+                                  {!isFloodPending && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded border font-medium ${
+                                        isHighFlood
+                                          ? 'bg-red-50 text-red-800 border-red-200'
+                                          : isModerateFlood
+                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      }`}
+                                    >
+                                      Flood: {floodVal}
+                                    </span>
+                                  )}
+                                  {!isNoisePending && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded border font-medium ${
+                                        isHighNoise
+                                          ? 'bg-red-50 text-red-800 border-red-200'
+                                          : isQuietNoise
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                                      }`}
+                                    >
+                                      Noise: {noiseVal}
+                                    </span>
+                                  )}
+                                  {!isElevPending && (
+                                    <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                      Elevation: {elevVal}
+                                    </span>
+                                  )}
+                                  {isFloodPending && isNoisePending && isElevPending && (
+                                    <span className="font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                      Survey Pending
                                     </span>
                                   )}
                                 </div>
@@ -1447,21 +1489,82 @@ function ExploreContent() {
                         </div>
 
                         {/* Risk Intelligence Badges */}
-                        <div className="space-y-2">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
-                          <div className="flex flex-wrap gap-2 pt-0.5">
-                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                              <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
-                              Flood: {selectedPlot.details.floodRisk}
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                              Noise: {selectedPlot.details.noiseLevel}
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                              Elevation: {selectedPlot.details.elevation}
-                            </span>
-                          </div>
-                        </div>
+                        {(() => {
+                          const floodVal = selectedPlot.details?.floodRisk || '';
+                          const noiseVal = selectedPlot.details?.noiseLevel || '';
+                          const elevVal = selectedPlot.details?.elevation || '';
+
+                          const isPendingValue = (val) => {
+                            if (!val || typeof val !== 'string') return true;
+                            const lower = val.trim().toLowerCase();
+                            return lower === '' || lower.includes('pending') || lower === 'n/a';
+                          };
+
+                          const isFloodPending = isPendingValue(floodVal);
+                          const isNoisePending = isPendingValue(noiseVal);
+                          const isElevPending = isPendingValue(elevVal);
+                          const allPending = isFloodPending && isNoisePending && isElevPending;
+
+                          const floodLower = floodVal.toLowerCase();
+                          const noiseLower = noiseVal.toLowerCase();
+
+                          const isHighFlood = floodLower.includes('high') || floodLower.includes('basin');
+                          const isModerateFlood = floodLower.includes('moderate') || floodLower.includes('medium');
+                          const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
+                          const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
+
+                          return (
+                            <div className="space-y-2">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
+                              {allPending ? (
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2.5 leading-relaxed">
+                                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                  <div>
+                                    <p className="font-medium text-slate-700">Geospatial Risk Survey Pending</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                      Detailed environmental hazard assessment for this plot is currently under geospatial review.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-2 pt-0.5">
+                                  {!isFloodPending && (
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-md text-xs font-semibold ${
+                                        isHighFlood
+                                          ? 'bg-red-50 text-red-800 border-red-200'
+                                          : isModerateFlood
+                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      }`}
+                                    >
+                                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                                      Flood: {floodVal}
+                                    </span>
+                                  )}
+                                  {!isNoisePending && (
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-md text-xs font-semibold ${
+                                        isHighNoise
+                                          ? 'bg-red-50 text-red-800 border-red-200'
+                                          : isQuietNoise
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                                      }`}
+                                    >
+                                      Noise: {noiseVal}
+                                    </span>
+                                  )}
+                                  {!isElevPending && (
+                                    <span className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                                      Elevation: {elevVal}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Interactive Neighborhood Amenity Scoring */}
                         <AmenityScoreCard
