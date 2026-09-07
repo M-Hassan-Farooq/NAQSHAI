@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
 
 // Always read fresh data from the database (never statically cached).
 export const dynamic = 'force-dynamic';
@@ -93,6 +94,27 @@ export async function GET(request) {
 
       const seller = row.sellers || null;
 
+      const env = computeEnvironmentalMetrics({
+        id: row.id,
+        title: row.title,
+        society: parseSociety(row.title),
+        city: row.city,
+        category: row.category,
+        size_dimensions: row.size_dimensions,
+        proximityNotes: row.proximity_notes,
+        polygonCoordinates: paths
+      });
+
+      const isPendingOrDefault = (val, defaultVal) => {
+        if (!val || typeof val !== 'string') return true;
+        const lower = val.trim().toLowerCase();
+        return lower === '' || lower.includes('pending') || lower === 'n/a' || lower === defaultVal.toLowerCase();
+      };
+
+      const floodRisk = isPendingOrDefault(row.flood_risk, 'low hazard') ? env.floodRisk : row.flood_risk;
+      const noiseLevel = isPendingOrDefault(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level;
+      const elevation = isPendingOrDefault(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile;
+
       return {
         id: row.id,
         name: row.title || row.id,
@@ -106,9 +128,9 @@ export async function GET(request) {
         details: {
           size: row.size_dimensions || '—',
           category: row.category || 'Residential',
-          elevation: row.elevation_profile || 'Pending Survey',
-          floodRisk: row.flood_risk || 'Assessment Pending',
-          noiseLevel: row.noise_level || 'Assessment Pending',
+          elevation,
+          floodRisk,
+          noiseLevel,
           landmarks: row.proximity_notes || 'No proximity data provided.',
         },
         ownerContact: seller && seller.phone_number ? seller.phone_number : '',
