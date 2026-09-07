@@ -2,7 +2,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ProfileProvider } from "@/context/ProfileContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
-import MobileNav from "@/components/MobileNav";
 import FavoriteSyncNotice from "@/components/FavoriteSyncNotice";
 
 const geistSans = Geist({
@@ -29,7 +28,6 @@ export default function RootLayout({ children }) {
       <body className="bg-slate-100 text-slate-600 antialiased min-h-full flex flex-col">
         <ProfileProvider>
           <FavoritesProvider>
-            <MobileNav />
             <FavoriteSyncNotice />
             {children}
           </FavoritesProvider>

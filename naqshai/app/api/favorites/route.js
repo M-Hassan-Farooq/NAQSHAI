@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserFromRequest, getUserClient } from '@/lib/authServer';
+import { formatPlot } from '@/lib/formatPlot';
 
 export async function GET(request) {
   try {
@@ -48,11 +49,14 @@ export async function GET(request) {
       console.warn('[api/favorites] Error loading plot details:', plotsError.message);
     }
 
+    // Shape the saved rows exactly like /api/plots (shared formatter) so the
+    // favorites UI handles one consistent plot shape, and we don't leak raw
+    // columns (seller full_name, full polygon coords) to the client.
     return NextResponse.json(
       {
         success: true,
         favorites: favoriteIds,
-        plots: plotsData || []
+        plots: (plotsData || []).map(formatPlot)
       },
       { status: 200 }
     );

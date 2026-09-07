@@ -344,7 +344,7 @@ export default function SettingsPage() {
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Change Profile Picture</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Select a PNG, JPG, or WEBP image (Max 5MB). Click "Save Profile Changes" below to submit your avatar.
+                    Select a PNG, JPG, or WEBP image (Max 5MB). Click &quot;Save Profile Changes&quot; below to submit your avatar.
                   </p>
                 </div>
 

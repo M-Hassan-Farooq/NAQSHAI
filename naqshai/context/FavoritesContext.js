@@ -8,6 +8,58 @@ const FavoritesContext = createContext(null);
 
 const LOCAL_FAVORITES_KEY = 'naqshai_local_favorites';
 
+// Fold guest (localStorage) favorites into the account right after sign-in so
+// they aren't silently lost when the server set replaces the local one.
+// POST /api/favorites TOGGLES, so we only send ids that are NOT already on the
+// server (re-sending an existing id would remove it). Returns the authoritative
+// merged { ids, plots }; clears the guest stash either way since the account is
+// now the source of truth.
+async function migrateGuestFavorites({ serverIds, serverPlots, token, signal }) {
+  let localIds = [];
+  try {
+    const raw = localStorage.getItem(LOCAL_FAVORITES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) localIds = parsed.filter(Boolean);
+  } catch (_) {
+    localIds = [];
+  }
+  if (!localIds.length) return { ids: serverIds, plots: serverPlots };
+
+  const serverSet = new Set(serverIds);
+  const localOnly = localIds.filter((id) => !serverSet.has(id));
+
+  try { localStorage.removeItem(LOCAL_FAVORITES_KEY); } catch (_) {}
+
+  if (!localOnly.length) return { ids: serverIds, plots: serverPlots };
+
+  await Promise.all(
+    localOnly.map((id) =>
+      fetch('/api/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plotId: id }),
+        signal,
+      }).catch(() => null)
+    )
+  );
+
+  // Re-read so the merged favorites come back WITH their plot details.
+  try {
+    const res = await fetch('/api/favorites', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        ids: Array.isArray(data.favorites) ? data.favorites : Array.from(new Set([...serverIds, ...localOnly])),
+        plots: Array.isArray(data.plots) ? data.plots : serverPlots,
+      };
+    }
+  } catch (_) {}
+  return { ids: Array.from(new Set([...serverIds, ...localOnly])), plots: serverPlots };
+}
+
 export function FavoritesProvider({ children }) {
   const router = useRouter();
   const [session, setSession] = useState(null);
@@ -68,12 +120,17 @@ export function FavoritesProvider({ children }) {
 
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.favorites)) {
-          setFavoritePlotIds(new Set(data.favorites));
-        }
-        if (Array.isArray(data.plots)) {
-          setFavoritePlots(data.plots);
-        }
+        const serverIds = Array.isArray(data.favorites) ? data.favorites : [];
+        const serverPlots = Array.isArray(data.plots) ? data.plots : [];
+        // Merge any favorites saved while signed out, then commit the union.
+        const { ids, plots } = await migrateGuestFavorites({
+          serverIds,
+          serverPlots,
+          token: session.access_token,
+          signal,
+        });
+        setFavoritePlotIds(new Set(ids));
+        setFavoritePlots(plots);
       }
     } catch (err) {
       if (err?.name === 'AbortError') return;
@@ -118,10 +175,14 @@ export function FavoritesProvider({ children }) {
         }
       }
 
-      // Persist locally for instant recovery
-      try {
-        localStorage.setItem(LOCAL_FAVORITES_KEY, JSON.stringify(Array.from(nextIds)));
-      } catch (_) {}
+      // Persist to the guest stash only while signed out. Once authenticated the
+      // server is the source of truth; keeping a second local copy would risk
+      // folding one account's favorites into another on the next sign-in.
+      if (!session?.access_token) {
+        try {
+          localStorage.setItem(LOCAL_FAVORITES_KEY, JSON.stringify(Array.from(nextIds)));
+        } catch (_) {}
+      }
 
       // If user is authenticated, sync with database
       if (session?.access_token) {

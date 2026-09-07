@@ -19,7 +19,9 @@ function getValidSupabaseUrl(url) {
 
 const supabaseUrl = getValidSupabaseUrl(rawUrl);
 const supabaseAnonKey = rawAnonKey.trim() || 'placeholder-anon-key';
-const supabaseServiceKey = rawServiceKey.trim() || supabaseAnonKey;
+// No anon fallback for the service key: privileged work must never silently run
+// with unprivileged credentials (see getSupabaseAdminClient / authServer.getAdminClient).
+const supabaseServiceKey = rawServiceKey.trim();
 
 /**
  * Utility to verify if real Supabase environment variables are loaded.
@@ -125,6 +127,11 @@ export function getSupabaseAdminClient() {
   if (typeof window !== 'undefined') {
     console.warn('[Supabase Client] Admin client should not be initialized in browser context.');
     return null;
+  }
+  if (!supabaseServiceKey) {
+    throw new Error(
+      '[Supabase Client] getSupabaseAdminClient requires SUPABASE_SERVICE_ROLE_KEY. Refusing to fall back to the anon key, which would make privileged operations silently run unprivileged. Prefer authServer.getAdminClient() for server-side admin work.'
+    );
   }
   if (!adminClientInstance) {
     adminClientInstance = createClient(supabaseUrl, supabaseServiceKey, {

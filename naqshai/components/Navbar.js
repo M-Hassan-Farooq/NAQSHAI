@@ -1,12 +1,20 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import UserNav from '@/components/UserNav';
 import ScrollProgressBar from '@/components/ScrollProgressBar';
-import { Home, MapPin, Sparkles, PlusCircle } from 'lucide-react';
+import { Home, MapPin, Sparkles, PlusCircle, Menu, X, Compass, Bot, Building2, Heart } from 'lucide-react';
+
+const MOBILE_NAV_ITEMS = [
+  { label: 'Home', href: '/', icon: Home },
+  { label: 'Explore 3D Map', href: '/explore', icon: Compass },
+  { label: 'AI Advisor', href: '/recommend', icon: Bot },
+  { label: 'List Your Plot', href: '/sell', icon: Building2 },
+  { label: 'My Favorites', href: '/favorites', icon: Heart },
+];
 
 export default function Navbar({
   session = null,
@@ -17,6 +25,26 @@ export default function Navbar({
   className = '',
 }) {
   const pathname = usePathname();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef(null);
+
+  // Close the mobile menu on an outside click / tap. Navigating from a menu
+  // link already closes it via that link's onClick, so no route-change effect
+  // is needed here (avoids a redundant synchronous setState-in-effect).
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+    function handleClickOutside(event) {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target)) {
+        setIsMobileMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isMobileMenuOpen]);
 
   const navItems = [
     { label: 'Home', href: '/', icon: Home },
@@ -79,24 +107,44 @@ export default function Navbar({
       <div className="flex items-center gap-2.5">
         {rightSlot}
 
-        {/* Mobile Navigation Shortcuts */}
-        <div className="flex md:hidden items-center gap-1.5">
-          {pathname !== '/explore' && (
-            <Link
-              href="/explore"
-              className="bg-white hover:bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:text-emerald-700 transition flex items-center gap-1"
+        {/* Mobile Navigation Menu (hamburger dropdown) */}
+        <div className="relative md:hidden" ref={mobileMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={isMobileMenuOpen}
+            aria-haspopup="true"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+          {isMobileMenuOpen && (
+            <nav
+              aria-label="Mobile navigation"
+              className="absolute right-0 top-full mt-2 w-60 p-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
             >
-              <MapPin className="w-3.5 h-3.5 text-emerald-700" />
-              <span className="hidden sm:inline">3D Map</span>
-            </Link>
-          )}
-          {pathname !== '/sell' && (
-            <Link
-              href="/sell"
-              className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition shadow-xs"
-            >
-              Sell Plot
-            </Link>
+              {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+                const active = pathname === href;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold transition ${
+                      active
+                        ? 'bg-emerald-50 text-emerald-800'
+                        : 'text-slate-700 hover:bg-slate-50 hover:text-emerald-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
           )}
         </div>
 

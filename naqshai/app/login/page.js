@@ -36,7 +36,14 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const redirectParam = searchParams ? searchParams.get('redirect') : null;
   const initialSignup = searchParams ? searchParams.get('signup') === 'true' : false;
-  const redirectPath = redirectParam || '/explore';
+  // Only allow same-origin relative paths. Blocking protocol-relative ("//host")
+  // and absolute URLs closes an open-redirect via a crafted ?redirect= param,
+  // mirroring the guard in /auth/callback. Every router.push(redirectPath) and
+  // the OAuth ?next= param inherit this safe value.
+  const redirectPath =
+    redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
+      ? redirectParam
+      : '/explore';
 
   const [isSignUp, setIsSignUp] = useState(initialSignup);
   const [fullName, setFullName] = useState('');

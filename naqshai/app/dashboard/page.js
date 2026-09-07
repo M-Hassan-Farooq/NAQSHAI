@@ -148,8 +148,6 @@ export default function DashboardPage() {
   }, [router, loadDrafts]);
 
   const handleSignOut = async () => {
-    const confirmed = window.confirm('Are you sure you want to sign out?');
-    if (!confirmed) return;
     await supabase.auth.signOut();
     setSession(null);
     router.push('/');

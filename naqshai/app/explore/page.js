@@ -88,6 +88,44 @@ function clusterBubbleDataUri(size) {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 
+// One plot boundary polygon. Memoized and owns its OWN hover state, so moving the
+// pointer across the map restyles only THIS polygon instead of bubbling up to
+// re-render the entire Explore view (sidebar list + every other polygon). Because
+// `plot`, `isSelected` and `onSelect` are stable, React.memo also lets unaffected
+// polygons skip re-render when the parent re-renders for unrelated reasons
+// (sidebar search, resize, selection). Hover affects only fillOpacity + zIndex —
+// matching the original inline behaviour exactly.
+const PlotPolygon = React.memo(function PlotPolygon({ plot, isSelected, onSelect }) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const options = useMemo(
+    () => ({
+      strokeColor: isSelected ? '#047857' : '#059669',
+      strokeOpacity: 0.95,
+      strokeWeight: isSelected ? 3 : 2,
+      fillColor: isSelected ? '#059669' : '#10b981',
+      fillOpacity: isSelected ? 0.45 : isHovered ? 0.35 : 0.22,
+      clickable: true,
+      zIndex: isSelected ? 100 : isHovered ? 50 : 1,
+    }),
+    [isSelected, isHovered]
+  );
+
+  const handleClick = useCallback(() => onSelect(plot), [onSelect, plot]);
+  const handleMouseOver = useCallback(() => setIsHovered(true), []);
+  const handleMouseOut = useCallback(() => setIsHovered(false), []);
+
+  return (
+    <Polygon
+      paths={plot.paths}
+      options={options}
+      onClick={handleClick}
+      onMouseOver={handleMouseOver}
+      onMouseOut={handleMouseOut}
+    />
+  );
+});
+
 function ExploreContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -98,14 +136,18 @@ function ExploreContent() {
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [is3DMode, setIs3DMode] = useState(false);
   const [streetViewStatus, setStreetViewStatus] = useState('IDLE'); // 'IDLE' | 'CHECKING' | 'READY' | 'UNAVAILABLE' | 'ERROR'
-  const [hoveredPlotId, setHoveredPlotId] = useState(null);
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  // Marker-cluster layer (below POLYGON_MIN_ZOOM) vs individual polygons (at/above).
+  // Stored as a boolean that flips only when zoom CROSSES the threshold, so dragging
+  // the zoom control no longer re-renders the whole view on every incremental tick.
+  // (Per-polygon hover state now lives inside <PlotPolygon>.)
+  const [showMarkerLayer, setShowMarkerLayer] = useState(DEFAULT_ZOOM < POLYGON_MIN_ZOOM);
 
   // Split-Screen Interface States
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isPlacesSearchOpen, setIsPlacesSearchOpen] = useState(true);
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
   const [activeCityFilter, setActiveCityFilter] = useState('ALL');
+  const [isMobile, setIsMobile] = useState(false);
 
   const mapOptions = useMemo(
     () => ({
@@ -180,6 +222,25 @@ function ExploreContent() {
     } catch (_) {}
   }, []);
 
+  // Responsive breakpoint: on phones the plot list becomes an off-canvas drawer
+  // that starts closed so the map is visible first (no full-screen takeover).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia('(max-width: 767px)');
+    const apply = (matches) => {
+      setIsMobile(matches);
+      setIsSidebarOpen(!matches);
+    };
+    apply(mql.matches);
+    const handler = (event) => apply(event.matches);
+    if (mql.addEventListener) mql.addEventListener('change', handler);
+    else mql.addListener(handler);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', handler);
+      else mql.removeListener(handler);
+    };
+  }, []);
+
   // Handle Dragging to Resize Sidebar
   const handleMouseDown = useCallback((e) => {
     e.preventDefault();
@@ -190,25 +251,39 @@ function ExploreContent() {
   }, []);
 
   useEffect(() => {
+    // Coalesce mousemove -> one width commit per animation frame. Raw mousemove
+    // fires 60-120x/sec; committing each one re-rendered the whole Explore view.
+    let rafId = null;
+    let latestWidth = null;
+
     const handleMouseMove = (e) => {
       if (!isDraggingRef.current) return;
-      const newWidth = Math.max(300, Math.min(600, e.clientX));
-      setSidebarWidth(newWidth);
+      latestWidth = Math.max(300, Math.min(600, e.clientX));
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setSidebarWidth(latestWidth);
+      });
     };
 
     const handleMouseUp = () => {
       if (!isDraggingRef.current) return;
       isDraggingRef.current = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       setIsDragging(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
 
-      // Persist width to localStorage
+      // Commit the final width and persist it to localStorage.
       setSidebarWidth((latest) => {
+        const finalWidth = latestWidth ?? latest;
         try {
-          localStorage.setItem('naqshai_explorer_sidebar_width', String(latest));
+          localStorage.setItem('naqshai_explorer_sidebar_width', String(finalWidth));
         } catch (_) {}
-        return latest;
+        return finalWidth;
       });
 
       // Recalculate Google Maps bounds & viewport
@@ -223,6 +298,7 @@ function ExploreContent() {
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 
@@ -345,7 +421,10 @@ function ExploreContent() {
 
   const handleZoomChanged = useCallback(() => {
     const z = mapRef.current?.getZoom?.();
-    if (typeof z === 'number') setZoom(z);
+    if (typeof z !== 'number') return;
+    const nextShow = z < POLYGON_MIN_ZOOM;
+    // Re-render only when the layer actually flips, not on every zoom tick.
+    setShowMarkerLayer((prev) => (prev === nextShow ? prev : nextShow));
   }, []);
 
   const fitToPlots = useCallback((mapInstance, plotList) => {
@@ -370,17 +449,19 @@ function ExploreContent() {
   const handleSelectPlot = useCallback((plot) => {
     setSelectedPlot(plot);
     setIs3DMode(false);
-  }, []);
+    setIsSidebarOpen((prev) => (isMobile ? false : prev));
+  }, [isMobile]);
 
   // "See on Map" action: pans, zooms, highlights and opens inspector drawer
   const handleSeeOnMap = useCallback((plot) => {
     setSelectedPlot(plot);
     setIs3DMode(false);
+    setIsSidebarOpen((prev) => (isMobile ? false : prev));
     if (plot.center && mapRef.current) {
       mapRef.current.panTo(plot.center);
       mapRef.current.setZoom(17);
     }
-  }, []);
+  }, [isMobile]);
 
   // Auto-fit camera once
   useEffect(() => {
@@ -398,9 +479,7 @@ function ExploreContent() {
     }
   }, [selectedPlot, map]);
 
-  // Availability marker layer
-  const showMarkerLayer = zoom < POLYGON_MIN_ZOOM;
-
+  // Availability marker layer (rebuilt only when the layer flips or plots change)
   useEffect(() => {
     if (!map || typeof window === 'undefined' || !window.google?.maps) return undefined;
     if (!showMarkerLayer) return undefined;
@@ -759,13 +838,30 @@ function ExploreContent() {
 
             {/* Split View Body: Left Sidebar + Right Map */}
             <div className="flex-1 flex overflow-hidden relative">
+              {/* Mobile drawer backdrop (tap to close the plot list) */}
+              {isMobile && isSidebarOpen && (
+                <div
+                  className="absolute inset-0 z-20 bg-slate-900/40"
+                  onClick={() => setIsSidebarOpen(false)}
+                  aria-hidden="true"
+                />
+              )}
+
               {/* LEFT SIDEBAR: Available Plots List (Grouped by City) */}
               <aside
-                style={{
-                  width: isSidebarOpen ? `${sidebarWidth}px` : '0px',
-                  transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                className="bg-white border-r border-slate-200 flex flex-col h-full z-10 shrink-0 overflow-hidden"
+                style={
+                  isMobile
+                    ? { transform: isSidebarOpen ? 'translateX(0%)' : 'translateX(-100%)' }
+                    : {
+                        width: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+                        transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      }
+                }
+                className={`bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden ${
+                  isMobile
+                    ? 'absolute top-0 left-0 z-30 w-[85vw] max-w-[340px] shadow-2xl transition-transform duration-200 will-change-transform'
+                    : 'relative z-10 shrink-0'
+                }`}
               >
                 {/* Sidebar Header with Internal Filter & City Tabs */}
                 <div className="p-3.5 border-b border-slate-200 space-y-3 bg-slate-50/70 shrink-0">
@@ -1007,7 +1103,7 @@ function ExploreContent() {
               </aside>
 
               {/* Resizable Divider Handle (Draggable Splitter) */}
-              {isSidebarOpen && (
+              {isSidebarOpen && !isMobile && (
                 <div
                   onMouseDown={handleMouseDown}
                   className={`w-2 hover:w-2.5 bg-slate-200 hover:bg-emerald-500 active:bg-emerald-600 cursor-col-resize z-20 flex items-center justify-center transition-colors relative select-none group shrink-0 ${
@@ -1024,7 +1120,7 @@ function ExploreContent() {
                 {/* Floating Google Places Search Bar Overlay (Centered horizontally over map section) */}
                 <div
                   className={`absolute top-4 z-10 flex items-center justify-center gap-2 max-w-xs sm:max-w-md md:max-w-lg px-4 transition-[left,right,transform] duration-300 ${
-                    selectedPlot && isSidebarOpen
+                    selectedPlot && isSidebarOpen && !isMobile
                       ? 'left-0 right-96 w-auto translate-x-0'
                       : 'left-1/2 right-auto w-full -translate-x-1/2'
                   }`}
@@ -1147,28 +1243,12 @@ function ExploreContent() {
                   {!showMarkerLayer &&
                     plots.map((plot) => {
                       if (!plot.hasGeometry || !plot.paths.length) return null;
-                      const isSelected = selectedPlot?.id === plot.id;
-                      const isHovered = hoveredPlotId === plot.id;
-
-                      const strokeColor = isSelected ? '#047857' : isHovered ? '#059669' : '#059669';
-                      const fillColor = isSelected ? '#059669' : isHovered ? '#10b981' : '#10b981';
-
                       return (
-                        <Polygon
+                        <PlotPolygon
                           key={plot.id}
-                          paths={plot.paths}
-                          options={{
-                            strokeColor,
-                            strokeOpacity: 0.95,
-                            strokeWeight: isSelected ? 3 : 2,
-                            fillColor,
-                            fillOpacity: isSelected ? 0.45 : isHovered ? 0.35 : 0.22,
-                            clickable: true,
-                            zIndex: isSelected ? 100 : isHovered ? 50 : 1,
-                          }}
-                          onClick={() => handleSelectPlot(plot)}
-                          onMouseOver={() => setHoveredPlotId(plot.id)}
-                          onMouseOut={() => setHoveredPlotId(null)}
+                          plot={plot}
+                          isSelected={selectedPlot?.id === plot.id}
+                          onSelect={handleSelectPlot}
                         />
                       );
                     })}

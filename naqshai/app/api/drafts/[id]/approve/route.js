@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 import { normalizeDocuments, persistListing } from '@/lib/publishListing';
@@ -113,8 +113,10 @@ export async function POST(request, { params }) {
           );
         }
 
-        // Best-effort semantic-search embedding; never blocks the approval response.
-        await embedApprovedPlot(dbAdmin, published.plotId);
+        // Best-effort semantic-search embedding; runs AFTER the response is sent
+        // (next/server `after`) so the operator's approval returns immediately
+        // instead of waiting on the Gemini embed + DB round-trips (~0.5-1.5s).
+        after(() => embedApprovedPlot(dbAdmin, published.plotId));
 
         return NextResponse.json({ success: true, status: 'published', plotId: published.plotId }, { status: 200 });
       }
@@ -136,8 +138,10 @@ export async function POST(request, { params }) {
       return NextResponse.json({ success: false, error: 'Approval did not return a published plot.' }, { status: 500 });
     }
 
-    // Best-effort semantic-search embedding; never blocks the approval response.
-    await embedApprovedPlot(dbAdmin, approved.plot_id);
+    // Best-effort semantic-search embedding; runs AFTER the response is sent
+    // (next/server `after`) so the operator's approval returns immediately
+    // instead of waiting on the Gemini embed + DB round-trips (~0.5-1.5s).
+    after(() => embedApprovedPlot(dbAdmin, approved.plot_id));
 
     return NextResponse.json(
       { success: true, status: 'published', plotId: approved.plot_id },

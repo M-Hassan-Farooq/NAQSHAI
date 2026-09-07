@@ -1,52 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { formatPlot } from '@/lib/formatPlot';
 
-// Always read fresh data from the database (never statically cached).
-export const dynamic = 'force-dynamic';
-
-// Format a raw PKR number into a friendly display string (e.g. "1.85 Crore").
-function formatPkr(num) {
-  const val = Number(num);
-  if (!val || Number.isNaN(val)) return 'Price on request';
-  if (val >= 10000000) return `${(val / 10000000).toFixed(2)} Crore`;
-  if (val >= 100000) return `${(val / 100000).toFixed(2)} Lakh`;
-  return `PKR ${val.toLocaleString('en-PK')}`;
-}
-
-// Validate + normalize polygon coordinates coming from the JSONB column.
-// Returns only well-formed {lat, lng} points so one bad record can't crash the map.
-function normalizePaths(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((pt) => {
-      if (!pt || typeof pt !== 'object') return null;
-      const lat = Number(pt.lat);
-      const lng = Number(pt.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-      return { lat, lng };
-    })
-    .filter(Boolean);
-}
-
-// Centroid of a set of points, used for the marker + pan-to target.
-function centroid(paths) {
-  if (!paths.length) return null;
-  const sum = paths.reduce(
-    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
-    { lat: 0, lng: 0 }
-  );
-  return { lat: sum.lat / paths.length, lng: sum.lng / paths.length };
-}
-
-// Society isn't a dedicated column; the sell flow bakes it into the title as
-// "Plot 101 - Gulberg Greens, Islamabad". Parse it back out, best-effort.
-function parseSociety(title) {
-  if (typeof title !== 'string') return '';
-  const afterDash = title.split(' - ')[1];
-  if (!afterDash) return '';
-  return (afterDash.split(',')[0] || '').trim();
-}
+// Public map feed. Plot data only changes on operator approve/delete, so instead
+// of re-querying + re-sorting the table on every single visitor's page load, serve
+// a short-lived shared (CDN/edge) cache with stale-while-revalidate. This is the
+// highest-traffic endpoint in the app; caching it cuts DB load and TTFB at scale.
+const CACHE_CONTROL = 'public, s-maxage=30, stale-while-revalidate=300';
 
 export async function GET(request) {
   try {
@@ -82,44 +42,19 @@ export async function GET(request) {
     }
 
     const plots = (data || []).map((row) => {
-      const paths = normalizePaths(row.polygon_coordinates);
-      const hasGeometry = paths.length >= 3;
-
-      if (!hasGeometry && process.env.NODE_ENV !== 'production') {
+      const plot = formatPlot(row);
+      if (!plot.hasGeometry && process.env.NODE_ENV !== 'production') {
         console.warn(
-          `[api/plots] Plot "${row.id}" has no renderable boundary (${paths.length} valid point(s)); it will load without map geometry.`
+          `[api/plots] Plot "${row.id}" has no renderable boundary (${plot.paths.length} valid point(s)); it will load without map geometry.`
         );
       }
-
-      const seller = row.sellers || null;
-
-      return {
-        id: row.id,
-        name: row.title || row.id,
-        society: parseSociety(row.title),
-        city: row.city || '',
-        price: formatPkr(row.price_pkr),
-        priceValue: Number(row.price_pkr) || 0,
-        center: centroid(paths),
-        paths,
-        hasGeometry,
-        details: {
-          size: row.size_dimensions || '—',
-          category: row.category || 'Residential',
-          elevation: row.elevation_profile || 'Pending Survey',
-          floodRisk: row.flood_risk || 'Assessment Pending',
-          noiseLevel: row.noise_level || 'Assessment Pending',
-          landmarks: row.proximity_notes || 'No proximity data provided.',
-        },
-        ownerContact: seller && seller.phone_number ? seller.phone_number : '',
-        isVerified: !!row.is_verified,
-      };
+      return plot;
     });
 
     return NextResponse.json({
       plots,
       pagination: { page, limit, returned: plots.length, hasMore: plots.length === limit },
-    }, { status: 200 });
+    }, { status: 200, headers: { 'Cache-Control': CACHE_CONTROL } });
   } catch (err) {
     console.error('API Error in /api/plots:', err);
     return NextResponse.json(

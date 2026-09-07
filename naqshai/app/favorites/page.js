@@ -104,7 +104,7 @@ export default function FavoritesPage() {
                   : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
               }`}
             >
-              All Regions ({favoritePlots.length})
+              All Regions ({activePlots.length})
             </button>
             {cities.map((city) => (
               <button
@@ -117,7 +117,7 @@ export default function FavoritesPage() {
                     : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
                 }`}
               >
-                {city} ({favoritePlots.filter((p) => (p.city || '').trim().toLowerCase() === city.toLowerCase()).length})
+                {city} ({activePlots.filter((p) => (p.city || '').trim().toLowerCase() === city.toLowerCase()).length})
               </button>
             ))}
           </div>
@@ -170,7 +170,7 @@ export default function FavoritesPage() {
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                           {plot.id}
                         </span>
-                        {plot.is_verified && (
+                        {(plot.isVerified || plot.is_verified) && (
                           <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                             Verified
                           </span>
