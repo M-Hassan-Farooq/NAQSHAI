@@ -4,9 +4,28 @@ node_modules
 out/
 build/
 
-# Environment variables
+# Environment variables (keep the documented example committed)
 .env*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Local agent / IDE settings
+.claude/settings.local.json
+.qoder/
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vercel
+.vercel
