@@ -39,28 +39,28 @@ import { getFastConversationalReply } from '@/lib/conversationHelper';
 
 const QUICK_QUESTIONS = {
     Auto: [
-        "What plots are available in Islamabad right now?",
+        "Which plot is best in Islamabad right now?",
+        "Pick one top verified plot for me",
         "Show me plots in Rawalpindi with low flood risk",
-        "I need a 5 Marla plot under 1.5 Crore",
-        "Which plots have verified seller contact numbers?"
+        "I need a 5 Marla plot under 1.5 Crore"
     ],
     EN: [
-        "What plots are available in Islamabad right now?",
+        "Which plot is best in Islamabad right now?",
+        "Pick one top verified plot for me",
         "Show me plots in Rawalpindi with low flood risk",
-        "I need a 5 Marla plot under 1.5 Crore",
-        "Which plots have verified seller contact numbers?"
+        "I need a 5 Marla plot under 1.5 Crore"
     ],
     RO: [
-        "Islamabad me abhi konse plots available hain?",
+        "Islamabad me sab se behtareen plot konsa hai?",
+        "Mere liye ek top verified plot select karein",
         "Rawalpindi me low flood risk wale plots dikhayen",
-        "Mujhe 1.5 Crore ke andar 5 Marla plot chahiye",
-        "Konse plots ke verified seller numbers available hain?"
+        "Mujhe 1.5 Crore ke andar 5 Marla plot chahiye"
     ],
     UR: [
-        "اسلام آباد میں اس وقت کون سے پلاٹس دستیاب ہیں؟",
+        "اسلام آباد میں اس وقت سب سے بہترین پلاٹ کون سا ہے؟",
+        "میرے لیے ایک بہترین تصدیق شدہ پلاٹ منتخب کریں",
         "راولپنڈی میں کم سیلاب کے خطرے والے پلاٹس دکھائیں",
-        "مجھے 1.5 کروڑ کے اندر 5 مرلہ کا پلاٹ چاہیے",
-        "کن پلاٹس کے تصدیق شدہ رابطہ نمبر دستیاب ہیں؟"
+        "مجھے 1.5 کروڑ کے اندر 5 مرلہ کا پلاٹ چاہیے"
     ]
 };
 

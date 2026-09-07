@@ -16,17 +16,20 @@ export function getFastConversationalReply(query, language = 'Auto') {
   const isRoman = language === 'RO';
 
   // 1. "How are you" / "Kya hal hai"
-  if (/^(how are you|how r u|how are u|how do you do|how are things|hows it going|kya hal|kya haal|kya hal hai|kya haal hai|kese ho|kaisay ho|hal kaisa hai|sab theek)$/i.test(normalized)) {
-    if (isUrdu) return "میں بالکل ٹھیک ہوں، شکریہ! بتائیے آپ کو اسلام آباد یا راولپنڈی میں کس قسم کے پلاٹ کی تلاش ہے؟";
-    if (isRoman) return "Main bilkul theek hoon, shukriya! Aap ko Islamabad ya Rawalpindi me kis budget ka plot chahiye?";
-    return "I'm doing well, thank you! What plot size or location are you looking for in Islamabad or Rawalpindi?";
+  if (/\b(how are you|how r u|how are u|how do you do|hows it going|kya hal|kya haal|kese ho|kaisay ho|sab theek)\b/i.test(normalized)) {
+    if (isUrdu) return "میں بالکل ٹھیک ہوں، شکریہ! نقشائی (NAQSHAI) میں خوش آمدید۔ بتائیے آپ کو اسلام آباد یا راولپنڈی میں کس قسم کے پلاٹ کی تلاش ہے؟";
+    if (isRoman) return "Main bilkul theek hoon, shukriya! NAQSHAI me khush aamdeed. Aap ko Islamabad ya Rawalpindi me kis budget ka plot chahiye?";
+    return "I'm doing well, thank you! Welcome to NAQSHAI. How can I help you find plots or real estate in Islamabad and Rawalpindi today?";
   }
 
-  // 2. Greetings: "Hello", "Hi", "Salam", "AOA"
-  if (/^(hello|hi|hey|salam|assalam|assalam o alaikum|assalam-o-alaikum|aoa|good morning|good afternoon|good evening)$/i.test(normalized)) {
-    if (isUrdu) return "السلام علیکم! اسلام آباد اور راولپنڈی میں جائیداد کی تلاش میں آپ کی کیا مدد کر سکتا ہوں؟";
-    if (isRoman) return "Salam! Property search ya real estate me aap ki kya madad kar sakta hoon?";
-    return "Hello! How can I assist with your property search or investment today?";
+  // 2. Greetings: "Hello", "Hi", "Hey", "Salam", "AOA", "Hi there", "Hey there"
+  const isGreeting = /\b(hello|hi|hey|salam|assalam|aoa|greetings|good morning|good afternoon|good evening)\b/i.test(normalized);
+  const isSpecificSearch = /\b(plot|plots|property|properties|buy|sell|price|inventory|search|find|marla|kanal|dha|bahria|gulberg|b-17|f-6|g-11|rawalpindi|islamabad)\b/i.test(normalized);
+
+  if (isGreeting && !isSpecificSearch) {
+    if (isUrdu) return "السلام علیکم! نقشائی (NAQSHAI) میں خوش آمدید! میں اسلام آباد اور راولپنڈی میں جائیداد کی تلاش اور پلاٹس کے انتخاب میں آپ کی کیا مدد کر سکتا ہوں؟";
+    if (isRoman) return "Salam! NAQSHAI me khush aamdeed! Main Islamabad aur Rawalpindi me verified plots aur real estate search me aap ki kya madad kar sakta hoon?";
+    return "Hello and welcome to NAQSHAI! How can I help you find plots or real estate across Islamabad and Rawalpindi today?";
   }
 
   // 3. Identity: "Who are you", "What can you do"
