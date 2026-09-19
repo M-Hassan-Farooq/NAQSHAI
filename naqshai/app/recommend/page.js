@@ -35,7 +35,6 @@ import {
     isSpeechRecognitionSupported,
     isSpeechSynthesisSupported
 } from '@/lib/voiceHelper';
-import { getFastConversationalReply } from '@/lib/conversationHelper';
 
 const QUICK_QUESTIONS = {
     Auto: [
@@ -247,26 +246,6 @@ function ChatInterface() {
         if (!query.trim() || loading) return;
 
         lastQueryRef.current = query;
-
-        // 1. Zero-Delay Fast Path for Casual Queries:
-        // Purely conversational inputs, greetings, or pleasantries bypass all vector search, DB queries, and fake loading spinners entirely.
-        const fastReply = getFastConversationalReply(query, language);
-        if (fastReply) {
-            const userMsg = { role: 'user', content: query };
-            const assistantMsg = { role: 'assistant', content: fastReply, recommendedPlots: [] };
-            const nextMessages = [...messages, userMsg, assistantMsg];
-            setMessages(nextMessages);
-            setInput('');
-
-            if (wasVoiceInputRef.current) {
-                wasVoiceInputRef.current = false;
-                const assistantIndex = nextMessages.length - 1;
-                setTimeout(() => {
-                    handleToggleSpeak(fastReply, assistantIndex);
-                }, 200);
-            }
-            return;
-        }
 
         const userMsg = { role: 'user', content: query };
         const updatedMessages = [...messages, userMsg];

@@ -1,17 +1,16 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { getFastConversationalReply } from '@/lib/conversationHelper';
 import { embedText } from '@/lib/plotEmbedding';
 import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
 
-// Enable Edge Runtime to minimize cold starts & latency
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
-// Active Gemini models list with fallback priority.
+// Active, modern Gemini models list with fallback priority.
 const SUPPORTED_GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash'
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest'
 ];
 
 function formatPkr(num) {
@@ -29,9 +28,16 @@ function extractSociety(title) {
   return (afterDash.split(',')[0] || '').trim();
 }
 
-/**
- * Utility wrapper to enforce strict execution timeouts for DB queries and LLM generation
- */
+function extractMarlaFromSizeStr(sizeStr) {
+  if (!sizeStr || typeof sizeStr !== 'string') return null;
+  const lower = sizeStr.toLowerCase();
+  const marlaMatch = lower.match(/(\d+(?:\.\d+)?)\s*marla/);
+  if (marlaMatch) return parseFloat(marlaMatch[1]);
+  const kanalMatch = lower.match(/(\d+(?:\.\d+)?)\s*kanal/);
+  if (kanalMatch) return parseFloat(kanalMatch[1]) * 20;
+  return null;
+}
+
 function withTimeout(promise, ms, fallbackValue) {
   let timer;
   const timeoutPromise = new Promise((resolve) => {
@@ -46,307 +52,11 @@ function withTimeout(promise, ms, fallbackValue) {
   ]);
 }
 
-// Instantiate Edge-compatible Supabase Client
 function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   if (!supabaseUrl || !supabaseAnonKey) return null;
   return createClient(supabaseUrl, supabaseAnonKey);
-}
-
-/**
- * Parse structured search parameters from natural language user queries
- * (Supports English, Urdu script, and Roman Urdu)
- */
-function parseUserConstraints(queryText) {
-  if (typeof queryText !== 'string') return {};
-  const text = queryText.toLowerCase();
-
-  const constraints = {};
-
-  // 0. Explicit Plot ID Extraction (e.g. "Plot-98A", "plot 98a", "plot-65f", "plot 57")
-  const plotIdMatch = queryText.match(/\bplot[s]?[\s-_]*#?\s*(\d+[a-z]?|[a-z]\d+)\b/i);
-  if (plotIdMatch) {
-    const rawCode = plotIdMatch[1].toUpperCase();
-    constraints.targetPlotId = `Plot-${rawCode}`;
-    constraints.rawPlotCode = rawCode;
-  }
-
-  // 1. Plot Size Extraction (Marla / Kanal)
-  const marlaMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:marla|marlas|مرلہ|marle)/i);
-  const kanalMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:kanal|kanals|کنال)/i);
-
-  if (marlaMatch) {
-    constraints.sizeNumMarla = parseFloat(marlaMatch[1]);
-    constraints.sizeUnit = 'marla';
-    constraints.rawSizeStr = `${marlaMatch[1]} Marla`;
-  } else if (kanalMatch) {
-    constraints.sizeNumMarla = parseFloat(kanalMatch[1]) * 20; // 1 Kanal = 20 Marla
-    constraints.sizeUnit = 'kanal';
-    constraints.rawSizeStr = `${kanalMatch[1]} Kanal`;
-  }
-
-  // 2. Budget / Price Range Extraction
-  const croreMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:crore|crores|cr|کروڑ)/i);
-  const lakhMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:lakh|lakhs|lac|lacs|لاکھ)/i);
-  const millionMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:million|m)\b/i);
-
-  const isMaxBudget = /(under|below|less than|within|max|maximum|upto|up to|ke andar|se kam|کی اندر|سے کم|budget|chahiye|around)/i.test(text);
-  const isMinBudget = /(above|more than|minimum|min|greater than|se ziada|سے زیادہ)/i.test(text);
-
-  let extractedPkr = null;
-  if (croreMatch) {
-    extractedPkr = parseFloat(croreMatch[1]) * 10000000;
-  } else if (lakhMatch) {
-    extractedPkr = parseFloat(lakhMatch[1]) * 100000;
-  } else if (millionMatch) {
-    extractedPkr = parseFloat(millionMatch[1]) * 1000000;
-  }
-
-  if (extractedPkr) {
-    if (isMinBudget && !isMaxBudget) {
-      constraints.minPricePkr = extractedPkr;
-    } else {
-      constraints.maxPricePkr = extractedPkr;
-    }
-  }
-
-  // 3. Location / City / Sector / Society Extraction
-  const cities = ['islamabad', 'rawalpindi'];
-  const matchedCity = cities.find((c) => text.includes(c));
-  if (matchedCity) {
-    constraints.city = matchedCity;
-  }
-
-  const societiesSectors = [
-    'dha', 'bahria', 'gulberg', 'b-17', 'b17', 'f-17', 'f17', 'f-6', 'f-7', 'f-8', 'f-10', 'f-11',
-    'g-11', 'g-13', 'g-14', 'i-8', 'i-10', 'shalimar', 'park view', 'topcity', 'mumtaz city',
-    'capital smart city', 'multi gardens'
-  ];
-
-  const matchedSociety = societiesSectors.find((s) => text.includes(s));
-  if (matchedSociety) {
-    constraints.societyOrSector = matchedSociety;
-  }
-
-  // 4. Environmental & Disaster Criteria (Flood Risk, Noise Level, Category, Verification)
-  if (/(low flood|flood risk|safe from flood|flood safe|no flood|low hazard|کم سیلاب|flood free)/i.test(text)) {
-    constraints.lowFloodRisk = true;
-  }
-
-  if (/(quiet|quiet zone|low noise|peaceful|calm|away from highway|kam shor|پُر سکون|کم شور|45\s*db|quiet plot)/i.test(text)) {
-    constraints.quietNoise = true;
-  }
-
-  if (/(commercial|کمراشل)/i.test(text)) {
-    constraints.category = 'Commercial';
-  } else if (/(residential|ریائشی)/i.test(text)) {
-    constraints.category = 'Residential';
-  } else if (/(farmhouse|فارم ہاؤس)/i.test(text)) {
-    constraints.category = 'Farmhouse';
-  }
-
-  if (/(verified|تصدیق شدہ)/i.test(text)) {
-    constraints.verifiedOnly = true;
-  }
-
-  return constraints;
-}
-
-function extractMarlaFromSizeStr(sizeStr) {
-  if (!sizeStr || typeof sizeStr !== 'string') return null;
-  const lower = sizeStr.toLowerCase();
-  const marlaMatch = lower.match(/(\d+(?:\.\d+)?)\s*marla/);
-  if (marlaMatch) return parseFloat(marlaMatch[1]);
-
-  const kanalMatch = lower.match(/(\d+(?:\.\d+)?)\s*kanal/);
-  if (kanalMatch) return parseFloat(kanalMatch[1]) * 20;
-
-  return null;
-}
-
-function plotMatchesConstraints(plot, constraints) {
-  if (!constraints || Object.keys(constraints).length === 0) {
-    return true;
-  }
-
-  // 0. Target Plot ID Filter (Exact match for plot inquiries like "Plot-98A")
-  if (constraints.targetPlotId) {
-    const plotIdNorm = (plot.id || '').toLowerCase().replace(/[\s-_]/g, '');
-    const targetNorm = constraints.targetPlotId.toLowerCase().replace(/[\s-_]/g, '');
-    const rawCodeNorm = (constraints.rawPlotCode || '').toLowerCase();
-
-    const isMatch =
-      plotIdNorm === targetNorm ||
-      plotIdNorm.endsWith(rawCodeNorm) ||
-      plotIdNorm.includes(targetNorm);
-
-    if (!isMatch) {
-      return false;
-    }
-  }
-
-  // 1. Max Price Filter
-  if (constraints.maxPricePkr !== undefined) {
-    const plotPrice = Number(plot.pricePkr || plot.price_pkr || 0);
-    if (plotPrice > 0 && plotPrice > constraints.maxPricePkr) {
-      return false;
-    }
-  }
-
-  // 2. Min Price Filter
-  if (constraints.minPricePkr !== undefined) {
-    const plotPrice = Number(plot.pricePkr || plot.price_pkr || 0);
-    if (plotPrice > 0 && plotPrice < constraints.minPricePkr) {
-      return false;
-    }
-  }
-
-  // 3. Size Filter
-  if (constraints.sizeNumMarla !== undefined) {
-    const plotMarla = extractMarlaFromSizeStr(plot.size || plot.size_dimensions || plot.title);
-    if (plotMarla !== null) {
-      if (Math.abs(plotMarla - constraints.sizeNumMarla) > 0.5) {
-        return false;
-      }
-    } else {
-      const rawLower = (plot.size || plot.size_dimensions || '').toLowerCase();
-      if (constraints.rawSizeStr && !rawLower.includes(constraints.rawSizeStr.toLowerCase())) {
-        return false;
-      }
-    }
-  }
-
-  // 4. City Filter
-  if (constraints.city) {
-    const plotCity = (plot.city || '').toLowerCase();
-    const plotTitle = (plot.title || '').toLowerCase();
-    if (!plotCity.includes(constraints.city) && !plotTitle.includes(constraints.city)) {
-      return false;
-    }
-  }
-
-  // 5. Society / Sector Filter
-  if (constraints.societyOrSector) {
-    const plotSociety = (plot.society || '').toLowerCase();
-    const plotTitle = (plot.title || '').toLowerCase();
-    const plotNotes = (plot.proximityNotes || plot.proximity_notes || '').toLowerCase();
-    const target = constraints.societyOrSector.toLowerCase().replace(/[-_\s]/g, '');
-
-    const normSociety = plotSociety.replace(/[-_\s]/g, '');
-    const normTitle = plotTitle.replace(/[-_\s]/g, '');
-    const normNotes = plotNotes.replace(/[-_\s]/g, '');
-
-    if (!normSociety.includes(target) && !normTitle.includes(target) && !normNotes.includes(target)) {
-      return false;
-    }
-  }
-
-  // 6. Low Flood Risk Filter
-  if (constraints.lowFloodRisk) {
-    const flood = (plot.floodRisk || plot.flood_risk || '').toLowerCase();
-    if (flood.includes('high risk') || flood.includes('high flood') || (!flood.includes('low') && !flood.includes('safe') && !flood.includes('minimal'))) {
-      return false;
-    }
-  }
-
-  // 7. Quiet Noise Level Filter
-  if (constraints.quietNoise) {
-    const noise = (plot.noiseLevel || plot.noise_level || '').toLowerCase();
-    if (!noise.includes('quiet') && !noise.includes('low') && !noise.includes('45 db')) {
-      return false;
-    }
-  }
-
-  // 8. Category Filter
-  if (constraints.category) {
-    const cat = (plot.category || '').toLowerCase();
-    if (!cat.includes(constraints.category.toLowerCase())) {
-      return false;
-    }
-  }
-
-  // 9. Verified Only Filter
-  if (constraints.verifiedOnly) {
-    const isVerified = plot.isVerified || plot.is_verified;
-    if (!isVerified) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function formatConstraintsSummary(constraints) {
-  const parts = [];
-  if (constraints.targetPlotId) parts.push(`Plot ID: ${constraints.targetPlotId}`);
-  if (constraints.rawSizeStr) parts.push(`Size: ${constraints.rawSizeStr}`);
-  if (constraints.maxPricePkr) parts.push(`Max Budget: ${formatPkr(constraints.maxPricePkr)}`);
-  if (constraints.minPricePkr) parts.push(`Min Budget: ${formatPkr(constraints.minPricePkr)}`);
-  if (constraints.city) parts.push(`City: ${constraints.city.charAt(0).toUpperCase() + constraints.city.slice(1)}`);
-  if (constraints.societyOrSector) parts.push(`Society/Sector: ${constraints.societyOrSector.toUpperCase()}`);
-  if (constraints.lowFloodRisk) parts.push('Low Flood Risk');
-  if (constraints.quietNoise) parts.push('Quiet Noise Level (~45 dB)');
-  if (constraints.category) parts.push(`Category: ${constraints.category}`);
-  if (constraints.verifiedOnly) parts.push('Verified Listings');
-  return parts.length > 0 ? parts.join(', ') : 'specified criteria';
-}
-
-/**
- * Strict Intent-Routing Classifier:
- * Determines if user query requires live active inventory criteria lookups
- * or is conversational/general advisory that should completely bypass database calls.
- */
-function classifyQueryIntent(messages) {
-  const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user' || !m.role);
-  if (!lastUserMsg) return { needsInventory: false, reason: 'empty_query' };
-
-  const query = (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '').trim().toLowerCase();
-
-  const explicitInventoryPatterns = [
-    /show\s+me\s+plots?/i,
-    /find\s+(me\s+)?(plots?|properties)/i,
-    /available\s+(plots?|options|inventory|listings)/i,
-    /plots?\s+for\s+sale/i,
-    /plots?\s+(under|below|budget|within|between)\s+/i,
-    /plots?\s+in\s+[a-z0-9]/i,
-    /looking\s+(for|to\s+buy)\s+(a\s+)?plot/i,
-    /want\s+to\s+buy\s+(a\s+)?plot/i,
-    /plot\s+chahiye/i,
-    /plots?\s+dikhao/i,
-    /plots?\s+batao/i,
-    /plots?\s+hai\s+kya/i,
-    /which\s+plot/i,
-    /best\s+plot/i,
-    /pick\s+(one|a)\s+plot/i,
-    /recommend/i,
-    /suggest/i,
-    /top\s+(plots?|options|listings|verified)/i,
-    /best\s+(investment|option|area)/i,
-    /konsa\s+plot/i,
-    /behtareen\s+plot/i,
-    /good\s+plot/i,
-    /where\s+should\s+i\s+(buy|invest)/i,
-  ];
-
-  const hasSpecificPlotFilters =
-    /\b\d+\s*(marla|kanal)\b/i.test(query) ||
-    /(dha|bahria|gulberg|f-6|f-7|f-8|f-10|f-11|g-11|g-13|b-17|shalimar|islamabad|rawalpindi)/i.test(query) ||
-    /(under|budget|crore|lakh|for sale|best|pick|recommend|suggest)/i.test(query);
-
-  if (/\bplot[s]?[\s-_]*#?\s*(\d+[a-z]?|[a-z]\d+)\b/i.test(query)) {
-    return { needsInventory: true, reason: 'specific_plot_id_inquiry' };
-  }
-
-  if (explicitInventoryPatterns.some((p) => p.test(query)) || hasSpecificPlotFilters) {
-    return { needsInventory: true, reason: 'inventory_search' };
-  }
-
-  if (/(plot|property|land|society|invest|buy|price|option|sector|city)/i.test(query)) {
-    return { needsInventory: true, reason: 'open_ended_plot_query' };
-  }
-
-  return { needsInventory: false, reason: 'general_advisory' };
 }
 
 /**
@@ -480,6 +190,292 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
   }
 }
 
+/**
+ * Execute searchPlots tool with Dynamic Context Injection for unrealistic constraints
+ */
+async function executeSearchPlots(ai, db, args) {
+  const {
+    city,
+    societyOrSector,
+    maxPricePkr,
+    minPricePkr,
+    sizeNumMarla,
+    category,
+    floodRiskPreference,
+    verifiedOnly
+  } = args || {};
+
+  const searchTerms = [societyOrSector, city, sizeNumMarla ? `${sizeNumMarla} Marla` : '']
+    .filter(Boolean)
+    .join(' ');
+
+  // 1. Gather all candidates (vector search + full active inventory)
+  const vectorMatches = db && searchTerms
+    ? await withTimeout(searchVectorPlots(ai, db, searchTerms), 8000, []).catch(() => [])
+    : [];
+
+  const dbInventory = db
+    ? await withTimeout(fetchActiveDatabaseInventory(db), 8000, []).catch(() => [])
+    : [];
+
+  const seen = new Set();
+  const allCandidates = [];
+  for (const item of [...(vectorMatches || []), ...(dbInventory || [])]) {
+    if (item && item.id && !seen.has(item.id)) {
+      seen.add(item.id);
+      allCandidates.push(item);
+    }
+  }
+
+  // 2. Strict / Direct Match Filter
+  const matchingPlots = allCandidates.filter((plot) => {
+    // City filter (fuzzy match for Islamabad, Rawalpindi, Twin Cities)
+    if (city) {
+      const cityNorm = city.toLowerCase();
+      const plotCity = (plot.city || '').toLowerCase();
+      const plotTitle = (plot.title || '').toLowerCase();
+      const isTwin = cityNorm.includes('twin') || cityNorm.includes('both');
+      if (!isTwin && !plotCity.includes(cityNorm) && !plotTitle.includes(cityNorm)) {
+        return false;
+      }
+    }
+
+    // Society / Sector filter (fuzzy normalized match)
+    if (societyOrSector) {
+      const target = societyOrSector.toLowerCase().replace(/[-_\s]/g, '');
+      const pSoc = (plot.society || '').toLowerCase().replace(/[-_\s]/g, '');
+      const pTitle = (plot.title || '').toLowerCase().replace(/[-_\s]/g, '');
+      const pNotes = (plot.proximityNotes || '').toLowerCase().replace(/[-_\s]/g, '');
+
+      if (!pSoc.includes(target) && !pTitle.includes(target) && !pNotes.includes(target)) {
+        return false;
+      }
+    }
+
+    // Max Price
+    if (maxPricePkr !== undefined && maxPricePkr > 0) {
+      const price = Number(plot.pricePkr || 0);
+      if (price > 0 && price > maxPricePkr) {
+        return false;
+      }
+    }
+
+    // Min Price
+    if (minPricePkr !== undefined && minPricePkr > 0) {
+      const price = Number(plot.pricePkr || 0);
+      if (price > 0 && price < minPricePkr) {
+        return false;
+      }
+    }
+
+    // Size (within +/- 1 Marla tolerance)
+    if (sizeNumMarla !== undefined && sizeNumMarla > 0) {
+      const plotMarla = extractMarlaFromSizeStr(plot.size || plot.title);
+      if (plotMarla !== null && Math.abs(plotMarla - sizeNumMarla) > 1.0) {
+        return false;
+      }
+    }
+
+    // Category
+    if (category) {
+      const pCat = (plot.category || '').toLowerCase();
+      if (!pCat.includes(category.toLowerCase())) {
+        return false;
+      }
+    }
+
+    // Flood Risk
+    if (floodRiskPreference && /(low|safe|minimal)/i.test(floodRiskPreference)) {
+      const flood = (plot.floodRisk || '').toLowerCase();
+      if (flood.includes('high') || (!flood.includes('low') && !flood.includes('safe') && !flood.includes('minimal'))) {
+        return false;
+      }
+    }
+
+    // Verified
+    if (verifiedOnly && !plot.isVerified) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (matchingPlots.length > 0) {
+    return {
+      status: 'exact_matches_found',
+      count: matchingPlots.length,
+      plots: matchingPlots.slice(0, 4)
+    };
+  }
+
+  // 3. DYNAMIC CONTEXT INJECTION FOR UNREALISTIC QUERIES:
+  // If no direct matches exist (e.g. 50 Lakh in F-6), do NOT fail with a static error.
+  // Check market benchmarks and provide realistic alternatives within budget.
+  let sectorBenchmark = null;
+  const sectorNorm = (societyOrSector || '').toLowerCase().replace(/[-_\s]/g, '');
+
+  if (sectorNorm.includes('f6') || sectorNorm.includes('f7') || sectorNorm.includes('f8')) {
+    sectorBenchmark = 'Prime CDA Sectors (F-6, F-7, F-8) typically trade between PKR 12 Crore to PKR 30+ Crore for 10 Marla to 1 Kanal.';
+  } else if (sectorNorm.includes('f10') || sectorNorm.includes('f11') || sectorNorm.includes('e11')) {
+    sectorBenchmark = 'Developed CDA Sectors (F-10, F-11, E-11) average PKR 4 Crore to PKR 15 Crore for residential plots.';
+  } else if (sectorNorm.includes('dha') || sectorNorm.includes('bahria')) {
+    sectorBenchmark = 'DHA & Bahria Town phases range from PKR 1.2 Crore to PKR 4.5 Crore depending on phase and location.';
+  }
+
+  // Find alternative plots within or close to the requested budget in other verified areas
+  let alternativePlots = [];
+  if (maxPricePkr && maxPricePkr > 0) {
+    alternativePlots = allCandidates
+      .filter((p) => p.pricePkr > 0 && p.pricePkr <= maxPricePkr * 1.35)
+      .slice(0, 3);
+  } else {
+    alternativePlots = allCandidates.slice(0, 3);
+  }
+
+  return {
+    status: 'unrealistic_or_unmatched_criteria',
+    requestedSector: societyOrSector || 'unspecified sector',
+    requestedBudget: maxPricePkr ? formatPkr(maxPricePkr) : 'unspecified',
+    sectorMarketBenchmark: sectorBenchmark,
+    marketExplanation: sectorBenchmark
+      ? `The requested budget (${formatPkr(maxPricePkr)}) is far below the active market valuation for ${societyOrSector}. ${sectorBenchmark}`
+      : `No current listings match the exact combination of criteria for ${societyOrSector || city || 'this search'}.`,
+    suggestedAlternativeSectors: [
+      'B-17 Multi Gardens (Islamabad Zone II)',
+      'Faisal Hills (GT Road Corridor)',
+      'TopCity-1 & Mumtaz City (Airport Corridor)',
+      'Rawalpindi Prime Sub-sectors'
+    ],
+    alternativePlots: alternativePlots
+  };
+}
+
+/**
+ * Execute getPlotDetails tool
+ */
+async function executeGetPlotDetails(db, plotId) {
+  if (!db || !plotId) return { error: 'Plot ID required' };
+  const cleanId = String(plotId).trim();
+
+  const inventory = await fetchActiveDatabaseInventory(db, cleanId);
+  const found = inventory.find((p) => {
+    const idNorm = p.id.toLowerCase().replace(/[\s-_]/g, '');
+    const targetNorm = cleanId.toLowerCase().replace(/[\s-_]/g, '');
+    return idNorm === targetNorm || idNorm.includes(targetNorm) || p.title.toLowerCase().includes(targetNorm);
+  });
+
+  if (!found) {
+    return {
+      status: 'plot_not_found',
+      plotId: cleanId,
+      message: `Plot ${cleanId} was not found in active verified inventory. Recommend browsing the 3D Map (/explore).`
+    };
+  }
+
+  return {
+    status: 'plot_found',
+    plot: found
+  };
+}
+
+/**
+ * Execute getMarketIntelligence tool
+ */
+function executeGetMarketIntelligence(areaOrSector, topic) {
+  const norm = (areaOrSector || '').toLowerCase();
+
+  return {
+    area: areaOrSector || 'Islamabad & Rawalpindi',
+    topic: topic || 'general_advisory',
+    intelligence: {
+      cdaOverview: 'CDA (Capital Development Authority) regulates Islamabad sectors. Sectors E, F, G, H, I represent zoning from luxury Margalla-facing (F-sectors) to commercial and affordable zones (G, I).',
+      rdaOverview: 'RDA (Rawalpindi Development Authority) regulates Rawalpindi master planning. Verify RDA NOC approval status for private housing schemes before transactions.',
+      floodRiskIntelligence: 'High monsoon flood runoff zones are concentrated along Lai Nullah (Rawalpindi) and natural rain drains in low-elevation depressions. NAQSHAI scores areas with >550m elevation as safe/low hazard.',
+      investmentCorridors: 'High-growth corridors include New Islamabad International Airport corridor (TopCity, Mumtaz City), M-2 Motorway access points (B-17 Multi Gardens), and Ring Road Rawalpindi alignments.'
+    }
+  };
+}
+
+// Tool declarations for Google Gen AI SDK
+const chatTools = [
+  {
+    functionDeclarations: [
+      {
+        name: 'searchPlots',
+        description: 'Search active database inventory for plots or real estate across Islamabad and Rawalpindi. Use this tool when the user expresses intent to find, buy, recommend, or filter plots by location, budget, size, or flood risk.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            city: {
+              type: Type.STRING,
+              description: 'City (e.g. Islamabad, Rawalpindi, or Twin Cities).'
+            },
+            societyOrSector: {
+              type: Type.STRING,
+              description: 'Sector or society (e.g. F-6, F-10, DHA, Bahria Town, E-11, B-17, Gulberg, TopCity, etc.).'
+            },
+            maxPricePkr: {
+              type: Type.NUMBER,
+              description: 'Maximum budget in PKR (e.g. 5000000 for 50 Lakh, 15000000 for 1.5 Crore).'
+            },
+            minPricePkr: {
+              type: Type.NUMBER,
+              description: 'Minimum budget in PKR.'
+            },
+            sizeNumMarla: {
+              type: Type.NUMBER,
+              description: 'Plot size in Marla (e.g. 5, 7, 10, or 20 for 1 Kanal).'
+            },
+            category: {
+              type: Type.STRING,
+              description: 'Residential, Commercial, or Farmhouse.'
+            },
+            floodRiskPreference: {
+              type: Type.STRING,
+              description: 'Preferred flood risk: low or safe.'
+            },
+            verifiedOnly: {
+              type: Type.BOOLEAN,
+              description: 'Whether user requested only verified listings.'
+            }
+          }
+        }
+      },
+      {
+        name: 'getPlotDetails',
+        description: 'Retrieve detailed information, elevation profile, and risk assessment for a specific plot code or ID (e.g. Plot-98A, 101, B17-402).',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            plotId: {
+              type: Type.STRING,
+              description: 'The unique plot ID or plot number.'
+            }
+          },
+          required: ['plotId']
+        }
+      },
+      {
+        name: 'getMarketIntelligence',
+        description: 'Retrieve real estate intelligence, CDA/RDA regulations, monsoon flood risk profiles, or price benchmarks for Islamabad & Rawalpindi.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            areaOrSector: {
+              type: Type.STRING,
+              description: 'Area, sector, or city name.'
+            },
+            topic: {
+              type: Type.STRING,
+              description: 'Topic such as pricing, flood risk, or investment yield.'
+            }
+          }
+        }
+      }
+    ]
+  }
+];
+
 export async function POST(req) {
   try {
     let body;
@@ -524,388 +520,202 @@ export async function POST(req) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
+    const db = getSupabaseClient();
 
-    const lastUserQuery = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-
-    // 1. Zero-Delay Fast Path for Casual Queries:
-    const fastReply = getFastConversationalReply(String(lastUserQuery), language);
-    if (fastReply) {
-      return new Response(
-        JSON.stringify({
-          reply: fastReply,
-          recommendedPlots: []
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        }
-      );
-    }
-
-    // 2. Strict Intent Classification
-    const intent = classifyQueryIntent(messages);
-
-    // 3. Extract parsed query parameters & constraints
-    const constraints = parseUserConstraints(String(lastUserQuery));
-    const hasExplicitConstraints = Object.keys(constraints).length > 0;
-
-    let candidateInventory = [];
-
-    // 4. Strict Intent Routing:
-    // Only query Supabase when active inventory search is requested AND we are NOT in guide mode.
-    if (intent.needsInventory && !isGuide && mode !== 'guide') {
-      try {
-        const db = getSupabaseClient();
-        if (db) {
-          const vectorMatches = await withTimeout(
-            searchVectorPlots(ai, db, String(lastUserQuery)),
-            10000,
-            null
-          ).catch(() => null);
-
-          const dbInventory = await withTimeout(
-            fetchActiveDatabaseInventory(db, constraints.rawPlotCode || constraints.targetPlotId),
-            10000,
-            []
-          ).catch(() => []);
-
-          // Combine candidates avoiding duplicate IDs
-          const seen = new Set();
-          const combined = [];
-          for (const item of [...(vectorMatches || []), ...dbInventory]) {
-            if (item && item.id && !seen.has(item.id)) {
-              seen.add(item.id);
-              combined.push(item);
-            }
-          }
-          candidateInventory = combined;
-        }
-      } catch (dbErr) {
-        console.warn('[api/chat] Database lookup error:', dbErr?.message || dbErr);
-        candidateInventory = [];
-      }
-    }
-
-    // 5. Cross-reference candidates against parsed constraints
-    const matchingInventory = candidateInventory.filter((plot) => plotMatchesConstraints(plot, constraints));
-
-    const trimmedMatchingInventory = matchingInventory.map((p) => ({
-      id: p.id,
-      title: p.title,
-      society: p.society,
-      city: p.city,
-      size: p.size,
-      price: p.price,
-      category: p.category,
-      floodRisk: p.floodRisk,
-      noiseLevel: p.noiseLevel,
-      elevation: p.elevationProfile,
-      notes: p.proximityNotes,
-      sellerName: p.sellerName,
-      sellerPhone: p.sellerPhone,
-      verified: p.isVerified
-    }));
-
-    const LANG_MAP = {
-      EN: 'English',
-      UR: 'Nastaliq Urdu script (اردو)',
-      RO: 'Roman Urdu'
+    const LANG_INSTRUCTIONS = {
+      EN: 'Respond strictly in English.',
+      UR: 'Respond strictly in Urdu Nastaliq script (اردو).',
+      RO: 'Respond naturally in Roman Urdu (e.g. "Main aap ki madad kar sakta hoon...").'
     };
 
-    // Construct system instruction based on classified intent & constraint matching results
-    let baseSystemInstruction = '';
+    let baseSystemInstruction = `You are NAQSHAI AI — a premier real estate advisory consultant and land intelligence specialist for Islamabad and Rawalpindi, Pakistan.
+You provide direct, factual, punchy market advice without corporate pleasantries or repetitive greetings.
+You natively understand English, Nastaliq Urdu script (اردو), and Roman Urdu. If the user writes in Roman Urdu (e.g. "salam bhai", "kesai ho", "plot chahiye"), reply naturally and warmly in Roman Urdu!
+
+GUIDANCE ON TOOLS:
+- When the user is looking for plot options, searching properties, or providing budget/sector criteria, CALL the 'searchPlots' tool.
+- When the user asks about a specific plot code (e.g. Plot-98A), CALL the 'getPlotDetails' tool.
+- When the user asks general advisory questions on investment corridors or flood risks, CALL 'getMarketIntelligence' if needed, or answer directly with domain expertise.
+- For casual greetings (e.g. "salam", "hello kesai ho", "kya haal hai") or gratitude, DO NOT call search tools. Reply warmly, briefly, and conversationally.
+
+UNREALISTIC BUDGETS & ALTERNATIVE GUIDANCE:
+- If 'searchPlots' returns an 'unrealistic_or_unmatched_criteria' status (e.g. 50 Lakh in Sector F-6), politely educate the user on the real market valuation of that sector using the market explanation provided.
+- Suggest viable alternative sectors where their budget can actually acquire 5 to 10 Marla plots (such as B-17 Multi Gardens, Faisal Hills, or Rawalpindi), and present the alternative plots provided by the tool.
+
+FINAL JSON FORMAT SPECIFICATION:
+You MUST format your final response strictly as a JSON object matching this schema:
+{
+  "reply": "Your conversational narrative, explanation, or market analysis",
+  "recommendedPlots": [
+    {
+      "id": "Plot ID",
+      "title": "Plot Title",
+      "society": "Society / Sector",
+      "city": "City",
+      "size": "Plot Size",
+      "price": "Formatted Price",
+      "floodRisk": "Low / Moderate / High Hazard",
+      "noiseLevel": "Quiet Zone / Low"
+    }
+  ]
+}
+If no specific plots are being recommended, set 'recommendedPlots' strictly to [].
+`;
 
     if (isGuide || mode === 'guide') {
-      baseSystemInstruction = `You are the NAQSHAI Live AI Onboarding Assistant — a platform navigation guide.
-
-STRICT NAVIGATION & FEATURE ROUTING RULES:
-1. LISTING OR SELLING PLOTS: If the user asks about listing, selling, posting, or submitting a plot, direct them specifically to use the 'List Your Plot' page (/sell) to submit plot dimensions, society details, and asking price.
-2. BUYING OR SEARCHING PLOTS: You ONLY provide platform navigation and feature guidance. You DO NOT perform property searches or provide plot listings/prices directly. If a user asks about finding plots, buying land, or searching inventory, explain that you are the onboarding guide and instruct them to check the 'Explore 3D Map' page (/explore) or consult the 'AI Advisor' (/recommend) for plot recommendations.
-3. GENERAL PLATFORM QUESTIONS: Direct users to the relevant page (3D Map, AI Advisor, or List Your Plot).
-
-STRICT CONCISENESS & STYLE DIRECTIVES:
-1. NO CORPORATE INTRODUCTIONS: Jump DIRECTLY to the navigation guidance.
-2. PUNCHY & FRIENDLY: Keep responses concise (1-3 sentences max).
-3. NEVER return plot listings or inventory objects. Return 'recommendedPlots' strictly as an empty array [].
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object containing:
-- 'reply': concise, friendly onboarding guidance directing the user to the correct feature (/sell for listing/selling plots, /explore and /recommend for exploring/buying plots).
-- 'recommendedPlots': []`;
-    } else if (!intent.needsInventory) {
-      baseSystemInstruction = `You are NAQSHAI AI — a real estate advisory consultant and land intelligence specialist for Islamabad and Rawalpindi, Pakistan.
-
-STRICT CONCISENESS & STYLE DIRECTIVES:
-1. NO CORPORATE INTRODUCTIONS: NEVER start responses with boilerplate intros like "As NAQSHAI AI, your senior real estate advisory consultant...", "Welcome to NAQSHAI...", or "Hello! I am pleased to assist...". Jump DIRECTLY to the answer.
-2. PUNCHY & CONCISE: Answer in 2-4 sentences max without filler or corporate pleasantries. For casual questions, reply in strictly 1 short sentence.
-3. DOMAIN INTELLIGENCE: Provide direct, objective facts on CDA sectors, RDA developments, Bahria Town, DHA, Gulberg, New Islamabad Airport corridor, monsoon flood risks (nullah proximity, Lai runoff), and approval verification (CDA/RDA).
-4. NO BACKEND MENTIONS: Never mention internal databases, vector tables, or software steps.
-5. Return 'recommendedPlots' as an empty array [].
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object containing:
-- 'reply': punchy, direct answer with zero corporate fluff or repetitive self-introductions.
-- 'recommendedPlots': []`;
-    } else if (constraints.targetPlotId && trimmedMatchingInventory.length > 0) {
-      const targetPlot = trimmedMatchingInventory[0];
-      baseSystemInstruction = `You are NAQSHAI AI — a land recommendation and property intelligence specialist for real estate in Pakistan.
-
-The user is specifically asking about Plot ID ${targetPlot.id} (${targetPlot.title}).
-
-STRICT SPECIFIC PLOT ANALYSIS DIRECTIVES:
-1. FOCUS ONLY ON ${targetPlot.id}: Provide a detailed, engaging, conversational response strictly addressing ${targetPlot.id}. Do NOT recommend other unrelated plots.
-2. COVER ALL KEY DETAILS:
-   - Asking Price: ${targetPlot.price}
-   - Size & Category: ${targetPlot.size}, ${targetPlot.category}
-   - Society & Location: ${targetPlot.society}, ${targetPlot.city}
-   - Risk Intelligence: Flood Risk (${targetPlot.floodRisk}), Noise Level (${targetPlot.noiseLevel}), Elevation Profile (${targetPlot.elevation})
-   - Proximity & Landmarks: ${targetPlot.notes}
-3. NO CORPORATE INTRODUCTIONS: Jump directly into the detailed evaluation of ${targetPlot.id}.
-4. Include ONLY ${targetPlot.id} inside 'recommendedPlots'.
-
-TARGET PLOT DATA:
-${JSON.stringify(targetPlot, null, 2)}
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object with:
-- 'reply': engaging, detailed, conversational breakdown answering the user's prompt specifically for ${targetPlot.id}.
-- 'recommendedPlots': array containing strictly the single requested plot object (${targetPlot.id}).`;
-    } else if (constraints.targetPlotId && trimmedMatchingInventory.length === 0) {
-      baseSystemInstruction = `You are NAQSHAI AI — a land recommendation specialist for Pakistan real estate.
-
-CRITICAL PLOT INQUIRY NOTIFICATION:
-The user specifically asked about plot ID "${constraints.targetPlotId}".
-No plot matching "${constraints.targetPlotId}" currently exists in our verified database inventory.
-
-STRICT INSTRUCTIONS:
-1. Politely inform the user that plot ID "${constraints.targetPlotId}" was not found in our verified active inventory.
-2. Direct them to check the plot number or browse available listings on the 3D Map (/explore).
-3. Do NOT fabricate any plot details or show unrelated plots.
-4. Set 'recommendedPlots' strictly to an empty array [].
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object containing:
-- 'reply': polite, direct message stating plot "${constraints.targetPlotId}" was not found in the verified database inventory.
-- 'recommendedPlots': []`;
-    } else if (hasExplicitConstraints && trimmedMatchingInventory.length === 0) {
-      // NO MATCHING PLOTS FOUND FOR USER CONSTRAINTS
-      const constraintDesc = formatConstraintsSummary(constraints);
-      baseSystemInstruction = `You are NAQSHAI AI — a land recommendation specialist for Pakistan real estate.
-
-CRITICAL INVENTORY CONSTRAINTS NOTIFICATION:
-The user searched for property recommendations with specific criteria (${constraintDesc}).
-NO MATCHING PLOTS currently exist in our active database inventory that satisfy these specific constraints.
-
-STRICT ADVISORY RULES FOR UNMATCHED INVENTORY:
-1. POLITELY EXCUSE YOURSELF & STATE CLEARLY: State politely and clearly that no matching plot listings are currently available in the active database inventory for these specific criteria (${constraintDesc}).
-2. DO NOT FABRICATE OR SUGGEST UNRELATED PLOTS: Refrain from showing, inventing, or recommending any hardcoded, fictitious, or irrelevant alternative listings.
-3. ADVISE SEARCH ADJUSTMENT: Suggest that the user check back later or adjust their budget, size, or location filters.
-4. ABSOLUTELY STRICT: Set 'recommendedPlots' strictly as an empty array [].
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object containing:
-- 'reply': polite, direct message explaining no matching plots are currently available in the active inventory for the requested criteria (${constraintDesc}).
-- 'recommendedPlots': []`;
-    } else {
-      // MATCHING INVENTORY AVAILABLE FOR USER QUERY
-      baseSystemInstruction = `You are NAQSHAI AI — a land recommendation and property intelligence specialist for real estate in Pakistan.
-
-STRICT CONCISENESS & STYLE DIRECTIVES:
-1. NO CORPORATE INTRODUCTIONS: Jump directly to presenting the matching property findings.
-2. MATCHING LIVE INVENTORY ONLY:
-   Present ONLY the specific matching plots from the MATCHING LIVE DATABASE INVENTORY below.
-3. CONCISE & PUNCHY: Keep narrative direct, factual, and compact (2-3 sentences max). Highlight location, size, price, and flood risk metrics for the recommended plots.
-4. NEVER fabricate fictitious plots or prices. Never mention database or vector plumbing.
-5. Include ALL selected matching plot objects in the 'recommendedPlots' array.
-
-MATCHING LIVE DATABASE INVENTORY:
-${JSON.stringify(trimmedMatchingInventory, null, 2)}
-
-OUTPUT SPECIFICATION:
-Return a single valid JSON object with:
-- 'reply': direct, punchy recommendation narrative highlighting the matching plot(s) from inventory without corporate intro fluff.
-- 'recommendedPlots': array containing the matching plot objects selected strictly from MATCHING LIVE DATABASE INVENTORY above.`;
+      baseSystemInstruction = `You are NAQSHAI Onboarding Guide — a platform navigation assistant.
+Provide concise guidance (1-3 sentences) pointing users to:
+- /sell to list or sell a plot
+- /explore to view the interactive 3D terrain map
+- /recommend to consult the AI Advisor for plot recommendations
+Return JSON with 'reply' and 'recommendedPlots': [].`;
     }
 
-    let finalSystemInstruction = baseSystemInstruction;
-    if (language && language !== 'Auto' && LANG_MAP[language]) {
-      finalSystemInstruction += `\n\nLANGUAGE OVERRIDE: Write the 'reply' field ENTIRELY in ${LANG_MAP[language]}.`;
+    if (language && language !== 'Auto' && LANG_INSTRUCTIONS[language]) {
+      baseSystemInstruction += `\n\nLANGUAGE DIRECTIVE: ${LANG_INSTRUCTIONS[language]}`;
     }
 
+    // Format conversation history for Gemini
     const contents = messages.map((msg) => {
       const role = msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user';
       const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
       return {
         role,
-        parts: [{ text: textContent }],
+        parts: [{ text: textContent }]
       };
     });
 
     let generatedText = null;
-    let lastError = null;
+    let recommendedPlotsFromTool = [];
 
+    // Multi-model fallback execution
     for (const modelName of SUPPORTED_GEMINI_MODELS) {
       try {
-        const generatePromise = ai.models.generateContent({
+        // Step 1: Initial Generation with Tools
+        const initialPromise = ai.models.generateContent({
           model: modelName,
           contents: contents,
           config: {
-            systemInstruction: finalSystemInstruction,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                reply: { type: Type.STRING },
-                recommendedPlots: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      id: { type: Type.STRING },
-                      title: { type: Type.STRING },
-                      society: { type: Type.STRING },
-                      city: { type: Type.STRING },
-                      size: { type: Type.STRING },
-                      price: { type: Type.STRING },
-                      floodRisk: { type: Type.STRING },
-                      noiseLevel: { type: Type.STRING }
-                    },
-                    required: ['id', 'title', 'society', 'city', 'size', 'price', 'floodRisk', 'noiseLevel']
-                  }
-                }
-              },
-              required: ['reply', 'recommendedPlots']
-            }
+            systemInstruction: baseSystemInstruction,
+            tools: chatTools
           }
         });
 
-        const response = await withTimeout(generatePromise, 15000, null);
+        const initialRes = await withTimeout(initialPromise, 15000, null);
+        if (!initialRes) continue;
 
-        if (response && response.text) {
-          generatedText = response.text;
+        const candidate = initialRes.candidates?.[0];
+        const functionCalls = initialRes.functionCalls;
+
+        // Step 2: Handle Tool Calls if Gemini invoked any
+        if (functionCalls && functionCalls.length > 0) {
+          const fc = functionCalls[0];
+          let toolResult = null;
+
+          if (fc.name === 'searchPlots') {
+            toolResult = await executeSearchPlots(ai, db, fc.args);
+            if (toolResult.plots) {
+              recommendedPlotsFromTool = toolResult.plots;
+            } else if (toolResult.alternativePlots) {
+              recommendedPlotsFromTool = toolResult.alternativePlots;
+            }
+          } else if (fc.name === 'getPlotDetails') {
+            toolResult = await executeGetPlotDetails(db, fc.args?.plotId);
+            if (toolResult.plot) {
+              recommendedPlotsFromTool = [toolResult.plot];
+            }
+          } else if (fc.name === 'getMarketIntelligence') {
+            toolResult = executeGetMarketIntelligence(fc.args?.areaOrSector, fc.args?.topic);
+          }
+
+          // Step 3: Follow-up Generation with Tool Result (Preserving original model parts)
+          const followUpContents = [
+            ...contents,
+            {
+              role: 'model',
+              parts: candidate.content.parts
+            },
+            {
+              role: 'user',
+              parts: [
+                {
+                  functionResponse: {
+                    name: fc.name,
+                    response: { result: toolResult }
+                  }
+                }
+              ]
+            }
+          ];
+
+          const followUpPromise = ai.models.generateContent({
+            model: modelName,
+            contents: followUpContents,
+            config: {
+              systemInstruction: baseSystemInstruction,
+              responseMimeType: 'application/json'
+            }
+          });
+
+          const followUpRes = await withTimeout(followUpPromise, 15000, null);
+          if (followUpRes && followUpRes.text) {
+            generatedText = followUpRes.text;
+            break;
+          }
+        } else if (initialRes.text) {
+          // Direct response (greetings, pleasantries, platform navigation)
+          let rawText = initialRes.text.trim();
+          try {
+            // Verify valid JSON
+            JSON.parse(rawText.replace(/```json/gi, '').replace(/```/g, '').trim());
+            generatedText = rawText;
+          } catch (_) {
+            // Package into clean JSON schema
+            generatedText = JSON.stringify({
+              reply: rawText,
+              recommendedPlots: []
+            });
+          }
           break;
-        } else {
-          console.warn(`[api/chat] Gemini model '${modelName}' timed out or returned empty response.`);
         }
       } catch (modelErr) {
-        lastError = modelErr;
-        console.warn(`[api/chat] Gemini model '${modelName}' notice, attempting fallback:`, modelErr?.message || modelErr);
+        console.warn(`[api/chat] Model ${modelName} notice:`, modelErr?.status || modelErr?.message || modelErr);
       }
     }
 
+    // Resilience Fallback if all active models fail or rate-limit
     if (!generatedText) {
-      console.error('[api/chat] All Gemini model fallbacks failed or timed out.', lastError?.message || lastError);
-
-      if (constraints.targetPlotId && matchingInventory.length > 0) {
-        const p = matchingInventory[0];
-        let specificReply = `Here are the details for ${p.id} (${p.title}): Asking price is ${p.price}, located in ${p.society ? p.society + ', ' : ''}${p.city}. Risk Assessment: Flood Risk is ${p.floodRisk}, Noise Level is ${p.noiseLevel}, and Elevation is ${p.elevationProfile}. Landmarks: ${p.proximityNotes}.`;
-        if (language === 'UR') {
-          specificReply = `${p.id} (${p.title}) کے بارے میں تفصیلات: قیمت ${p.price} ہے، مقام ${p.society ? p.society + '، ' : ''}${p.city} ہے۔ رسک اسیسمنٹ: فلڈ رسک ${p.floodRisk}، شور کی سطح ${p.noiseLevel}، اور بلندی ${p.elevationProfile} ہے۔`;
-        } else if (language === 'RO') {
-          specificReply = `${p.id} (${p.title}) ki details: Price ${p.price} hai, location ${p.society ? p.society + ', ' : ''}${p.city} hai. Flood Risk: ${p.floodRisk}, Noise Level: ${p.noiseLevel}, Elevation: ${p.elevationProfile}.`;
+      console.warn('[api/chat] All Gemini model attempts failed; using dynamic inventory fallback.');
+      let fallbackPlots = [];
+      try {
+        if (db) {
+          fallbackPlots = await fetchActiveDatabaseInventory(db);
         }
+      } catch (_) {}
 
-        return new Response(
-          JSON.stringify({
-            reply: specificReply,
-            recommendedPlots: [p],
-            isFallback: true,
-            success: true
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-        );
-      }
-
-      if (constraints.targetPlotId && matchingInventory.length === 0) {
-        let noPlotReply = `I checked our verified database inventory, but could not find a listing for ${constraints.targetPlotId}. Please verify the plot ID or explore available listings on the 3D Map (/explore).`;
-        if (language === 'UR') {
-          noPlotReply = `ہماری تصدیق شدہ انوینٹری میں پلاٹ آئی ڈی ${constraints.targetPlotId} نہیں ملا۔ برائے مہربانی پلاٹ نمبر چیک کریں یا 3D نقشے پر دستیاب فہرستیں دیکھیں۔`;
-        } else if (language === 'RO') {
-          noPlotReply = `Hamari verified inventory me Plot ID ${constraints.targetPlotId} nahi mila. Baraye mehrbani plot number check karein ya 3D Map (/explore) par available listings dekhein.`;
-        }
-
-        return new Response(
-          JSON.stringify({
-            reply: noPlotReply,
-            recommendedPlots: [],
-            isFallback: true,
-            success: true
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-        );
-      }
-
-      if (hasExplicitConstraints && matchingInventory.length === 0) {
-        let noMatchReply = `I apologize, but there are currently no matching plots in our active database inventory for your specified criteria (${formatConstraintsSummary(constraints)}). Please try adjusting your search filters.`;
-        if (language === 'UR') {
-          noMatchReply = 'معذرت، ہماری فعال ڈیٹا بیس انوینٹری میں آپ کے ان مخصوص معیارات کے مطابق اس وقت کوئی پلاٹ دستیاب نہیں ہے۔ برائے مہربانی اپنے سرچ فلٹرز کو تھوڑا تبدیل کر کے دوبارہ کوشش کریں۔';
-        } else if (language === 'RO') {
-          noMatchReply = 'Maazrat, hamari active database inventory me aap ki specific criteria ke mutabiq filhal koi plot dastayab nahi hai. Baraye mehrbani apnay search filters me thori tabdeeli karke dobara koshish karein.';
-        }
-
-        return new Response(
-          JSON.stringify({
-            reply: noMatchReply,
-            recommendedPlots: [],
-            isFallback: true,
-            success: true
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-        );
-      }
-
-      if (matchingInventory.length > 0) {
-        let cleanReply = 'Here are top verified plot listings matching your criteria from our active inventory.';
-        if (language === 'UR') {
-          cleanReply = 'یہاں آپ کے معیار کے مطابق ہماری فعال انوینٹری سے بہترین تصدیق شدہ پلاٹ کی فہرستیں درج ہیں۔';
-        } else if (language === 'RO') {
-          cleanReply = 'Aap ki criteria ke mutabiq hamari active inventory se top verified plot listings ye hain:';
-        }
-
-        return new Response(
-          JSON.stringify({
-            reply: cleanReply,
-            recommendedPlots: matchingInventory.slice(0, 3),
-            isFallback: true,
-            success: true
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-        );
-      }
-
-      if (isGuide || mode === 'guide') {
-        return new Response(
-          JSON.stringify({
-            reply: 'NAQSHAI features 3D terrain elevation analysis, verified plot listings, and AI real estate intelligence across Islamabad and Rawalpindi. You can explore interactive 3D maps or launch the AI Plot Advisor for detailed plot recommendations.',
-            recommendedPlots: [],
-            isFallback: true,
-            actions: [
-              { label: '3D Map Explorer', href: '/explore' },
-              { label: 'AI Advisor', href: '/recommend' }
-            ]
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-        );
-      }
-
-      let helpfulAdvisoryReply = 'I can assist you with real estate intelligence across Islamabad & Rawalpindi! Try asking about specific CDA sectors (F-6, G-11), Bahria Town, DHA, or monsoon flood risk zones.';
-      if (language === 'UR') {
-        helpfulAdvisoryReply = 'میں اسلام آباد اور راولپنڈی میں رئیل اسٹیٹ انٹیلی جنس میں آپ کی مدد کر سکتا ہوں! مخصوص CDA سیکٹرز (F-6, G-11)، بحریہ ٹاؤن، DHA، یا سیلاب کے خطرے والے علاقوں کے بارے میں پوچھیں۔';
-      } else if (language === 'RO') {
-        helpfulAdvisoryReply = 'Main Islamabad aur Rawalpindi mein real estate intelligence mein aap ki madad kar sakta hoon! Specific CDA sectors (F-6, G-11), Bahria Town, DHA, ya flood risk zones ke baarey mein poochain.';
-      }
-
-      return new Response(
-        JSON.stringify({
-          reply: helpfulAdvisoryReply,
-          recommendedPlots: [],
-          isFallback: true
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-      );
+      const safePlots = fallbackPlots.slice(0, 3);
+      generatedText = JSON.stringify({
+        reply: safePlots.length > 0
+          ? 'Here are top verified plots currently available in our live database inventory across Islamabad and Rawalpindi.'
+          : 'I can assist you with verified plot intelligence, CDA/RDA regulations, and flood risk analysis across Islamabad & Rawalpindi. Please ask about any sector or budget!',
+        recommendedPlots: safePlots
+      });
     }
 
-    // Stream the generated JSON in progressive chunks
+    // Ensure recommendedPlots from tool execution are included if JSON has an empty array
+    try {
+      const parsed = JSON.parse(generatedText.replace(/```json/gi, '').replace(/```/g, '').trim());
+      if (
+        Array.isArray(recommendedPlotsFromTool) &&
+        recommendedPlotsFromTool.length > 0 &&
+        (!parsed.recommendedPlots || parsed.recommendedPlots.length === 0)
+      ) {
+        parsed.recommendedPlots = recommendedPlotsFromTool;
+        generatedText = JSON.stringify(parsed);
+      }
+    } catch (_) {}
+
+    // Stream progressive response to client
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -921,10 +731,9 @@ Return a single valid JSON object with:
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Transfer-Encoding': 'chunked',
-        'Cache-Control': 'no-cache, no-transform',
-      },
+        'Cache-Control': 'no-cache, no-transform'
+      }
     });
-
   } catch (err) {
     console.error('[api/chat] Handled error in chat API:', err?.message || err);
     return new Response(
