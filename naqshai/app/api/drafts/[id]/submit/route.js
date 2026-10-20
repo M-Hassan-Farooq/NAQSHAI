@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUserFromRequest, getUserClient } from '@/lib/authServer';
+import { checkPolygonConflict } from '@/lib/polygonOverlap';
+import { verifyAreaMatch } from '@/lib/areaCalculator';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +60,48 @@ export async function POST(request, { params }) {
     }
     if (!plot.city || !plot.society || !plot.plotNumber || !plot.pricePkr) {
       return NextResponse.json({ success: false, error: 'City, society, plot number and demand price are required.' }, { status: 400 });
+    }
+
+    // Boundary overlap check: prevent submitting a plot that overlaps with any existing plot
+    const polygonCoordinates = fd.polygonCoordinates || [];
+    if (Array.isArray(polygonCoordinates) && polygonCoordinates.length >= 3) {
+      const { data: existingPlots } = await db
+        .from('plots')
+        .select('id, title, polygon_coordinates');
+
+      const conflict = checkPolygonConflict(polygonCoordinates, existingPlots || [], draft.published_plot_id);
+      if (conflict.hasConflict) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot submit listing: Plot boundary overlaps with existing registered plot "${conflict.conflictingPlot?.title || conflict.conflictingPlot?.id}". Overlapping plots are not allowed.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Geospatial Area Verification: drawn boundary must cover at least 90% of claimed plot area
+      const areaCheck = verifyAreaMatch(polygonCoordinates, plot.sizeDimensions || '10 Marla (35x70)', 0.90);
+      if (!areaCheck.isValid) {
+        // Automatically mark draft as rejected in database with clear audit reasoning
+        await db
+          .from('listing_drafts')
+          .update({
+            status: 'rejected',
+            rejection_reason: `Automatic Rejection: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft) covers only ${areaCheck.percentage}% of claimed plot size (${areaCheck.claimed.sqFt} sq ft). In NAQSHAI, mapped plot boundaries must cover at least 90% (${areaCheck.minRequiredSqFt} sq ft) of claimed land area.`,
+          })
+          .eq('id', id)
+          .eq('user_id', user.id);
+
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'rejected',
+            error: `Plot automatically rejected: Drawn boundary area (${areaCheck.calculated.sqFt} sq ft) is only ${areaCheck.percentage}% of claimed ${areaCheck.claimed.sqFt} sq ft. Boundary must cover at least 90% (${areaCheck.minRequiredSqFt} sq ft) of claimed size.`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Flip draft/rejected -> submitted. published_plot_id stays NULL (no public plot

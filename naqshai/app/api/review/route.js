@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 import { draftTitlePreview } from '@/lib/draftProgress';
+import { checkPolygonConflict } from '@/lib/polygonOverlap';
+import { verifyAreaMatch } from '@/lib/areaCalculator';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +85,9 @@ export async function GET(request) {
           }));
         }
 
+        const conflict = checkPolygonConflict(polygon, verifiedRows || []);
+        const areaCheck = verifyAreaMatch(polygon, plot.sizeDimensions || '10 Marla (35x70)', 0.90);
+
         return {
           id: row.id,
           title: draftTitlePreview(fd),
@@ -104,6 +109,8 @@ export async function GET(request) {
           },
           polygon,
           documents,
+          overlapConflict: conflict.hasConflict ? conflict.conflictingPlot : null,
+          areaVerification: areaCheck,
         };
       })
     );

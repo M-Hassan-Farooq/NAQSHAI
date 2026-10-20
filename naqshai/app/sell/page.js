@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,6 +9,8 @@ import { GoogleMapsSafeLoader } from '@/lib/useGoogleMapsLoader';
 import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/Navbar';
 import { useListingDraft } from '@/lib/useListingDraft';
+import { checkPolygonConflict, isPointInsideAnyPlot } from '@/lib/polygonOverlap';
+import { verifyAreaMatch } from '@/lib/areaCalculator';
 
 import UserNav from '@/components/UserNav';
 import {
@@ -32,6 +34,7 @@ import {
   CloudOff,
   RefreshCw,
   ClipboardList,
+  Scale,
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
@@ -129,6 +132,28 @@ export default function SellPlotPage() {
   const [polygonCoordinates, setPolygonCoordinates] = useState([]);
   const mapRef = useRef(null);
   const autocompleteRef = useRef(null);
+  const [existingPlots, setExistingPlots] = useState([]);
+
+  // Fetch verified/registered plots to render them as occupied land and prevent overlaps
+  useEffect(() => {
+    let isMounted = true;
+    async function loadExistingPlots() {
+      try {
+        const res = await fetch('/api/plots?limit=100');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted && Array.isArray(data.plots)) {
+          setExistingPlots(data.plots);
+        }
+      } catch (err) {
+        console.warn('[sell/page] Could not load existing plots:', err);
+      }
+    }
+    loadExistingPlots();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Step 3 State: Uploaded documents — each is { path, name, size } once stored.
   const [uploadedFiles, setUploadedFiles] = useState({
@@ -156,6 +181,18 @@ export default function SellPlotPage() {
 
   const draftEnabled = !checkingAuth && !!session && paramResolved;
   const draft = useListingDraft({ enabled: draftEnabled, resumeId, onHydrate: handleHydrate });
+
+  // Real-time boundary conflict detection against previously registered plots
+  const boundaryConflict = useMemo(() => {
+    if (polygonCoordinates.length < 3) return { hasConflict: false };
+    return checkPolygonConflict(polygonCoordinates, existingPlots, draft?.published_plot_id);
+  }, [polygonCoordinates, existingPlots, draft?.published_plot_id]);
+
+  // Real-time area calculation and 90% claimed area verification
+  const areaVerification = useMemo(() => {
+    if (polygonCoordinates.length < 3) return null;
+    return verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+  }, [polygonCoordinates, plotDetails.sizeDimensions]);
   const {
     ready: draftReady,
     status: draftStatus,
@@ -278,14 +315,38 @@ export default function SellPlotPage() {
     if (!e.latLng) return;
     const lat = Number(e.latLng.lat().toFixed(6));
     const lng = Number(e.latLng.lng().toFixed(6));
-    setPolygonCoordinates((prev) => [...prev, { lat, lng }]);
-  }, []);
+
+    // Reject point if placed directly inside an existing registered plot
+    const conflict = isPointInsideAnyPlot({ lat, lng }, existingPlots, draft?.published_plot_id);
+    if (conflict) {
+      setErrorMessage(
+        `Cannot place boundary point: This location falls inside registered plot "${conflict.title}". Plot boundaries cannot overlap previously registered land.`
+      );
+      return;
+    }
+
+    setErrorMessage('');
+    setPolygonCoordinates((prev) => {
+      const next = [...prev, { lat, lng }];
+      if (next.length >= 3) {
+        const shapeConflict = checkPolygonConflict(next, existingPlots, draft?.published_plot_id);
+        if (shapeConflict.hasConflict) {
+          setErrorMessage(
+            `Boundary Overlap Detected: Your polygon crosses or encloses registered plot "${shapeConflict.conflictingPlot?.title}". Please adjust your boundary.`
+          );
+        }
+      }
+      return next;
+    });
+  }, [existingPlots, draft?.published_plot_id]);
 
   const handleRemoveLastPoint = useCallback(() => {
+    setErrorMessage('');
     setPolygonCoordinates((prev) => prev.slice(0, -1));
   }, []);
 
   const handleClearPolygon = useCallback(() => {
+    setErrorMessage('');
     setPolygonCoordinates([]);
   }, []);
 
@@ -376,9 +437,25 @@ export default function SellPlotPage() {
         return;
       }
     }
-    if (currentStep === 2 && polygonCoordinates.length < 3) {
-      setErrorMessage('Please mark at least 3 boundary points before continuing.');
-      return;
+    if (currentStep === 2) {
+      if (polygonCoordinates.length < 3) {
+        setErrorMessage('Please mark at least 3 boundary points before continuing.');
+        return;
+      }
+      const conflict = checkPolygonConflict(polygonCoordinates, existingPlots, draft?.published_plot_id);
+      if (conflict.hasConflict) {
+        setErrorMessage(
+          `Cannot proceed: Your plot boundary overlaps with existing registered plot "${conflict.conflictingPlot?.title}". Please clear or adjust points to avoid overlap.`
+        );
+        return;
+      }
+      const areaCheck = verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+      if (!areaCheck.isValid) {
+        setErrorMessage(
+          `Cannot proceed: Mapped plot area (${areaCheck.calculated.sqFt.toLocaleString()} sq ft) is only ${areaCheck.percentage}% of your claimed ${areaCheck.claimed.sqFt.toLocaleString()} sq ft (${areaCheck.claimed.raw}). Plot boundary must cover at least 90% (${areaCheck.minRequiredSqFt.toLocaleString()} sq ft) of claimed size to avoid automatic rejection.`
+        );
+        return;
+      }
     }
     const next = Math.min(currentStep + 1, 3);
     saveNow(buildSnapshot(next)); // persist progress on navigation
@@ -928,16 +1005,50 @@ export default function SellPlotPage() {
                             </Autocomplete>
                           </div>
 
+                          {/* Existing Registered Plots (Reserved) */}
+                          {existingPlots.map((ep) => {
+                            const paths = ep.paths || ep.polygon_coordinates || ep.polygonCoordinates;
+                            if (!paths || paths.length < 3) return null;
+                            const isConflictTarget =
+                              boundaryConflict.hasConflict &&
+                              boundaryConflict.conflictingPlot?.id === ep.id;
+                            return (
+                              <Polygon
+                                key={ep.id}
+                                paths={paths}
+                                options={{
+                                  strokeColor: isConflictTarget ? '#dc2626' : '#64748b',
+                                  strokeWeight: isConflictTarget ? 2.5 : 1.5,
+                                  strokeOpacity: 0.85,
+                                  fillColor: isConflictTarget ? '#ef4444' : '#64748b',
+                                  fillOpacity: isConflictTarget ? 0.35 : 0.15,
+                                  clickable: false,
+                                  zIndex: 1,
+                                }}
+                              />
+                            );
+                          })}
+
+                          {/* Candidate Plot Boundary */}
                           {polygonCoordinates.length > 0 && (
                             <Polygon
                               paths={polygonCoordinates}
                               options={{
-                                strokeColor: '#047857',
-                                strokeWeight: 2,
-                                fillColor: '#10b981',
-                                fillOpacity: 0.35,
+                                strokeColor: boundaryConflict.hasConflict
+                                  ? '#dc2626'
+                                  : areaVerification && !areaVerification.isValid
+                                  ? '#d97706'
+                                  : '#047857',
+                                strokeWeight: 2.5,
+                                fillColor: boundaryConflict.hasConflict
+                                  ? '#ef4444'
+                                  : areaVerification && !areaVerification.isValid
+                                  ? '#f59e0b'
+                                  : '#10b981',
+                                fillOpacity: boundaryConflict.hasConflict ? 0.4 : 0.35,
                                 editable: !isReadOnly,
                                 draggable: !isReadOnly,
+                                zIndex: 2,
                               }}
                             />
                           )}
@@ -954,6 +1065,30 @@ export default function SellPlotPage() {
                               }}
                             />
                           ))}
+
+                          {/* Map Legend Overlay */}
+                          <div className="absolute bottom-3 left-3 z-10 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-md border border-slate-200 text-[11px] font-medium text-slate-700 flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 rounded bg-emerald-500/40 border border-emerald-700 inline-block" />
+                              <span>Your Plot {areaVerification?.isValid ? '(Verified)' : ''}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-3 h-3 rounded bg-slate-500/20 border border-slate-500 inline-block" />
+                              <span>Registered Plots (Occupied)</span>
+                            </div>
+                            {areaVerification && !areaVerification.isValid && !boundaryConflict.hasConflict && (
+                              <div className="flex items-center gap-1.5 text-amber-700 font-bold">
+                                <span className="w-3 h-3 rounded bg-amber-500/40 border border-amber-600 inline-block" />
+                                <span>Area Below 90%</span>
+                              </div>
+                            )}
+                            {boundaryConflict.hasConflict && (
+                              <div className="flex items-center gap-1.5 text-red-600 font-bold animate-pulse">
+                                <span className="w-3 h-3 rounded bg-red-500/40 border border-red-600 inline-block" />
+                                <span>Overlap Conflict!</span>
+                              </div>
+                            )}
+                          </div>
                         </GoogleMap>
                       </div>
                     )}
@@ -961,12 +1096,124 @@ export default function SellPlotPage() {
                 )}
               </GoogleMapsSafeLoader>
 
+              {/* Boundary Overlap Warning Banner */}
+              {boundaryConflict.hasConflict && (
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-red-800 text-xs">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-red-900">Plot Boundary Overlap Detected</p>
+                    <p className="text-red-700 leading-relaxed">
+                      Your boundary overlaps with existing registered plot{' '}
+                      <span className="font-semibold underline">
+                        {boundaryConflict.conflictingPlot?.title || boundaryConflict.conflictingPlot?.id}
+                      </span>
+                      . In NAQSHAI, plots cannot be drawn over previously mapped land. Please undo or clear your points to select unclaimed land.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Interactive Area Verification Card */}
+              {polygonCoordinates.length >= 3 && areaVerification && (
+                <div
+                  className={`p-4 rounded-xl border transition ${
+                    areaVerification.isValid
+                      ? 'bg-emerald-50/60 border-emerald-200'
+                      : 'bg-amber-50/70 border-amber-300'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/60">
+                    <div className="flex items-center gap-2">
+                      <Scale className={`w-4 h-4 ${areaVerification.isValid ? 'text-emerald-700' : 'text-amber-700'}`} />
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                        Geospatial Plot Area Verification
+                      </h3>
+                    </div>
+                    <div>
+                      {areaVerification.isValid ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Verified ({areaVerification.percentage}% of Claimed)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-400">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                          Below 90% Threshold ({areaVerification.percentage}%)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-xs">
+                    <div className="bg-white p-3 rounded-lg border border-slate-200/80">
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-0.5">
+                        Claimed Plot Size
+                      </span>
+                      <span className="font-bold text-slate-800 text-sm">
+                        {areaVerification.claimed.raw}
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        ~{areaVerification.claimed.sqFt.toLocaleString()} sq ft ({areaVerification.claimed.marla} Marla)
+                      </p>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-lg border border-slate-200/80">
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-0.5">
+                        Mapped Boundary Area
+                      </span>
+                      <span className={`font-bold text-sm ${areaVerification.isValid ? 'text-emerald-700' : 'text-amber-800'}`}>
+                        ~{areaVerification.calculated.sqFt.toLocaleString()} sq ft
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        ~{areaVerification.calculated.marla} Marla ({Math.round(areaVerification.calculated.sqMeters)} sq m)
+                      </p>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-lg border border-slate-200/80 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1">
+                          <span>Accuracy Ratio</span>
+                          <span className={areaVerification.isValid ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
+                            {areaVerification.percentage}% (Min: 90%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              areaVerification.isValid ? 'bg-emerald-600' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${Math.min(areaVerification.percentage, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {areaVerification.isValid
+                          ? 'Satisfies mandatory verification threshold.'
+                          : `Must cover at least ${areaVerification.minRequiredSqFt.toLocaleString()} sq ft.`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!areaVerification.isValid && (
+                    <div className="mt-3 p-2.5 bg-amber-100/90 border border-amber-300 rounded-lg text-xs text-amber-900 leading-relaxed font-medium">
+                      ⚠️ <strong>Automatic Rejection Guard:</strong> Your drawn polygon covers only{' '}
+                      <strong>{areaVerification.calculated.sqFt.toLocaleString()} sq ft</strong> ({areaVerification.percentage}%), which is below the required 90% threshold ({areaVerification.minRequiredSqFt.toLocaleString()} sq ft) of your claimed {areaVerification.claimed.raw}. Please extend your boundary points to match the full plot area before proceeding.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Captured Boundary Coordinates ({polygonCoordinates.length} Points)
                   </span>
-                  {polygonCoordinates.length >= 3 ? (
+                  {boundaryConflict.hasConflict ? (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 bg-red-100 text-red-800 border border-red-300 rounded-full flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 text-red-600" />
+                      Overlap Conflict
+                    </span>
+                  ) : polygonCoordinates.length >= 3 ? (
                     <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full">
                       Polygon Sealed
                     </span>

@@ -21,6 +21,7 @@ import {
   Building2,
   Trash2,
   ChevronDown,
+  Scale,
 } from 'lucide-react';
 
 // Operator review console. A single operator unlocks it with the shared passphrase
@@ -591,6 +592,40 @@ export default function ReviewPage() {
                         <p className="text-[11px] text-slate-500 mt-2 text-center">
                           {(l.polygon?.length || 0)} boundary point{(l.polygon?.length || 0) === 1 ? '' : 's'}
                         </p>
+                        {l.areaVerification && (
+                          <div className={`mt-2 p-2.5 rounded-lg border text-[11px] ${
+                            l.areaVerification.isValid
+                              ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                              : 'bg-amber-50/90 border-amber-300 text-amber-900'
+                          }`}>
+                            <div className="flex items-center justify-between font-semibold mb-1">
+                              <span className="flex items-center gap-1">
+                                <Scale className="w-3.5 h-3.5 shrink-0" />
+                                <span>Area Verification</span>
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                l.areaVerification.isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-200 text-amber-900'
+                              }`}>
+                                {l.areaVerification.percentage}% (Min: 90%)
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-600 flex justify-between mt-1">
+                              <span>Mapped: ~{l.areaVerification.calculated.sqFt.toLocaleString()} sq ft</span>
+                              <span>Claimed: ~{l.areaVerification.claimed.sqFt.toLocaleString()} sq ft</span>
+                            </div>
+                            {!l.areaVerification.isValid && (
+                              <p className="mt-1.5 font-semibold text-amber-800 text-[10px] leading-tight">
+                                ⚠️ Below 90% threshold ({l.areaVerification.minRequiredSqFt.toLocaleString()} sq ft). Approval blocked.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {l.overlapConflict && (
+                          <div className="mt-2 p-2 bg-red-100/90 border border-red-300 rounded-lg text-red-900 text-[11px] flex items-start gap-1.5 font-medium">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                            <span>Overlaps with <strong>{l.overlapConflict.title}</strong>. Approval is blocked.</span>
+                          </div>
+                        )}
                         {centroid && (
                           <a
                             href={`https://www.google.com/maps/search/?api=1&query=${centroid.lat},${centroid.lng}`}
@@ -650,8 +685,15 @@ export default function ReviewPage() {
                     <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-100">
                       <button
                         onClick={() => handleApprove(l.id)}
-                        disabled={busy}
-                        className="flex-1 sm:flex-none bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                        disabled={busy || !!l.overlapConflict || (l.areaVerification && !l.areaVerification.isValid)}
+                        title={
+                          l.overlapConflict
+                            ? 'Cannot approve: Boundary overlaps with another plot'
+                            : l.areaVerification && !l.areaVerification.isValid
+                            ? 'Cannot approve: Mapped area is below 90% of claimed area'
+                            : 'Approve & publish'
+                        }
+                        className="flex-1 sm:flex-none bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {busy && action.type === 'approve' ? (
                           <Loader2 className="w-4 h-4 animate-spin" />

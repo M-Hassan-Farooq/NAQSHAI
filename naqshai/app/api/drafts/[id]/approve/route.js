@@ -3,6 +3,8 @@ import { GoogleGenAI } from '@google/genai';
 import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
 import { normalizeDocuments, persistListing } from '@/lib/publishListing';
 import { embedPlotRow } from '@/lib/plotEmbedding';
+import { checkPolygonConflict } from '@/lib/polygonOverlap';
+import { verifyAreaMatch } from '@/lib/areaCalculator';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +53,43 @@ export async function POST(request, { params }) {
     }
 
     const dbAdmin = getAdminClient();
+
+    // Safeguard: Check boundary conflict before approving
+    const { data: draftRow } = await dbAdmin
+      .from('listing_drafts')
+      .select('id, form_data')
+      .eq('id', id)
+      .maybeSingle();
+
+    const candidatePolygon = draftRow?.form_data?.polygonCoordinates;
+    if (Array.isArray(candidatePolygon) && candidatePolygon.length >= 3) {
+      const { data: existingPlots } = await dbAdmin
+        .from('plots')
+        .select('id, title, polygon_coordinates');
+
+      const conflict = checkPolygonConflict(candidatePolygon, existingPlots || []);
+      if (conflict.hasConflict) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot approve listing: Boundary overlaps with existing registered plot "${conflict.conflictingPlot?.title || conflict.conflictingPlot?.id}". Overlapping plots are not permitted.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const plotDetails = draftRow?.form_data?.plotDetails || {};
+      const areaCheck = verifyAreaMatch(candidatePolygon, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+      if (!areaCheck.isValid) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot approve listing: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft, ${areaCheck.percentage}%) is below the required 90% threshold (${areaCheck.minRequiredSqFt} sq ft) of claimed ${areaCheck.claimed.sqFt} sq ft.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     const { data, error } = await dbAdmin.rpc('approve_listing', { p_draft_id: id });
 
