@@ -114,6 +114,7 @@ export async function GET(request) {
           overlapConflict: conflict.hasConflict ? conflict.conflictingPlot : null,
           areaVerification: areaCheck,
           regulatory,
+          aiVerification: fd.aiVerification || null,
         };
       })
     );

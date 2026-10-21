@@ -22,6 +22,8 @@ import {
   Trash2,
   ChevronDown,
   Scale,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 
 // Operator review console. A single operator unlocks it with the shared passphrase
@@ -111,6 +113,7 @@ export default function ReviewPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [notice, setNotice] = useState('');
   const [removalTarget, setRemovalTarget] = useState(null);
+  const [verifyingId, setVerifyingId] = useState(null);
 
   // The passphrase we authenticate with lives in a ref-like state that we never
   // render into an input, so it is not echoed back to the screen.
@@ -241,6 +244,32 @@ export default function ReviewPage() {
       setError('Network error while rejecting the listing.');
     } finally {
       setAction({ id: null, type: null });
+    }
+  };
+
+  const handleRunAiVerification = async (id) => {
+    setVerifyingId(id);
+    setError('');
+    try {
+      const res = await fetch(`/api/review/${id}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${passphrase}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success && json.aiVerification) {
+        setListings((prev) =>
+          prev.map((item) =>
+            item.id === id ? { ...item, aiVerification: json.aiVerification } : item
+          )
+        );
+        setNotice('AI Document Verification complete.');
+      } else {
+        setError(json.error || 'AI verification failed.');
+      }
+    } catch {
+      setError('Network error while running AI verification.');
+    } finally {
+      setVerifyingId(null);
     }
   };
 
@@ -469,6 +498,17 @@ export default function ReviewPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {l.aiVerification && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          l.aiVerification.overallStatus === 'VERIFIED'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : l.aiVerification.overallStatus === 'CAUTION'
+                            ? 'bg-amber-50 text-amber-900 border-amber-300'
+                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                        }`}>
+                          AI: {l.aiVerification.overallStatus} ({l.aiVerification.confidenceScore}%)
+                        </span>
+                      )}
                       <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-sky-50 text-sky-800 border-sky-200">
                         Awaiting review
                       </span>
@@ -641,6 +681,170 @@ export default function ReviewPage() {
                           </div>
                         ) : (
                           <p className="text-xs text-slate-400">No documents attached.</p>
+                        )}
+                      </div>
+
+                      {/* AI Document Verification Audit Card */}
+                      <div className="pt-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                              <Bot className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold uppercase tracking-wider text-slate-800 block">
+                                AI Document Audit
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                Multimodal inspection via Gemini
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {l.aiVerification ? (
+                              <span
+                                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  l.aiVerification.overallStatus === 'VERIFIED'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : l.aiVerification.overallStatus === 'CAUTION'
+                                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                    : 'bg-rose-50 text-rose-800 border-rose-200'
+                                }`}
+                              >
+                                {l.aiVerification.overallStatus} ({l.aiVerification.confidenceScore}% Confidence)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                                Pending Analysis
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRunAiVerification(l.id)}
+                              disabled={verifyingId === l.id}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                              title="Run or refresh AI document verification"
+                            >
+                              {verifyingId === l.id ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Auditing…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>{l.aiVerification ? 'Re-verify' : 'Run AI Audit'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {l.aiVerification ? (
+                          <div className="space-y-2.5 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                            <p className="text-[11px] text-slate-700 leading-relaxed font-medium bg-white p-2.5 rounded-lg border border-slate-200/70">
+                              <span className="font-bold text-slate-900">Summary: </span>
+                              {l.aiVerification.summary}
+                            </p>
+
+                            {/* Side-by-side comparison table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-[11px] border-collapse bg-white rounded-lg overflow-hidden border border-slate-200">
+                                <thead>
+                                  <tr className="bg-slate-100/80 text-slate-600 border-b border-slate-200 font-semibold text-[10px] uppercase">
+                                    <th className="p-2">Verification Item</th>
+                                    <th className="p-2">Declared Listing</th>
+                                    <th className="p-2">Extracted Document</th>
+                                    <th className="p-2">Match Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  <tr>
+                                    <td className="p-2 font-medium text-slate-700">Seller Identity (CNIC)</td>
+                                    <td className="p-2 text-slate-600">{l.seller.fullName || '—'}</td>
+                                    <td className="p-2 text-slate-800 font-mono">
+                                      {l.aiVerification.cnicAudit?.extractedName || 'Not detected'}
+                                      {l.aiVerification.cnicAudit?.extractedCnic ? ` (${l.aiVerification.cnicAudit.extractedCnic})` : ''}
+                                    </td>
+                                    <td className="p-2">
+                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                        l.aiVerification.cnicAudit?.nameMatch
+                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {l.aiVerification.cnicAudit?.nameMatch ? '✓ Verified' : '⚠️ Discrepancy'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="p-2 font-medium text-slate-700">Plot Number (Allotment)</td>
+                                    <td className="p-2 text-slate-600">{l.plot.plotNumber || '—'}</td>
+                                    <td className="p-2 text-slate-800 font-mono">
+                                      {l.aiVerification.allotmentAudit?.plotNumber || 'Not detected'}
+                                    </td>
+                                    <td className="p-2">
+                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                        l.aiVerification.allotmentAudit?.plotMatch
+                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {l.aiVerification.allotmentAudit?.plotMatch ? '✓ Verified' : '⚠️ Discrepancy'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="p-2 font-medium text-slate-700">Society / Sector</td>
+                                    <td className="p-2 text-slate-600">{l.plot.society || '—'}</td>
+                                    <td className="p-2 text-slate-800">
+                                      {l.aiVerification.allotmentAudit?.society || 'Not detected'}
+                                    </td>
+                                    <td className="p-2">
+                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                        l.aiVerification.allotmentAudit?.societyMatch
+                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {l.aiVerification.allotmentAudit?.societyMatch ? '✓ Verified' : '⚠️ Review'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="p-2 font-medium text-slate-700">Allottee Matches CNIC</td>
+                                    <td className="p-2 text-slate-600">Allottee Title</td>
+                                    <td className="p-2 text-slate-800 font-mono">
+                                      {l.aiVerification.allotmentAudit?.allotteeName || '—'}
+                                    </td>
+                                    <td className="p-2">
+                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                        l.aiVerification.allotmentAudit?.ownerMatchesCnic
+                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {l.aiVerification.allotmentAudit?.ownerMatchesCnic ? '✓ Verified' : '⚠️ Unconfirmed'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Red Flags / Quality Alerts */}
+                            {l.aiVerification.redFlags && l.aiVerification.redFlags.length > 0 && (
+                              <div className="space-y-1">
+                                {l.aiVerification.redFlags.map((flag, idx) => (
+                                  <div key={idx} className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg flex items-start gap-1.5">
+                                    <span className="shrink-0 mt-0.5">⚠️</span>
+                                    <span>{flag}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-3.5 rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                            <Sparkles className="w-4 h-4 text-emerald-600" />
+                            <span>AI document audit has not been generated yet. Click &apos;Run AI Audit&apos; above to verify uploaded files.</span>
+                          </div>
                         )}
                       </div>
                     </div>

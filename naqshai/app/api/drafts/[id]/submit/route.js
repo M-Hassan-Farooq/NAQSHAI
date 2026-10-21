@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getUserFromRequest, getUserClient } from '@/lib/authServer';
+import { getUserFromRequest, getUserClient, getAdminClient } from '@/lib/authServer';
 import { checkPolygonConflict } from '@/lib/polygonOverlap';
 import { verifyAreaMatch } from '@/lib/areaCalculator';
+import { verifyListingDocuments } from '@/lib/aiDocumentVerifier';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,6 +129,23 @@ export async function POST(request, { params }) {
         { status: 500 }
       );
     }
+
+    // Best-effort asynchronous AI document verification
+    (async () => {
+      try {
+        const dbAdmin = getAdminClient();
+        const aiVerification = await verifyListingDocuments({ formData: fd, dbAdmin });
+        await dbAdmin
+          .from('listing_drafts')
+          .update({
+            form_data: { ...fd, aiVerification },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+      } catch (bgErr) {
+        console.warn('[drafts/submit] Background AI document verification error:', bgErr?.message || bgErr);
+      }
+    })();
 
     return NextResponse.json({ success: true, status: updated.status }, { status: 200 });
   } catch (err) {
