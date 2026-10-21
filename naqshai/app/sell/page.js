@@ -44,18 +44,28 @@ const SELL_MAP_OPTIONS = {
   streetViewControl: false,
   mapTypeControl: true,
 };
-const PLOT_SIZE_OPTIONS = [
+const RESIDENTIAL_PLOT_SIZE_OPTIONS = [
   { label: '3 Marla (20x34)', value: '3 Marla (20x34)' },
   { label: '5 Marla (25x50)', value: '5 Marla (25x50)' },
   { label: '7 Marla (30x55)', value: '7 Marla (30x55)' },
   { label: '10 Marla (35x70)', value: '10 Marla (35x70)' },
   { label: '1 Kanal (50x90)', value: '1 Kanal (50x90)' },
   { label: '2 Kanal (75x120)', value: '2 Kanal (75x120)' },
+];
+const COMMERCIAL_PLOT_SIZE_OPTIONS = [
   { label: 'Commercial 2 Marla (20x25)', value: 'Commercial 2 Marla (20x25)' },
   { label: 'Commercial 4 Marla (30x30)', value: 'Commercial 4 Marla (30x30)' },
   { label: 'Commercial 8 Marla (40x45)', value: 'Commercial 8 Marla (40x45)' },
   { label: 'Commercial 10 Marla (50x45)', value: 'Commercial 10 Marla (50x45)' },
 ];
+const DEFAULT_PLOT_SIZE_BY_CATEGORY = {
+  Residential: '10 Marla (35x70)',
+  Commercial: 'Commercial 4 Marla (30x30)',
+};
+
+function getPlotSizeOptions(category) {
+  return category === 'Commercial' ? COMMERCIAL_PLOT_SIZE_OPTIONS : RESIDENTIAL_PLOT_SIZE_OPTIONS;
+}
 
 
 function formatPkr(num) {
@@ -184,7 +194,20 @@ export default function SellPlotPage() {
   const handleHydrate = useCallback((formData, meta) => {
     if (!formData || meta?.isNew) return;
     if (formData.sellerInfo) setSellerInfo((prev) => ({ ...prev, ...formData.sellerInfo }));
-    if (formData.plotDetails) setPlotDetails((prev) => ({ ...prev, ...formData.plotDetails }));
+    if (formData.plotDetails) {
+      setPlotDetails((prev) => {
+        const hydratedPlotDetails = { ...prev, ...formData.plotDetails };
+        const category = hydratedPlotDetails.category === 'Commercial' ? 'Commercial' : 'Residential';
+        const sizeOptions = getPlotSizeOptions(category);
+        return {
+          ...hydratedPlotDetails,
+          category,
+          sizeDimensions: sizeOptions.some(({ value }) => value === hydratedPlotDetails.sizeDimensions)
+            ? hydratedPlotDetails.sizeDimensions
+            : DEFAULT_PLOT_SIZE_BY_CATEGORY[category],
+        };
+      });
+    }
     if (Array.isArray(formData.polygonCoordinates)) setPolygonCoordinates(formData.polygonCoordinates);
     if (formData.uploadedFiles) setUploadedFiles((prev) => ({ ...prev, ...formData.uploadedFiles }));
     const step = meta?.currentStep;
@@ -875,7 +898,7 @@ export default function SellPlotPage() {
                       value={plotDetails.sizeDimensions}
                       onChange={(e) => setPlotDetails({ ...plotDetails, sizeDimensions: e.target.value })}
                     >
-                      {PLOT_SIZE_OPTIONS.map(({ label, value }) => (
+                      {getPlotSizeOptions(plotDetails.category).map(({ label, value }) => (
                         <option key={value} value={value}>{label}</option>
                       ))}
                     </select>
@@ -888,7 +911,14 @@ export default function SellPlotPage() {
                     <select
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
                       value={plotDetails.category}
-                      onChange={(e) => setPlotDetails({ ...plotDetails, category: e.target.value })}
+                      onChange={(e) => {
+                        const category = e.target.value;
+                        const sizeOptions = getPlotSizeOptions(category);
+                        const sizeDimensions = sizeOptions.some(({ value }) => value === plotDetails.sizeDimensions)
+                          ? plotDetails.sizeDimensions
+                          : DEFAULT_PLOT_SIZE_BY_CATEGORY[category];
+                        setPlotDetails({ ...plotDetails, category, sizeDimensions });
+                      }}
                     >
                       <option value="Residential">Residential</option>
                       <option value="Commercial">Commercial</option>
