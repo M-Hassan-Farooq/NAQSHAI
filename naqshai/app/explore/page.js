@@ -70,12 +70,14 @@ const MAX_AUTO_ZOOM = 18;
 const POLYGON_MIN_ZOOM = 16;
 
 // Programmatically generated green "availability" pin (SVG data URI — no image asset).
-function availabilityPinDataUri() {
+function availabilityPinDataUri(isSelected = false) {
+  const fill = isSelected ? '#08785d' : '#173a32';
+  const stroke = isSelected ? '#a7f3d0' : '#ffffff';
+  const center = isSelected ? '#ffffff' : '#08785d';
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52">' +
-    '<path d="M20 1C9.5 1 1 9.5 1 20c0 13.5 19 31 19 31s19-17.5 19-31C39 9.5 30.5 1 20 1z" fill="#059669" stroke="#ffffff" stroke-width="2.5"/>' +
-    '<circle cx="20" cy="20" r="7.5" fill="#ffffff"/>' +
-    '<circle cx="20" cy="20" r="3.5" fill="#059669"/>' +
+    `<path d="M20 1C9.5 1 1 9.5 1 20c0 13.5 19 31 19 31s19-17.5 19-31C39 9.5 30.5 1 20 1z" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected ? 3.5 : 2.5}"/>` +
+    `<path d="M20 11 28 16v8l-8 5-8-5v-8z" fill="${center}" stroke="${fill}" stroke-width="1.5"/>` +
     '</svg>';
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
@@ -85,8 +87,8 @@ function clusterBubbleDataUri(size) {
   const c = size / 2;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
-    `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="#059669" fill-opacity="0.22"/>` +
-    `<circle cx="${c}" cy="${c}" r="${c - 9}" fill="#059669" stroke="#ffffff" stroke-width="3"/>` +
+    `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="#173a32" fill-opacity="0.16"/>` +
+    `<circle cx="${c}" cy="${c}" r="${c - 9}" fill="#173a32" stroke="#ffffff" stroke-width="3"/>` +
     '</svg>';
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
@@ -103,11 +105,11 @@ const PlotPolygon = React.memo(function PlotPolygon({ plot, isSelected, onSelect
 
   const options = useMemo(
     () => ({
-      strokeColor: isSelected ? '#047857' : '#059669',
+      strokeColor: isSelected ? '#173a32' : '#42695e',
       strokeOpacity: 0.95,
-      strokeWeight: isSelected ? 3 : 2,
-      fillColor: isSelected ? '#059669' : '#10b981',
-      fillOpacity: isSelected ? 0.45 : isHovered ? 0.35 : 0.22,
+      strokeWeight: isSelected ? 3.5 : isHovered ? 2.5 : 1.75,
+      fillColor: isSelected ? '#08785d' : '#3f8b70',
+      fillOpacity: isSelected ? 0.38 : isHovered ? 0.25 : 0.14,
       clickable: true,
       zIndex: isSelected ? 100 : isHovered ? 50 : 1,
     }),
@@ -373,6 +375,7 @@ function ExploreContent() {
   const plotParamRef = useRef(plotParam);
   const clustererRef = useRef(null);
   const markersRef = useRef([]);
+  const markerByPlotIdRef = useRef(new Map());
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -480,6 +483,13 @@ function ExploreContent() {
     }
   }, [isMobile]);
 
+  const mapFilteredPlots = useMemo(() => {
+    if (activeCityFilter === 'ALL') return plots;
+    return plots.filter(
+      (plot) => (plot.city || '').trim().toLowerCase() === activeCityFilter.toLowerCase()
+    );
+  }, [plots, activeCityFilter]);
+
   // Auto-fit camera once
   useEffect(() => {
     if (!map || plotsLoading || didFitRef.current || selectedPlot) return;
@@ -502,21 +512,24 @@ function ExploreContent() {
     if (!showMarkerLayer) return undefined;
 
     const g = window.google;
-    const markerPlots = plots.filter((p) => p.center);
+    const markerPlots = mapFilteredPlots.filter((p) => p.center);
     if (!markerPlots.length) return undefined;
 
     const { MarkerClusterer, SuperClusterAlgorithm } = GoogleMapsMarkerClusterer;
-
-    const pinIcon = {
-      url: availabilityPinDataUri(),
-      scaledSize: new g.maps.Size(36, 47),
-      anchor: new g.maps.Point(18, 47),
-      labelOrigin: new g.maps.Point(18, 18),
-    };
+    const markerByPlotId = markerByPlotIdRef.current;
 
     const markers = markerPlots.map((plot) => {
-      const marker = new g.maps.Marker({ position: plot.center, icon: pinIcon, title: plot.name });
+      const marker = new g.maps.Marker({
+        position: plot.center,
+        icon: {
+          url: availabilityPinDataUri(),
+          scaledSize: new g.maps.Size(36, 47),
+          anchor: new g.maps.Point(18, 47),
+        },
+        title: plot.name,
+      });
       marker.addListener('click', () => handleSelectPlot(plot));
+      markerByPlotId.set(plot.id, marker);
       return marker;
     });
 
@@ -558,8 +571,21 @@ function ExploreContent() {
       });
       clustererRef.current = null;
       markersRef.current = [];
+      markerByPlotId.clear();
     };
-  }, [map, plots, showMarkerLayer, handleSelectPlot]);
+  }, [map, mapFilteredPlots, showMarkerLayer, handleSelectPlot]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.google?.maps) return;
+    markerByPlotIdRef.current.forEach((marker, plotId) => {
+      marker.setIcon({
+        url: availabilityPinDataUri(plotId === selectedPlot?.id),
+        scaledSize: new window.google.maps.Size(36, 47),
+        anchor: new window.google.maps.Point(18, 47),
+      });
+      marker.setZIndex(plotId === selectedPlot?.id ? 1000 : undefined);
+    });
+  }, [selectedPlot?.id, showMarkerLayer]);
 
   // Initialize AutocompleteService and PlacesService when map is ready
   useEffect(() => {
@@ -880,37 +906,21 @@ function ExploreContent() {
                     : 'relative z-10 shrink-0'
                 }`}
               >
-                {/* Sidebar Header with Internal Filter & City Tabs */}
-                <div className="p-3.5 border-b border-slate-200 space-y-3 bg-slate-50/70 shrink-0">
-                  {/* Search Plots Input & Width Presets */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-xs focus-within:border-emerald-500 transition">
-                      <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
-                      <input
-                        type="text"
-                        placeholder="Search by society, size, or plot ID..."
-                        value={sidebarSearchQuery}
-                        onChange={(e) => setSidebarSearchQuery(e.target.value)}
-                        className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
-                      />
-                      {sidebarSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setSidebarSearchQuery('')}
-                          aria-label="Clear search query"
-                          className="text-slate-400 hover:text-slate-600"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                {/* Inventory Header */}
+                <div className="p-4 border-b border-border space-y-3 bg-surface shrink-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-ink">Plot inventory</p>
+                      <p className="text-xs text-muted mt-0.5">
+                        {filteredPlots.length} {filteredPlots.length === 1 ? 'result' : 'results'}
+                        {activeCityFilter !== 'ALL' ? ` in ${activeCityFilter}` : ''}
+                      </p>
                     </div>
-
-                    {/* Width Preset Buttons (S / M / L) */}
-                    <div className="hidden sm:flex items-center gap-0.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs shrink-0">
+                    <div className="hidden sm:flex items-center gap-0.5 bg-surface-subtle border border-border p-1 rounded-control shrink-0">
                       {[
-                        { label: 'S', width: 320, title: 'Compact width (320px)' },
-                        { label: 'M', width: 400, title: 'Default width (400px)' },
-                        { label: 'L', width: 520, title: 'Wide width (520px)' },
+                        { label: 'S', width: 320, title: 'Compact list width (320px)' },
+                        { label: 'M', width: 400, title: 'Default list width (400px)' },
+                        { label: 'L', width: 520, title: 'Wide list width (520px)' },
                       ].map((preset) => (
                         <button
                           key={preset.label}
@@ -924,10 +934,12 @@ function ExploreContent() {
                               setTimeout(() => window.google.maps.event.trigger(mapRef.current, 'resize'), 250);
                             }
                           }}
-                          className={`w-5 h-6 flex items-center justify-center rounded text-[10px] font-mono font-bold transition ${
+                          aria-label={preset.title}
+                          aria-pressed={sidebarWidth === preset.width}
+                          className={`min-w-8 min-h-8 px-2 rounded text-xs font-mono font-bold transition ui-focus-ring ${
                             sidebarWidth === preset.width
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
+                              ? 'bg-action text-white'
+                              : 'text-muted hover:text-ink hover:bg-surface'
                           }`}
                           title={preset.title}
                         >
@@ -937,36 +949,26 @@ function ExploreContent() {
                     </div>
                   </div>
 
-                  {/* City Filter Pills */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setActiveCityFilter('ALL')}
-                      className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition whitespace-nowrap ${
-                        activeCityFilter === 'ALL'
-                          ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                      }`}
-                    >
-                      All Cities ({plots.length})
-                    </button>
-                    {uniqueCities.map((city) => {
-                      const count = plots.filter((p) => (p.city || '').trim().toLowerCase() === city.toLowerCase()).length;
-                      return (
+                  <div className="relative flex items-center bg-surface-subtle border border-border rounded-control px-3 py-2 focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15 transition">
+                      <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Search by society, size, or plot ID..."
+                        value={sidebarSearchQuery}
+                        onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                        aria-label="Search listings"
+                        className="w-full min-w-0 text-sm text-ink placeholder:text-muted outline-none bg-transparent"
+                      />
+                      {sidebarSearchQuery && (
                         <button
-                          key={city}
                           type="button"
-                          onClick={() => setActiveCityFilter(city)}
-                          className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition whitespace-nowrap ${
-                            activeCityFilter.toLowerCase() === city.toLowerCase()
-                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                          }`}
+                          onClick={() => setSidebarSearchQuery('')}
+                          aria-label="Clear search query"
+                          className="p-1 text-muted hover:text-ink rounded-control ui-focus-ring"
                         >
-                          {city} ({count})
+                          <X className="w-3.5 h-3.5" />
                         </button>
-                      );
-                    })}
+                      )}
                   </div>
                 </div>
 
@@ -1038,82 +1040,71 @@ function ExploreContent() {
                               <div
                                 key={plot.id}
                                 aria-label={`${plot.name}, ${plot.price}, ${plot.city}`}
-                                className={`rounded-xl border p-3.5 transition flex flex-col justify-between space-y-2.5 shadow-xs ${
+                                className={`rounded-card border p-4 transition flex flex-col justify-between space-y-3 ${
                                   isSelected
-                                    ? 'border-emerald-600 bg-emerald-50/20 ring-1 ring-emerald-500/30'
-                                    : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm'
+                                    ? 'border-action bg-action-soft/50 ring-1 ring-action/20'
+                                    : 'border-border bg-surface hover:border-action/50'
                                 }`}
                               >
-                                <div>
-                                  {/* Top Bar: Plot ID + Price + Favorite */}
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                                      {plot.id}
-                                    </span>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <span className="text-xs font-extrabold text-emerald-700 whitespace-nowrap bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                        {plot.price}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          toggleFavorite(plot.id, plot);
-                                        }}
-                                        aria-label={isFavorite(plot.id) ? `Remove ${plot.name} from favorites` : `Save ${plot.name} to favorites`}
-                                        className="p-1 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition cursor-pointer"
-                                        title={isFavorite(plot.id) ? 'Remove from favorites' : 'Save to favorites'}
-                                      >
-                                        <Heart
-                                          className={`w-3.5 h-3.5 transition-transform active:scale-125 ${
-                                            isFavorite(plot.id)
-                                              ? 'fill-rose-500 text-rose-500'
-                                              : 'text-slate-400 hover:text-rose-500'
-                                          }`}
-                                        />
-                                      </button>
+                                <div className="space-y-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-lg font-bold leading-tight text-ink">{plot.price}</p>
+                                      <p className="mt-1 text-sm font-semibold text-action-hover">
+                                        {plot.details?.size || 'Size not provided'}
+                                      </p>
                                     </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleFavorite(plot.id, plot);
+                                      }}
+                                      aria-label={isFavorite(plot.id) ? `Remove ${plot.name} from favorites` : `Save ${plot.name} to favorites`}
+                                      aria-pressed={isFavorite(plot.id)}
+                                      className="min-w-10 min-h-10 flex items-center justify-center rounded-control text-muted hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer ui-focus-ring"
+                                      title={isFavorite(plot.id) ? 'Remove from favorites' : 'Save to favorites'}
+                                    >
+                                      <Heart
+                                        className={`w-5 h-5 transition-transform active:scale-125 ${
+                                          isFavorite(plot.id)
+                                            ? 'fill-rose-500 text-rose-500'
+                                            : 'text-current'
+                                        }`}
+                                      />
+                                    </button>
                                   </div>
 
-                                  {/* Plot Name */}
-                                  <h4 className="font-bold text-xs text-slate-900 mt-1.5 leading-snug">
-                                    {plot.name}
-                                  </h4>
+                                  <div>
+                                    <h4 className="text-sm font-semibold text-ink leading-snug">{plot.name}</h4>
+                                    <p className="mt-1 flex items-start gap-1.5 text-sm text-muted">
+                                      <MapPin className="mt-0.5 w-4 h-4 text-action shrink-0" />
+                                      <span>{plot.society ? `${plot.society}, ` : ''}{plot.city}</span>
+                                    </p>
+                                  </div>
 
-                                  {/* Location */}
-                                  <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-                                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                                    <span>
-                                      {plot.society ? `${plot.society}, ` : ''}{plot.city}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                    <span className={plot.isVerified ? 'ui-badge-success' : 'ui-badge-neutral'}>
+                                      <ShieldCheck className="w-3.5 h-3.5" />
+                                      {plot.isVerified ? 'NAQSHAI verified' : 'Not verified'}
                                     </span>
-                                  </p>
-
-                                  {/* Size */}
-                                  <div className="mt-2 flex items-center gap-1.5 text-[10px]">
-                                    <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                      Size: {plot.details?.size || 'Plot'}
-                                    </span>
+                                    <span className="font-mono text-xs text-muted">{plot.id}</span>
                                   </div>
                                 </div>
 
                                 {/* Expandable Remaining Details */}
                                 {isExpanded && (
-                                  <div className="pt-2 border-t border-slate-100 space-y-2 animate-in fade-in duration-150">
+                                  <div className="pt-3 border-t border-border space-y-3 animate-in fade-in duration-150">
                                     {/* Verification & Regulatory Clearance */}
                                     <div className="flex flex-wrap items-center gap-1.5">
-                                      {plot.isVerified && (
-                                        <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                          Verified
-                                        </span>
-                                      )}
                                       {plot.regulatory && (
                                         <span
-                                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                                          className={`ui-badge ${
                                             plot.regulatory.tier === 'unauthorized'
-                                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                              ? 'ui-badge-caution'
                                               : plot.regulatory.tier === 'conditional'
-                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              ? 'ui-badge-caution'
+                                              : 'ui-badge-success'
                                           }`}
                                           title={`${plot.regulatory.statusLabel} (${plot.regulatory.authority})`}
                                         >
@@ -1121,22 +1112,22 @@ function ExploreContent() {
                                         </span>
                                       )}
                                       {plot.details?.category && (
-                                        <span className="text-[10px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                        <span className="ui-badge-neutral">
                                           {plot.details.category}
                                         </span>
                                       )}
                                     </div>
 
                                     {/* Environmental & Risk Badges */}
-                                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                    <div className="space-y-1.5 text-sm">
                                       {!isFloodPending && (
                                         <span
-                                          className={`px-2 py-0.5 rounded border font-medium ${
+                                          className={`inline-flex mr-1.5 px-2.5 py-1 rounded-control border font-medium ${
                                             isHighFlood
-                                              ? 'bg-red-50 text-red-800 border-red-200'
+                                              ? 'bg-danger-soft text-danger border-danger/20'
                                               : isModerateFlood
-                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              ? 'bg-caution-soft text-caution border-caution/20'
+                                              : 'bg-action-soft text-action-hover border-action/20'
                                           }`}
                                         >
                                           Flood: {floodVal}
@@ -1144,24 +1135,24 @@ function ExploreContent() {
                                       )}
                                       {!isNoisePending && (
                                         <span
-                                          className={`px-2 py-0.5 rounded border font-medium ${
+                                          className={`inline-flex mr-1.5 px-2.5 py-1 rounded-control border font-medium ${
                                             isHighNoise
-                                              ? 'bg-red-50 text-red-800 border-red-200'
+                                              ? 'bg-danger-soft text-danger border-danger/20'
                                               : isQuietNoise
-                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                                              ? 'bg-action-soft text-action-hover border-action/20'
+                                              : 'bg-caution-soft text-caution border-caution/20'
                                           }`}
                                         >
                                           Noise: {noiseVal}
                                         </span>
                                       )}
                                       {!isElevPending && (
-                                        <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                        <span className="inline-flex px-2.5 py-1 rounded-control border border-border bg-surface-subtle text-ink font-medium">
                                           Elevation: {elevVal}
                                         </span>
                                       )}
                                       {isFloodPending && isNoisePending && isElevPending && (
-                                        <span className="font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                        <span className="inline-flex px-2.5 py-1 rounded-control border border-border bg-surface-subtle text-muted font-medium">
                                           Survey Pending
                                         </span>
                                       )}
@@ -1170,19 +1161,19 @@ function ExploreContent() {
                                 )}
 
                                 {/* Action Buttons: "See on Map" + "Show Details / Hide Details" */}
-                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                <div className="pt-3 border-t border-border flex items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handleSeeOnMap(plot)}
                                     aria-label={`View ${plot.name} on the map`}
-                                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                                    className={`flex-1 min-h-10 px-3 rounded-control text-sm font-semibold flex items-center justify-center gap-2 transition cursor-pointer ui-focus-ring ${
                                       isSelected
-                                        ? 'bg-emerald-700 text-white shadow-xs'
-                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                        ? 'bg-action-hover text-white'
+                                        : 'bg-action text-white hover:bg-action-hover'
                                     }`}
                                   >
                                     <MapPin className="w-3.5 h-3.5" />
-                                    <span>{isSelected ? 'Viewing on Map' : 'See on Map'}</span>
+                                    <span>{isSelected ? 'On map' : 'View on map'}</span>
                                   </button>
 
                                   <button
@@ -1190,10 +1181,10 @@ function ExploreContent() {
                                     onClick={() => togglePlotDetails(plot.id)}
                                     aria-expanded={isExpanded}
                                     aria-label={isExpanded ? `Hide details for ${plot.name}` : `Show details for ${plot.name}`}
-                                    className="py-1.5 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition flex items-center gap-1 shrink-0 cursor-pointer"
+                                    className="min-h-10 px-3 rounded-control text-sm font-medium text-ink hover:bg-surface-subtle border border-border transition flex items-center gap-1.5 shrink-0 cursor-pointer ui-focus-ring"
                                     title={isExpanded ? 'Hide details' : 'Show details'}
                                   >
-                                    <span>{isExpanded ? 'Hide Details' : 'Show Details'}</span>
+                                    <span>{isExpanded ? 'Less' : 'Details'}</span>
                                     {isExpanded ? (
                                       <ChevronUp className="w-3.5 h-3.5" />
                                     ) : (
@@ -1226,22 +1217,22 @@ function ExploreContent() {
 
               {/* RIGHT AREA: Interactive Google Maps Viewport */}
               <main className="flex-1 h-full relative overflow-hidden">
-                {/* Floating Google Places Search Bar Overlay (Centered horizontally over map section) */}
+                {/* Compact search and map-control toolbar */}
                 <div
-                  className={`absolute top-4 z-10 flex items-center justify-center gap-2 max-w-xs sm:max-w-md md:max-w-lg px-4 transition-[left,right,transform] duration-300 ${
-                    selectedPlot && isSidebarOpen && !isMobile
-                      ? 'left-0 right-96 w-auto translate-x-0'
-                      : 'left-1/2 right-auto w-full -translate-x-1/2'
+                  role="group"
+                  aria-label="Map search and controls"
+                  className={`absolute top-3 left-3 right-3 z-20 transition-[right] duration-200 ${
+                    selectedPlot && !isMobile ? 'lg:right-[25rem]' : ''
                   }`}
                 >
-                  {/* Hideable Places Search Box with Dropdown Predictions */}
-                  {isPlacesSearchOpen ? (
-                    <div ref={placesSearchContainerRef} className="flex-1 relative w-full">
+                    <div className="flex flex-wrap items-center gap-2 rounded-panel border border-border bg-surface/95 p-2 shadow-raised backdrop-blur-md">
+                      {isPlacesSearchOpen ? (
+                        <div ref={placesSearchContainerRef} className="relative min-w-[min(100%,16rem)] flex-1 basis-64">
                       <form
                         onSubmit={handlePlacesSearchSubmit}
-                        className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3.5 py-2 flex items-center gap-2 transition-all focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20"
+                        className="flex min-h-11 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 transition focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15"
                       >
-                        <Compass className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <Compass className="w-4 h-4 text-action shrink-0" />
                         <input
                           type="text"
                           value={placesQuery}
@@ -1249,48 +1240,51 @@ function ExploreContent() {
                           onFocus={() => {
                             if (placesPredictions.length > 0) setIsPlacesDropdownOpen(true);
                           }}
-                          placeholder="Search real-world locations, landmarks, cities..."
-                          className="w-full text-xs text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                          aria-label="Search places and landmarks"
+                          placeholder="Search places, societies, landmarks"
+                          className="w-full min-w-0 bg-transparent py-2 text-sm text-ink placeholder:text-muted outline-none"
                         />
                         {isPlacesLoading && (
-                          <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
+                          <Loader2 className="w-4 h-4 text-action animate-spin shrink-0" />
                         )}
                         {placesQuery && (
                           <button
                             type="button"
                             onClick={handleClearPlacesSearch}
-                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                            title="Clear search"
+                            aria-label="Clear places search"
+                            className="min-w-8 min-h-8 flex items-center justify-center text-muted hover:text-ink rounded-control ui-focus-ring"
+                            title="Clear places search"
                           >
-                            <X className="w-3.5 h-3.5" />
+                            <X className="w-4 h-4" />
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => setIsPlacesSearchOpen(false)}
-                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded border-l border-slate-200 pl-1.5 ml-0.5 cursor-pointer"
-                          title="Hide Google Places search bar"
+                          aria-label="Hide places search"
+                          className="min-w-8 min-h-8 flex items-center justify-center text-muted hover:text-ink border-l border-border pl-2 ml-1 rounded-control ui-focus-ring"
+                          title="Hide places search"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       </form>
 
                       {/* Dropdown Suggestions UI */}
                       {isPlacesDropdownOpen && placesPredictions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white/98 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
+                        <div className="absolute top-full left-0 right-0 mt-2 max-h-72 overflow-y-auto rounded-panel border border-border bg-surface shadow-overlay z-50 divide-y divide-border">
                           {placesPredictions.map((pred) => (
                             <button
                               key={pred.place_id}
                               type="button"
                               onClick={() => handleSelectPrediction(pred)}
-                              className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-50/80 transition flex items-start gap-2.5 group cursor-pointer"
+                              className="w-full min-h-12 text-left px-3.5 py-2.5 hover:bg-action-soft transition flex items-start gap-2.5 group cursor-pointer ui-focus-ring"
                             >
-                              <MapPin className="w-4 h-4 text-emerald-600 group-hover:text-emerald-700 mt-0.5 shrink-0" />
+                              <MapPin className="w-4 h-4 text-action mt-0.5 shrink-0" />
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-slate-800 truncate">
+                                <p className="text-sm font-semibold text-ink truncate">
                                   {pred.structured_formatting?.main_text || pred.description}
                                 </p>
-                                <p className="text-[11px] text-slate-400 truncate">
+                                <p className="text-xs text-muted truncate">
                                   {pred.structured_formatting?.secondary_text || ''}
                                 </p>
                               </div>
@@ -1298,34 +1292,68 @@ function ExploreContent() {
                           ))}
                         </div>
                       )}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsPlacesSearchOpen(true)}
-                      className="bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl p-2.5 text-slate-700 hover:text-emerald-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-sm"
-                      title="Show Google Places search bar"
-                    >
-                      <Compass className="w-4 h-4 text-emerald-700" />
-                      <span>Search Places</span>
-                    </button>
-                  )}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsPlacesSearchOpen(true)}
+                          className="min-h-11 rounded-control border border-border bg-surface-subtle px-3 text-sm font-semibold text-ink hover:bg-action-soft hover:text-action-hover transition flex items-center gap-2 cursor-pointer ui-focus-ring"
+                          title="Show places search"
+                        >
+                          <Compass className="w-4 h-4 text-action" />
+                          <span>Search places</span>
+                        </button>
+                      )}
+
+                      <label className="flex min-h-11 min-w-0 flex-1 basis-36 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 text-muted sm:flex-none">
+                        <SlidersHorizontal className="w-4 h-4 shrink-0 text-action" />
+                        <span className="sr-only">Filter plots by city</span>
+                        <select
+                          aria-label="Filter plots by city"
+                          value={activeCityFilter}
+                          onChange={(e) => setActiveCityFilter(e.target.value)}
+                          className="w-full min-w-0 bg-transparent text-sm font-semibold text-ink outline-none"
+                        >
+                          <option value="ALL">All cities</option>
+                          {uniqueCities.map((city) => (
+                            <option key={city} value={city}>{city}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setIs3DMode((current) => !current)}
+                        disabled={!selectedPlot?.center}
+                        aria-pressed={is3DMode}
+                        className={`min-h-11 flex-1 sm:flex-none rounded-control border px-3 text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ui-focus-ring ${
+                          is3DMode
+                            ? 'border-action bg-action text-white'
+                            : 'border-border bg-surface-subtle text-ink hover:bg-action-soft hover:text-action-hover'
+                        }`}
+                        title={selectedPlot?.center ? 'Toggle 3D walkthrough for selected plot' : 'Select a plot to enable 3D walkthrough'}
+                      >
+                        <Layers className="w-4 h-4" />
+                        <span>3D view</span>
+                      </button>
+                  </div>
                 </div>
 
-                {/* Active Searched Place Badge (Centered) */}
+                {/* Active Searched Place */}
                 {searchedLocation && (
-                  <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs max-w-xs sm:max-w-md truncate">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span className="font-semibold text-slate-800 truncate max-w-[220px]">
+                  <div className="absolute top-28 sm:top-20 left-3 z-10 bg-surface/95 backdrop-blur-md border border-border shadow-raised rounded-control px-3 py-2 flex items-center gap-2 text-sm max-w-[calc(100%-1.5rem)] sm:max-w-md">
+                    <MapPin className="w-4 h-4 text-action shrink-0" />
+                    <span className="font-semibold text-ink truncate">
                       {searchedLocation.name}
                     </span>
                     <button
                       type="button"
                       onClick={() => setSearchedLocation(null)}
-                      className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      aria-label="Clear searched location"
+                      className="min-w-8 min-h-8 flex items-center justify-center text-muted hover:text-ink rounded-control ui-focus-ring"
                       title="Clear location pin"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
@@ -1350,7 +1378,7 @@ function ExploreContent() {
                   )}
                   {/* 2. Individual Plot Polygons (Zoom >= POLYGON_MIN_ZOOM) */}
                   {!showMarkerLayer &&
-                    plots.map((plot) => {
+                    mapFilteredPlots.map((plot) => {
                       if (!plot.hasGeometry || !plot.paths.length) return null;
                       return (
                         <PlotPolygon
@@ -1455,17 +1483,42 @@ function ExploreContent() {
                   </div>
                 )}
 
-                {/* Availability legend (bottom-left) */}
+                {/* Map key for marker, selection, and zoom-dependent boundary states */}
                 {!plotsLoading && !plotsError && plots.length > 0 && (
-                  <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2.5">
-                    <span className="w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow-xs shrink-0" />
-                    <div className="leading-tight">
-                      <p className="text-xs font-semibold text-slate-700">Available plots</p>
-                      <p className="text-[11px] text-slate-400">
-                        {showMarkerLayer ? 'Zoom in to see plot boundaries' : 'Showing plot boundaries'}
-                      </p>
+                  <details
+                    open
+                    className="absolute bottom-3 left-3 z-20 w-[min(18rem,calc(100%-1.5rem))] rounded-panel border border-border bg-surface/95 shadow-raised backdrop-blur-md"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-ink ui-focus-ring">
+                      <span>
+                        Map legend
+                        <span className="ml-2 text-xs font-normal text-muted">
+                          {showMarkerLayer ? `Boundaries at zoom ${POLYGON_MIN_ZOOM}+` : 'Plot boundaries visible'}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                    </summary>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border px-3 py-2.5 text-xs text-muted">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 shrink-0 text-ink" aria-hidden="true" />
+                        <span>Available plot</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white" aria-hidden="true">#</span>
+                        <span>Cluster count</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-action bg-action-soft" aria-hidden="true">
+                          <span className="h-1.5 w-1.5 rounded-full bg-action" />
+                        </span>
+                        <span>Selected plot</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-0.5 w-5 shrink-0 rounded bg-ink" aria-hidden="true" />
+                        <span>Plot boundary</span>
+                      </div>
                     </div>
-                  </div>
+                  </details>
                 )}
 
                 {/* Slide-Out Property Inspector (Sidebar Drawer) */}

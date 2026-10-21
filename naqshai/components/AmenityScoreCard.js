@@ -20,34 +20,33 @@ const CATEGORY_META = {
   healthcare: {
     label: 'Healthcare',
     icon: HeartPulse,
-    barColor: 'bg-emerald-600',
-    bgColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    barColor: 'bg-action',
+    bgColor: 'bg-action-soft text-action-hover border-border'
   },
   education: {
     label: 'Education',
     icon: GraduationCap,
-    barColor: 'bg-teal-600',
-    bgColor: 'bg-teal-50 text-teal-700 border-teal-200'
+    barColor: 'bg-action-hover',
+    bgColor: 'bg-surface-subtle text-ink border-border'
   },
   commerce: {
     label: 'Commerce & Retail',
     icon: ShoppingBag,
-    barColor: 'bg-blue-600',
-    bgColor: 'bg-blue-50 text-blue-700 border-blue-200'
+    barColor: 'bg-action',
+    bgColor: 'bg-action-soft text-action-hover border-border'
   },
   transit: {
     label: 'Transit & Arterials',
     icon: Bus,
-    barColor: 'bg-indigo-600',
-    bgColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    barColor: 'bg-action-hover',
+    bgColor: 'bg-surface-subtle text-ink border-border'
   }
 };
 
 function getScoreColorClass(score) {
-  if (score >= 80) return { text: 'text-emerald-700', stroke: '#059669', bg: 'bg-emerald-50 border-emerald-200' };
-  if (score >= 60) return { text: 'text-teal-700', stroke: '#0d9488', bg: 'bg-teal-50 border-teal-200' };
-  if (score >= 40) return { text: 'text-amber-700', stroke: '#d97706', bg: 'bg-amber-50 border-amber-200' };
-  return { text: 'text-slate-600', stroke: '#64748b', bg: 'bg-slate-100 border-slate-200' };
+  if (score >= 60) return { text: 'text-action-hover', stroke: '#08785d', bg: 'ui-badge-success' };
+  if (score >= 40) return { text: 'text-caution', stroke: '#9a5a0a', bg: 'ui-badge-caution' };
+  return { text: 'text-muted', stroke: '#596963', bg: 'ui-badge-neutral' };
 }
 
 export default function AmenityScoreCard({ plotId, lat, lng, center, className = '' }) {
@@ -127,21 +126,21 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
   // Graceful Fallback Card if coordinates are absent or unmapped
   if (!hasValidCoordinates) {
     return (
-      <div className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3 ${className}`}>
+      <div className={`ui-panel p-4 space-y-3 ${className}`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+        <div className="flex items-center gap-1.5 text-ui-caption font-bold uppercase tracking-wider text-muted">
             <Compass className="w-3.5 h-3.5 text-slate-400" />
             <span>Amenity Accessibility</span>
           </div>
-          <span className="px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-slate-100 text-slate-600 border-slate-200">
+          <span className="ui-badge-neutral">
             Survey Pending
           </span>
         </div>
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2.5 leading-relaxed">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <div className="ui-alert-caution flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-caution shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-slate-700">Geospatial coordinates pending</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
+            <p className="font-medium text-ink">Geospatial coordinates pending</p>
+            <p className="text-ui-caption text-muted mt-0.5">
               Boundary survey for this plot is being finalized. Proximity scores for healthcare, education, transit, and commerce will display once coordinates are recorded.
             </p>
           </div>
@@ -153,7 +152,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
   // Shimmering Skeleton Loader while fetching/calculating
   if (loading) {
     return (
-      <div className={`p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-4 animate-pulse ${className}`}>
+      <div className={`ui-panel p-4 space-y-4 animate-pulse ${className}`} role="status" aria-label="Loading amenity accessibility scores">
         <div className="flex items-center justify-between">
           <div className="h-4 bg-slate-200 rounded w-44"></div>
           <div className="h-7 w-16 bg-slate-200 rounded-lg"></div>
@@ -175,7 +174,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
 
   if (error || !data) {
     return (
-      <div className={`p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2 ${className}`}>
+      <div className={`ui-alert-info flex items-center gap-2 ${className}`} role="status">
         <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
         <span>Neighborhood proximity data is temporarily unavailable.</span>
       </div>
@@ -186,11 +185,11 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
   const categories = data.categories || {};
 
   return (
-    <div className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-4 ${className}`}>
+    <div className={`ui-panel p-4 space-y-4 ${className}`}>
       {/* Header with Title & Overall Aggregate Circular Score */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+          <div className="flex items-center gap-1.5 text-ui-caption font-bold uppercase tracking-wider text-muted">
             <Compass className="w-3.5 h-3.5 text-emerald-700" />
             <span>Amenity Accessibility</span>
           </div>
@@ -229,7 +228,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
       {/* Qualitative Tier Tag */}
       <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
         <span className="text-[11px] text-slate-500 font-medium">Rating Index</span>
-        <span className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold ${data.rating?.badge || 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+        <span className={scoreMeta.bg}>
           {data.rating?.label || 'High Accessibility'}
         </span>
       </div>

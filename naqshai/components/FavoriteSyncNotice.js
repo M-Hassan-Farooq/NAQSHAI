@@ -21,15 +21,15 @@ export default function FavoriteSyncNotice() {
       ? CheckCircle2
       : Info;
   const colors = syncNotice.type === 'error'
-    ? 'border-red-200 bg-red-50 text-red-800'
+    ? 'ui-alert-danger'
     : syncNotice.type === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : 'border-sky-200 bg-sky-50 text-sky-800';
+      ? 'ui-alert-success'
+      : 'ui-alert-info';
 
   return (
     <div
       role="status"
-      className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:max-w-sm z-[70] flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs font-semibold shadow-lg ${colors}`}
+      className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:max-w-sm z-[70] flex items-center gap-2.5 shadow-raised ${colors}`}
     >
       <Icon className="w-4 h-4 shrink-0" />
       <span className="flex-1">{syncNotice.text}</span>
@@ -37,7 +37,7 @@ export default function FavoriteSyncNotice() {
         type="button"
         onClick={clearSyncNotice}
         aria-label="Dismiss favorite notification"
-        className="shrink-0 rounded-lg p-1 hover:bg-black/5"
+        className="shrink-0 rounded-control p-1 hover:bg-black/5 ui-focus-ring"
       >
         <X className="w-3.5 h-3.5" />
       </button>

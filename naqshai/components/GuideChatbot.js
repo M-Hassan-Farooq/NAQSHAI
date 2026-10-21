@@ -445,7 +445,7 @@ export default function GuideChatbot() {
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/95 backdrop-blur-sm border border-slate-200 text-slate-700 hover:text-emerald-800 text-xs font-semibold rounded-full shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5 cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-border text-ink hover:text-action-hover text-ui-caption font-semibold rounded-pill shadow-raised transition transform hover:-translate-y-0.5 cursor-pointer ui-focus-ring"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Need Help? Ask Guide</span>
@@ -455,7 +455,7 @@ export default function GuideChatbot() {
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className="relative p-3.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-full shadow-xl hover:shadow-2xl transition-all transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 cursor-pointer"
+          className="relative p-3.5 bg-action hover:bg-action-hover text-white rounded-pill shadow-raised transition-all transform hover:scale-105 active:scale-95 cursor-pointer ui-focus-ring"
           aria-label={isOpen ? 'Close Guide Chat' : 'Open Platform Guide Chat'}
         >
           {isOpen ? (
@@ -473,7 +473,7 @@ export default function GuideChatbot() {
       {/* 2. Expanded Floating Chat Panel */}
       {isOpen && (
         <div
-          className="fixed bottom-20 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 max-h-[560px] h-[520px] bg-white border border-slate-200 shadow-2xl rounded-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200"
+          className="fixed bottom-20 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 max-h-[560px] h-[520px] ui-panel shadow-overlay flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200"
           role="dialog"
           aria-labelledby="guide-chatbot-title"
         >
@@ -660,10 +660,10 @@ export default function GuideChatbot() {
                   : "Ask about 3D map, flood risk, or plots..."
               }
               aria-label="Ask AI Assistant a question"
-              className={`flex-1 bg-white border rounded-xl px-3 py-2 text-xs focus:outline-none transition text-slate-800 placeholder-slate-400 ${
+              className={`ui-input flex-1 text-ui-caption ${
                 isListening
-                  ? 'border-red-400 ring-2 ring-red-100 bg-red-50/20'
-                  : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
+                  ? 'border-danger bg-danger-soft'
+                  : ''
               }`}
             />
 

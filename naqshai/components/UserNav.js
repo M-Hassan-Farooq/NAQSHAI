@@ -84,14 +84,14 @@ export default function UserNav({ session, onSignOut, className = '' }) {
       <div className={`flex items-center gap-2 ${className}`}>
         <Link
           href="/login"
-          className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition"
+          className="ui-button-secondary ui-focus-ring"
         >
           <User className="w-3.5 h-3.5 text-emerald-700" />
           <span>Sign In</span>
         </Link>
         <Link
           href="/login?signup=true"
-          className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded-xl shadow-xs transition"
+          className="ui-button-primary ui-focus-ring hidden sm:flex"
         >
           <UserPlus className="w-3.5 h-3.5 text-emerald-100" />
           <span>Sign Up</span>
@@ -117,7 +117,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
           type="button"
           onClick={() => setIsDropdownOpen((prev) => !prev)}
           disabled={signingOut}
-          className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100/80 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 p-1 rounded-control hover:bg-surface-subtle transition ui-focus-ring cursor-pointer disabled:opacity-50"
           aria-expanded={isDropdownOpen}
           aria-haspopup="true"
           aria-label={`Open account menu for ${displayName}`}
@@ -132,7 +132,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
 
         {/* Dropdown Menu Overlay */}
         {isDropdownOpen && (
-          <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 shadow-xl rounded-2xl p-2 z-50 pointer-events-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-border shadow-overlay rounded-panel p-2 z-50 pointer-events-auto animate-in fade-in zoom-in-95 duration-150">
             
             {/* Header User Summary */}
             <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl mb-1">
@@ -154,7 +154,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
                   setIsDropdownOpen(false);
                   router.push('/dashboard');
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 rounded-xl transition cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-ui-caption font-semibold text-ink hover:text-action-hover hover:bg-action-soft rounded-control transition cursor-pointer ui-focus-ring"
               >
                 <ClipboardList className="w-4 h-4 text-emerald-700" />
                 <span>My Listings</span>
@@ -166,7 +166,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
                   setIsDropdownOpen(false);
                   router.push('/favorites');
                 }}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 rounded-xl transition cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-2 text-ui-caption font-semibold text-ink hover:text-action-hover hover:bg-action-soft rounded-control transition cursor-pointer ui-focus-ring"
               >
                 <div className="flex items-center gap-2.5">
                   <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20" />
@@ -182,7 +182,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
               <button
                 type="button"
                 onClick={handleGoToSettings}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-emerald-800 hover:bg-emerald-50/70 rounded-xl transition cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-ui-caption font-semibold text-ink hover:text-action-hover hover:bg-action-soft rounded-control transition cursor-pointer ui-focus-ring"
               >
                 <Settings className="w-4 h-4 text-emerald-700" />
                 <span>Account Settings</span>
@@ -194,7 +194,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
                 type="button"
                 onClick={handleOpenSignOutModal}
                 disabled={signingOut}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer disabled:opacity-50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-ui-caption font-semibold text-slate-700 hover:text-danger hover:bg-danger-soft rounded-control transition cursor-pointer disabled:opacity-50 ui-focus-ring"
               >
                 {signingOut ? (
                   <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
@@ -222,7 +222,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
           aria-modal="true"
           aria-labelledby="signout-modal-title"
         >
-          <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl p-6 max-w-sm w-full space-y-4 animate-in zoom-in-95 duration-150">
+          <div className="ui-panel shadow-overlay rounded-panel p-6 max-w-sm w-full space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
                 <LogOut className="w-5 h-5 text-red-600" />
@@ -242,7 +242,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
                 type="button"
                 onClick={() => setShowSignOutConfirm(false)}
                 disabled={signingOut}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+                className="ui-button-secondary ui-focus-ring"
               >
                 Cancel
               </button>
@@ -250,7 +250,7 @@ export default function UserNav({ session, onSignOut, className = '' }) {
                 type="button"
                 onClick={confirmSignOut}
                 disabled={signingOut}
-                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-control border border-danger bg-danger px-4 py-2 text-ui-caption font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 ui-focus-ring"
               >
                 {signingOut ? (
                   <>

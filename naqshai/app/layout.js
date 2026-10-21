@@ -25,7 +25,7 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased scroll-smooth`}
     >
-      <body className="bg-slate-100 text-slate-600 antialiased min-h-full flex flex-col">
+      <body className="bg-page text-ink antialiased min-h-full flex flex-col">
         <ProfileProvider>
           <FavoritesProvider>
             <FavoriteSyncNotice />

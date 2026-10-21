@@ -54,7 +54,7 @@ export default function Navbar({
   ];
 
   return (
-    <header className={`relative h-14 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 flex items-center justify-between z-50 shrink-0 shadow-xs sticky top-0 ${className}`}>
+    <header className={`relative h-14 bg-surface/95 backdrop-blur-md border-b border-border px-4 flex items-center justify-between z-50 shrink-0 shadow-xs sticky top-0 ${className}`}>
       {/* Left Section: Brand Logo & Optional Page Badge */}
       <div className="flex items-center gap-3">
         {leftSlot}
@@ -69,13 +69,13 @@ export default function Navbar({
               sizes="32px"
             />
           </div>
-          <span className="font-bold text-base text-slate-900 tracking-tight flex items-center gap-1.5">
+          <span className="font-bold text-base text-ink tracking-tight flex items-center gap-1.5">
             <span>NAQSHAI</span>
           </span>
         </Link>
 
         {badgeText && (
-          <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full hidden sm:inline-block shrink-0">
+          <span className="ui-badge-success hidden sm:inline-block shrink-0">
             {badgeText}
           </span>
         )}
@@ -90,11 +90,12 @@ export default function Navbar({
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                 isActive
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
-                  : 'text-slate-600 hover:text-emerald-700 hover:bg-slate-50 border border-transparent'
-              }`}
+                  ? 'bg-action-soft text-action-hover border border-action/20 shadow-xs'
+                  : 'text-muted hover:text-action-hover hover:bg-surface-subtle border border-transparent'
+              } ui-focus-ring`}
             >
               <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-700' : 'text-slate-400'}`} />
               <span>{item.label}</span>
@@ -115,7 +116,7 @@ export default function Navbar({
             aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={isMobileMenuOpen}
             aria-haspopup="true"
-            className="w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-control border border-border bg-surface text-ink hover:text-action-hover hover:border-action transition cursor-pointer ui-focus-ring"
           >
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -123,7 +124,7 @@ export default function Navbar({
           {isMobileMenuOpen && (
             <nav
               aria-label="Mobile navigation"
-              className="absolute right-0 top-full mt-2 w-60 p-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
+              className="absolute right-0 top-full mt-2 w-60 p-2 bg-surface border border-border rounded-panel shadow-overlay z-50 animate-in fade-in zoom-in-95 duration-150"
             >
               {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href;
@@ -135,8 +136,8 @@ export default function Navbar({
                     aria-current={active ? 'page' : undefined}
                     className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold transition ${
                       active
-                        ? 'bg-emerald-50 text-emerald-800'
-                        : 'text-slate-700 hover:bg-slate-50 hover:text-emerald-700'
+                        ? 'bg-action-soft text-action-hover'
+                          : 'text-ink hover:bg-surface-subtle hover:text-action-hover'
                     }`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
