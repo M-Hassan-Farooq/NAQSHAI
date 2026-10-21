@@ -3,6 +3,7 @@ import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServe
 import { draftTitlePreview } from '@/lib/draftProgress';
 import { checkPolygonConflict } from '@/lib/polygonOverlap';
 import { verifyAreaMatch } from '@/lib/areaCalculator';
+import { checkRegulatoryStatus } from '@/lib/regulatoryRegistry';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,6 +88,7 @@ export async function GET(request) {
 
         const conflict = checkPolygonConflict(polygon, verifiedRows || []);
         const areaCheck = verifyAreaMatch(polygon, plot.sizeDimensions || '10 Marla (35x70)', 0.90);
+        const regulatory = checkRegulatoryStatus(plot.society, plot.city, polygon);
 
         return {
           id: row.id,
@@ -111,31 +113,39 @@ export async function GET(request) {
           documents,
           overlapConflict: conflict.hasConflict ? conflict.conflictingPlot : null,
           areaVerification: areaCheck,
+          regulatory,
         };
       })
     );
 
-    const verifiedPlots = (verifiedRows || []).map((row) => ({
-      id: row.id,
-      title: row.title || row.id,
-      isVerified: !!row.is_verified,
-      city: row.city || '',
-      society: row.title?.split(' - ')[1]?.split(',')[0]?.trim() || '',
-      pricePkr: row.price_pkr,
-      sizeDimensions: row.size_dimensions || '',
-      category: row.category || '',
-      floodRisk: row.flood_risk || '',
-      noiseLevel: row.noise_level || '',
-      elevationProfile: row.elevation_profile || '',
-      proximityNotes: row.proximity_notes || '',
-      polygon: Array.isArray(row.polygon_coordinates) ? row.polygon_coordinates : [],
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      seller: {
-        fullName: row.sellers?.full_name || '',
-        phoneNumber: row.sellers?.phone_number || '',
-      },
-    }));
+    const verifiedPlots = (verifiedRows || []).map((row) => {
+      const society = row.title?.split(' - ')[1]?.split(',')[0]?.trim() || '';
+      const polygon = Array.isArray(row.polygon_coordinates) ? row.polygon_coordinates : [];
+      const regulatory = checkRegulatoryStatus(society, row.city, polygon);
+
+      return {
+        id: row.id,
+        title: row.title || row.id,
+        isVerified: !!row.is_verified,
+        city: row.city || '',
+        society,
+        pricePkr: row.price_pkr,
+        sizeDimensions: row.size_dimensions || '',
+        category: row.category || '',
+        floodRisk: row.flood_risk || '',
+        noiseLevel: row.noise_level || '',
+        elevationProfile: row.elevation_profile || '',
+        proximityNotes: row.proximity_notes || '',
+        polygon,
+        regulatory,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        seller: {
+          fullName: row.sellers?.full_name || '',
+          phoneNumber: row.sellers?.phone_number || '',
+        },
+      };
+    });
 
     return NextResponse.json({ success: true, listings, verifiedPlots });
   } catch (err) {

@@ -536,6 +536,79 @@ export default function ReviewPage() {
                         )}
                       </div>
 
+                      {/* Regulatory Authority Clearance (CDA / RDA) */}
+                      {l.regulatory && (
+                        <div className={`p-3.5 rounded-xl border ${
+                          l.regulatory.tier === 'unauthorized'
+                            ? 'bg-amber-50/70 border-amber-200'
+                            : l.regulatory.tier === 'conditional'
+                            ? 'bg-amber-50/70 border-amber-200'
+                            : 'bg-emerald-50/60 border-emerald-200'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldCheck className={`w-4 h-4 ${
+                                l.regulatory.tier === 'unauthorized'
+                                  ? 'text-amber-600'
+                                  : l.regulatory.tier === 'conditional'
+                                  ? 'text-amber-600'
+                                  : 'text-emerald-700'
+                              }`} />
+                              <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                                Regulatory Clearance ({l.regulatory.authority})
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${l.regulatory.badgeClass}`}>
+                              {l.regulatory.badgeText}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-700">
+                            <div>
+                              <span className="text-slate-500 font-medium">Jurisdiction: </span>
+                              <span className="font-semibold">{l.regulatory.jurisdiction}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 font-medium">Layout Plan: </span>
+                              <span className="font-semibold">{l.regulatory.lopStatus}</span>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-slate-500 font-medium">NOC / Gazette: </span>
+                              <span className="font-mono text-[11px] font-semibold text-slate-800">{l.regulatory.nocNumber}</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                            {l.regulatory.summary}
+                          </p>
+
+                          {l.regulatory.warning && (
+                            <div className={`mt-2 p-2 rounded-lg text-[11px] font-medium flex items-start gap-1.5 ${
+                              l.regulatory.tier === 'unauthorized'
+                                ? 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                                : 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                            }`}>
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              <span>{l.regulatory.warning}</span>
+                            </div>
+                          )}
+
+                          {l.regulatory.officialVerificationUrl && (
+                            <div className="mt-2 text-right">
+                              <a
+                                href={l.regulatory.officialVerificationUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 underline"
+                              >
+                                <span>Check {l.regulatory.authority} Official Portal</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Documents */}
                       <div>
                         <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Documents</p>

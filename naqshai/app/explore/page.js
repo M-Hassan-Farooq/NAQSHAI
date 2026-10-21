@@ -15,6 +15,7 @@ import { useFavorites } from '@/context/FavoritesContext';
 import {
   Search,
   ShieldAlert,
+  ShieldCheck,
   Phone,
   MapPin,
   Eye,
@@ -34,7 +35,9 @@ import {
   Compass,
   SlidersHorizontal,
   Layers,
-  GripVertical
+  GripVertical,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 const mapContainerStyle = {
@@ -148,6 +151,19 @@ function ExploreContent() {
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
   const [activeCityFilter, setActiveCityFilter] = useState('ALL');
   const [isMobile, setIsMobile] = useState(false);
+  const [expandedPlotIds, setExpandedPlotIds] = useState(() => new Set());
+
+  const togglePlotDetails = useCallback((plotId) => {
+    setExpandedPlotIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(plotId)) {
+        next.delete(plotId);
+      } else {
+        next.add(plotId);
+      }
+      return next;
+    });
+  }, []);
 
   const mapOptions = useMemo(
     () => ({
@@ -1016,6 +1032,8 @@ function ExploreContent() {
                             const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
                             const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
+                            const isExpanded = expandedPlotIds.has(plot.id);
+
                             return (
                               <div
                                 key={plot.id}
@@ -1027,22 +1045,11 @@ function ExploreContent() {
                                 }`}
                               >
                                 <div>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                                          {plot.id}
-                                        </span>
-                                        {plot.isVerified && (
-                                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                            Verified
-                                          </span>
-                                        )}
-                                      </div>
-                                      <h4 className="font-bold text-xs text-slate-900 mt-1 leading-snug">
-                                        {plot.name}
-                                      </h4>
-                                    </div>
+                                  {/* Top Bar: Plot ID + Price + Favorite */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                      {plot.id}
+                                    </span>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                       <span className="text-xs font-extrabold text-emerald-700 whitespace-nowrap bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                                         {plot.price}
@@ -1068,64 +1075,107 @@ function ExploreContent() {
                                     </div>
                                   </div>
 
+                                  {/* Plot Name */}
+                                  <h4 className="font-bold text-xs text-slate-900 mt-1.5 leading-snug">
+                                    {plot.name}
+                                  </h4>
+
+                                  {/* Location */}
                                   <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
                                     <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
                                     <span>
                                       {plot.society ? `${plot.society}, ` : ''}{plot.city}
                                     </span>
                                   </p>
+
+                                  {/* Size */}
+                                  <div className="mt-2 flex items-center gap-1.5 text-[10px]">
+                                    <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                      Size: {plot.details?.size || 'Plot'}
+                                    </span>
+                                  </div>
                                 </div>
 
-                                {/* Spec Badges */}
-                                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                                  <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                    {plot.details?.size || 'Plot'}
-                                  </span>
-                                  {!isFloodPending && (
-                                    <span
-                                      className={`px-2 py-0.5 rounded border font-medium ${
-                                        isHighFlood
-                                          ? 'bg-red-50 text-red-800 border-red-200'
-                                          : isModerateFlood
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                      }`}
-                                    >
-                                      Flood: {floodVal}
-                                    </span>
-                                  )}
-                                  {!isNoisePending && (
-                                    <span
-                                      className={`px-2 py-0.5 rounded border font-medium ${
-                                        isHighNoise
-                                          ? 'bg-red-50 text-red-800 border-red-200'
-                                          : isQuietNoise
-                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                                      }`}
-                                    >
-                                      Noise: {noiseVal}
-                                    </span>
-                                  )}
-                                  {!isElevPending && (
-                                    <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                      Elevation: {elevVal}
-                                    </span>
-                                  )}
-                                  {isFloodPending && isNoisePending && isElevPending && (
-                                    <span className="font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                      Survey Pending
-                                    </span>
-                                  )}
-                                </div>
+                                {/* Expandable Remaining Details */}
+                                {isExpanded && (
+                                  <div className="pt-2 border-t border-slate-100 space-y-2 animate-in fade-in duration-150">
+                                    {/* Verification & Regulatory Clearance */}
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {plot.isVerified && (
+                                        <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                          Verified
+                                        </span>
+                                      )}
+                                      {plot.regulatory && (
+                                        <span
+                                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                                            plot.regulatory.tier === 'unauthorized'
+                                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                              : plot.regulatory.tier === 'conditional'
+                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          }`}
+                                          title={`${plot.regulatory.statusLabel} (${plot.regulatory.authority})`}
+                                        >
+                                          {plot.regulatory.badgeText}
+                                        </span>
+                                      )}
+                                      {plot.details?.category && (
+                                        <span className="text-[10px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                          {plot.details.category}
+                                        </span>
+                                      )}
+                                    </div>
 
-                                {/* "See on Map" Action Button */}
+                                    {/* Environmental & Risk Badges */}
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                      {!isFloodPending && (
+                                        <span
+                                          className={`px-2 py-0.5 rounded border font-medium ${
+                                            isHighFlood
+                                              ? 'bg-red-50 text-red-800 border-red-200'
+                                              : isModerateFlood
+                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          }`}
+                                        >
+                                          Flood: {floodVal}
+                                        </span>
+                                      )}
+                                      {!isNoisePending && (
+                                        <span
+                                          className={`px-2 py-0.5 rounded border font-medium ${
+                                            isHighNoise
+                                              ? 'bg-red-50 text-red-800 border-red-200'
+                                              : isQuietNoise
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                                          }`}
+                                        >
+                                          Noise: {noiseVal}
+                                        </span>
+                                      )}
+                                      {!isElevPending && (
+                                        <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                          Elevation: {elevVal}
+                                        </span>
+                                      )}
+                                      {isFloodPending && isNoisePending && isElevPending && (
+                                        <span className="font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                          Survey Pending
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Action Buttons: "See on Map" + "Show Details / Hide Details" */}
                                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handleSeeOnMap(plot)}
                                     aria-label={`View ${plot.name} on the map`}
-                                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                                       isSelected
                                         ? 'bg-emerald-700 text-white shadow-xs'
                                         : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -1133,6 +1183,22 @@ function ExploreContent() {
                                   >
                                     <MapPin className="w-3.5 h-3.5" />
                                     <span>{isSelected ? 'Viewing on Map' : 'See on Map'}</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePlotDetails(plot.id)}
+                                    aria-expanded={isExpanded}
+                                    aria-label={isExpanded ? `Hide details for ${plot.name}` : `Show details for ${plot.name}`}
+                                    className="py-1.5 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition flex items-center gap-1 shrink-0 cursor-pointer"
+                                    title={isExpanded ? 'Hide details' : 'Show details'}
+                                  >
+                                    <span>{isExpanded ? 'Hide Details' : 'Show Details'}</span>
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    )}
                                   </button>
                                 </div>
                               </div>
@@ -1566,6 +1632,71 @@ function ExploreContent() {
                             </div>
                           );
                         })()}
+
+                        {/* Regulatory Authority Clearance (CDA / RDA) */}
+                        {selectedPlot.regulatory && (
+                          <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                            selectedPlot.regulatory.tier === 'unauthorized'
+                              ? 'bg-amber-50/70 border-amber-200'
+                              : selectedPlot.regulatory.tier === 'conditional'
+                              ? 'bg-amber-50/80 border-amber-200'
+                              : 'bg-emerald-50/70 border-emerald-200'
+                          }`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold uppercase tracking-wider text-slate-800 text-[11px] flex items-center gap-1.5 font-mono">
+                                <ShieldCheck className={`w-4 h-4 ${
+                                  selectedPlot.regulatory.tier === 'unauthorized'
+                                    ? 'text-amber-600'
+                                    : selectedPlot.regulatory.tier === 'conditional'
+                                    ? 'text-amber-600'
+                                    : 'text-emerald-700'
+                                }`} />
+                                Authority Clearance ({selectedPlot.regulatory.authority})
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${selectedPlot.regulatory.badgeClass}`}>
+                                {selectedPlot.regulatory.badgeText}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              {selectedPlot.regulatory.summary}
+                            </p>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 p-2.5 rounded-lg border border-slate-200/60 font-mono">
+                              <div>
+                                <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">NOC Reference</span>
+                                <span className="font-semibold text-slate-800 truncate block">{selectedPlot.regulatory.nocNumber}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Layout Plan (LOP)</span>
+                                <span className="font-semibold text-slate-800 truncate block">{selectedPlot.regulatory.lopStatus}</span>
+                              </div>
+                            </div>
+
+                            {selectedPlot.regulatory.warning && (
+                              <p className={`text-[10px] p-2 rounded-lg font-medium leading-relaxed ${
+                                selectedPlot.regulatory.tier === 'unauthorized'
+                                  ? 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                                  : 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                              }`}>
+                                ⚠️ {selectedPlot.regulatory.warning}
+                              </p>
+                            )}
+
+                            {selectedPlot.regulatory.officialVerificationUrl && (
+                              <div className="text-right pt-0.5">
+                                <a
+                                  href={selectedPlot.regulatory.officialVerificationUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 underline inline-flex items-center gap-1"
+                                >
+                                  Verify on {selectedPlot.regulatory.authority} Official Portal →
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Interactive Neighborhood Amenity Scoring */}
                         <AmenityScoreCard

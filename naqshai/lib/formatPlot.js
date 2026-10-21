@@ -1,3 +1,5 @@
+import { checkRegulatoryStatus } from './regulatoryRegistry';
+
 // Shared formatter that turns a raw `plots` table row (with its embedded
 // `sellers` join) into the public plot shape consumed by the 3D map, the
 // favorites list and the AI tools.
@@ -62,23 +64,29 @@ export function formatPlot(row) {
   const paths = normalizePaths(row.polygon_coordinates);
   const hasGeometry = paths.length >= 3;
   const seller = row.sellers || null;
+  const society = parseSociety(row.title);
+  const regulatory = checkRegulatoryStatus(society, row.city, paths);
 
   return {
     id: row.id,
     name: row.title || row.id,
-    society: parseSociety(row.title),
+    society,
     city: row.city || '',
     price: formatPkr(row.price_pkr),
     priceValue: Number(row.price_pkr) || 0,
     center: centroid(paths),
     paths,
     hasGeometry,
+    regulatory,
     details: {
       size: row.size_dimensions || '—',
       category: row.category || 'Residential',
       elevation: row.elevation_profile || 'Pending Survey',
       floodRisk: row.flood_risk || 'Assessment Pending',
       noiseLevel: row.noise_level || 'Assessment Pending',
+      regulatoryStatus: regulatory.badgeText,
+      regulatoryAuthority: regulatory.authority,
+      regulatoryNoc: regulatory.nocNumber,
       landmarks: row.proximity_notes || 'No proximity data provided.',
     },
     ownerContact: seller && seller.phone_number ? seller.phone_number : '',

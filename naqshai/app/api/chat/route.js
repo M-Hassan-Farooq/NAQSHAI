@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import { embedText } from '@/lib/plotEmbedding';
 import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
+import { checkRegulatoryStatus } from '@/lib/regulatoryRegistry';
 
 export const runtime = 'nodejs';
 
@@ -82,10 +83,13 @@ async function searchVectorPlots(ai, db, queryText) {
             size_dimensions: row.size_dimensions,
             proximityNotes: row.proximity_notes
           });
+          const society = extractSociety(row.title);
+          const regulatory = checkRegulatoryStatus(society, row.city);
+
           return {
             id: row.id,
             title: row.title || row.id,
-            society: extractSociety(row.title),
+            society,
             city: row.city || '',
             size: row.size_dimensions || '10 Marla',
             price: formatPkr(row.price_pkr),
@@ -95,6 +99,8 @@ async function searchVectorPlots(ai, db, queryText) {
             noiseLevel: (!row.noise_level || row.noise_level.includes('Pending') || row.noise_level === 'Low (Quiet Zone)') ? env.noiseLevel : row.noise_level,
             elevationProfile: (!row.elevation_profile || row.elevation_profile.includes('Pending')) ? env.elevationProfile : row.elevation_profile,
             proximityNotes: row.proximity_notes || '',
+            regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
+            regulatoryWarning: regulatory.warning || null,
             isVerified: !!row.is_verified
           };
         });
@@ -165,10 +171,13 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         return lower === '' || lower.includes('pending') || lower === 'n/a' || lower === defaultVal.toLowerCase();
       };
 
+      const society = extractSociety(row.title);
+      const regulatory = checkRegulatoryStatus(society, row.city);
+
       return {
         id: row.id,
         title: row.title || row.id,
-        society: extractSociety(row.title),
+        society,
         city: row.city || '',
         size: row.size_dimensions || '10 Marla',
         price: formatPkr(row.price_pkr),
@@ -178,6 +187,8 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         noiseLevel: isPending(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level,
         elevationProfile: isPending(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile,
         proximityNotes: row.proximity_notes || '',
+        regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
+        regulatoryWarning: regulatory.warning || null,
         sellerName: seller?.full_name || '',
         sellerPhone: seller?.phone_number || '',
         sellerRole: seller?.seller_role || 'Direct Owner',
@@ -542,6 +553,11 @@ UNREALISTIC BUDGETS & ALTERNATIVE GUIDANCE:
 - If 'searchPlots' returns an 'unrealistic_or_unmatched_criteria' status (e.g. 50 Lakh in Sector F-6), politely educate the user on the real market valuation of that sector using the market explanation provided.
 - Suggest viable alternative sectors where their budget can actually acquire 5 to 10 Marla plots (such as B-17 Multi Gardens, Faisal Hills, or Rawalpindi), and present the alternative plots provided by the tool.
 
+REGULATORY CLEARANCE & AUTHORITY COMPLIANCE:
+- You have access to official CDA and RDA regulatory clearance data for every plot (regulatoryStatus and regulatoryWarning).
+- When discussing plots or societies, highlight regulatory clarity (e.g., "CDA Sector Zone 1 - 100% legal tenure", "CDA Approved with valid NOC", or "RDA Approved Layout").
+- If a society has a warning or is unapproved/illegal, frankly caution the user about the legal and utility connection risks!
+
 FINAL JSON FORMAT SPECIFICATION:
 You MUST format your final response strictly as a JSON object matching this schema:
 {
@@ -555,7 +571,8 @@ You MUST format your final response strictly as a JSON object matching this sche
       "size": "Plot Size",
       "price": "Formatted Price",
       "floodRisk": "Low / Moderate / High Hazard",
-      "noiseLevel": "Quiet Zone / Low"
+      "noiseLevel": "Quiet Zone / Low",
+      "regulatoryStatus": "e.g. CDA Sector (Zone 1) or CDA Approved"
     }
   ]
 }
