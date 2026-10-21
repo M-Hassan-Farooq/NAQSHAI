@@ -97,7 +97,7 @@ export default function Home() {
                 alt="NAQSHAI Mascot Thinking"
                 width={320}
                 height={320}
-                className="object-contain opacity-80 hover:opacity-100 transition-opacity duration-300 drop-shadow-md"
+                className="object-contain opacity-100 hover:opacity-80 transition-opacity duration-300 drop-shadow-md"
                 priority
               />
             </div>
@@ -298,7 +298,7 @@ export default function Home() {
                 alt="NAQSHAI Mascot with Key"
                 width={320}
                 height={320}
-                className="object-contain opacity-80 hover:opacity-100 transition-opacity duration-300 drop-shadow-xl"
+                className="object-contain opacity-100 hover:opacity-80 transition-opacity duration-300 drop-shadow-xl"
               />
             </div>
           </div>
