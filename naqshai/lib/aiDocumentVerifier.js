@@ -142,7 +142,9 @@ TASK & CHECKS:
      a) Does the extracted Allottee Name match the CNIC name / seller name?
      b) Does the extracted Plot Number match the declared Plot Number?
      c) Does the extracted Society / Block match the declared Society?
-     d) Does the extracted Size match the declared Size?
+     d) Compare the extracted Plot Size against the declared size, including any stated dimensions or area.
+        Set sizeMatch to true only when the document size is consistent with the declared size, false when they conflict,
+        and null when the document does not show enough size information to compare. Do not guess a missing size.
 
 3. QUALITY, LEGIBILITY & AUTHENTICITY:
    - Flag if text is illegible, severely blurred, cut off, or appears edited/doctored.
@@ -150,10 +152,11 @@ TASK & CHECKS:
 
 4. OVERALL STATUS & RECOMMENDATION:
    - overallStatus MUST be one of:
-     * "VERIFIED" (All names, plot numbers, and society match with high clarity, confidence >= 85)
-     * "CAUTION" (Minor discrepancies, e.g. slight spelling differences or partial block info, confidence 60-84)
-     * "MISMATCH" (Severe mismatch in seller identity, wrong plot number, wrong society, confidence < 60)
+     * "VERIFIED" (All names, plot numbers, society, and stated plot size match with high clarity, confidence >= 85)
+     * "CAUTION" (Minor discrepancies or size cannot be determined from the document; confidence 60-84)
+     * "MISMATCH" (Severe mismatch in seller identity, plot number, society, or plot size, confidence < 60)
      * "UNREADABLE" (Blurry, incomplete, or non-document uploads)
+   - Use "MANUAL_REVIEW_REQUIRED" when the document does not show enough information to compare plot size.
    - recommendation: "APPROVE" | "MANUAL_REVIEW_REQUIRED" | "REJECT"
 
 RESPONSE FORMAT:
@@ -178,6 +181,7 @@ JSON Structure:
     "size": string or null,
     "plotMatch": boolean,
     "societyMatch": boolean,
+    "sizeMatch": boolean or null,
     "ownerMatchesCnic": boolean,
     "notes": string
   },
@@ -193,7 +197,7 @@ JSON Structure:
 - Declared Plot Number: "${plot.plotNumber || 'Not specified'}"
 - Declared Society / Sector: "${plot.society || 'Not specified'}"
 - Declared City: "${plot.city || 'Not specified'}"
-- Declared Size: "${plot.sizeDimensions || 'Not specified'}"
+- Declared Plot Size (compare with the allotment/transfer document): "${plot.sizeDimensions || 'Not specified'}"
 - Demand Price: "${plot.pricePkr ? `PKR ${plot.pricePkr}` : 'Not specified'}"
 
 === ATTACHED DOCUMENTS FOR VERIFICATION ===
@@ -275,6 +279,9 @@ JSON Structure:
         size: parsed.allotmentAudit?.size || null,
         plotMatch: !!parsed.allotmentAudit?.plotMatch,
         societyMatch: !!parsed.allotmentAudit?.societyMatch,
+        sizeMatch: typeof parsed.allotmentAudit?.sizeMatch === 'boolean'
+          ? parsed.allotmentAudit.sizeMatch
+          : null,
         ownerMatchesCnic: !!parsed.allotmentAudit?.ownerMatchesCnic,
         notes: parsed.allotmentAudit?.notes || ''
       },

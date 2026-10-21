@@ -44,6 +44,18 @@ const SELL_MAP_OPTIONS = {
   streetViewControl: false,
   mapTypeControl: true,
 };
+const PLOT_SIZE_OPTIONS = [
+  { label: '3 Marla (20x34)', value: '3 Marla (20x34)' },
+  { label: '5 Marla (25x50)', value: '5 Marla (25x50)' },
+  { label: '7 Marla (30x55)', value: '7 Marla (30x55)' },
+  { label: '10 Marla (35x70)', value: '10 Marla (35x70)' },
+  { label: '1 Kanal (50x90)', value: '1 Kanal (50x90)' },
+  { label: '2 Kanal (75x120)', value: '2 Kanal (75x120)' },
+  { label: 'Commercial 2 Marla (20x25)', value: 'Commercial 2 Marla (20x25)' },
+  { label: 'Commercial 4 Marla (30x30)', value: 'Commercial 4 Marla (30x30)' },
+  { label: 'Commercial 8 Marla (40x45)', value: 'Commercial 8 Marla (40x45)' },
+  { label: 'Commercial 10 Marla (50x45)', value: 'Commercial 10 Marla (50x45)' },
+];
 
 
 function formatPkr(num) {
@@ -863,11 +875,9 @@ export default function SellPlotPage() {
                       value={plotDetails.sizeDimensions}
                       onChange={(e) => setPlotDetails({ ...plotDetails, sizeDimensions: e.target.value })}
                     >
-                      <option value="5 Marla (25x50)">5 Marla (25x50)</option>
-                      <option value="10 Marla (35x70)">10 Marla (35x70)</option>
-                      <option value="1 Kanal (50x90)">1 Kanal (50x90)</option>
-                      <option value="2 Kanal (75x120)">2 Kanal (75x120)</option>
-                      <option value="Commercial 4 Marla (30x30)">Commercial 4 Marla (30x30)</option>
+                      {PLOT_SIZE_OPTIONS.map(({ label, value }) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
                     </select>
                   </div>
 

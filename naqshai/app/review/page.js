@@ -809,6 +809,28 @@ export default function ReviewPage() {
                                     </td>
                                   </tr>
                                   <tr>
+                                    <td className="p-2 font-medium text-slate-700">Plot Size</td>
+                                    <td className="p-2 text-slate-600">{l.plot.sizeDimensions || '—'}</td>
+                                    <td className="p-2 text-slate-800">
+                                      {l.aiVerification.allotmentAudit?.size || 'Not detected'}
+                                    </td>
+                                    <td className="p-2">
+                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                        l.aiVerification.allotmentAudit?.sizeMatch === true
+                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                          : l.aiVerification.allotmentAudit?.sizeMatch === false
+                                          ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                      }`}>
+                                        {l.aiVerification.allotmentAudit?.sizeMatch === true
+                                          ? '✓ Verified'
+                                          : l.aiVerification.allotmentAudit?.sizeMatch === false
+                                          ? '⚠️ Discrepancy'
+                                          : 'Review'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  <tr>
                                     <td className="p-2 font-medium text-slate-700">Allottee Matches CNIC</td>
                                     <td className="p-2 text-slate-600">Allottee Title</td>
                                     <td className="p-2 text-slate-800 font-mono">

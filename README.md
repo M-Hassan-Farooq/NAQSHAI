@@ -47,8 +47,8 @@ commerce, transit proximity).
 | 🌊 **Environmental Intelligence** | Deterministic per-plot flood-risk, noise (dB), and elevation modelling keyed to sector/zone geography. |
 | 🏥 **Amenity Scoring** | Haversine proximity scoring against a curated Islamabad/Rawalpindi landmark registry (0–100 weighted score). |
 | ⭐ **Favorites** | Guest favorites in `localStorage`, seamlessly migrated to the server on login (owner-scoped RLS). |
-| 📝 **Seller Draft Lifecycle** | Multi-step listing drafts → submit → operator review → atomic approval & publish. |
-| 🛡️ **Operator Review Queue** | Passphrase-gated dashboard to inspect submitted listings and signed verification documents. |
+| 📝 **Seller Draft Lifecycle** | Multi-step listing drafts with residential and commercial plot-size presets → submit → operator review → atomic approval & publish. |
+| 🛡️ **Operator Review Queue** | Passphrase-gated dashboard to inspect submitted listings, review AI document size matches, and access signed verification documents. |
 | 🔐 **Secure Auth** | Supabase Auth (email + OAuth), bearer-token API verification, and Postgres Row Level Security. |
 
 ---
