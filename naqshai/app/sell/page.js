@@ -1027,11 +1027,11 @@ export default function SellPlotPage() {
                                 key={ep.id}
                                 paths={paths}
                                 options={{
-                                  strokeColor: isConflictTarget ? '#dc2626' : '#334155',
-                                  strokeWeight: isConflictTarget ? 3 : 2,
-                                  strokeOpacity: 0.95,
-                                  fillColor: isConflictTarget ? '#ef4444' : '#475569',
-                                  fillOpacity: isConflictTarget ? 0.65 : 0.55,
+                                  strokeColor: isConflictTarget ? '#dc2626' : '#64748b',
+                                  strokeWeight: isConflictTarget ? 2.5 : 1.5,
+                                  strokeOpacity: 0.85,
+                                  fillColor: isConflictTarget ? '#ef4444' : '#64748b',
+                                  fillOpacity: isConflictTarget ? 0.35 : 0.15,
                                   clickable: false,
                                   zIndex: 1,
                                 }}
@@ -1083,7 +1083,7 @@ export default function SellPlotPage() {
                               <span>Your Plot {areaVerification?.isValid ? '(Verified)' : ''}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className="w-3 h-3 rounded bg-slate-600/60 border border-slate-700 inline-block" />
+                              <span className="w-3 h-3 rounded bg-slate-500/20 border border-slate-500 inline-block" />
                               <span>Registered Plots (Occupied)</span>
                             </div>
                             {areaVerification && !areaVerification.isValid && !boundaryConflict.hasConflict && (
