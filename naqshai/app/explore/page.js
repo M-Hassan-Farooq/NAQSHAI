@@ -93,6 +93,23 @@ function clusterBubbleDataUri(size) {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 
+function floodRiskClasses(value) {
+  const risk = String(value || '').split('(')[0].trim().toLowerCase();
+  if (/\b(high|severe|very high)\b/.test(risk)) {
+    return 'bg-danger-soft text-danger border-danger/20';
+  }
+  if (/\b(elevated|significant)\b/.test(risk)) {
+    return 'bg-orange-50 text-orange-800 border-orange-200';
+  }
+  if (/\b(moderate|medium)\b/.test(risk)) {
+    return 'bg-caution-soft text-caution border-caution/20';
+  }
+  if (/\b(low|minimal)\b/.test(risk)) {
+    return 'bg-action-soft text-action-hover border-action/20';
+  }
+  return 'bg-surface-subtle text-muted border-border';
+}
+
 // One plot boundary polygon. Memoized and owns its OWN hover state, so moving the
 // pointer across the map restyles only THIS polygon instead of bubbling up to
 // re-render the entire Explore view (sidebar list + every other polygon). Because
@@ -1026,11 +1043,8 @@ function ExploreContent() {
                             const isNoisePending = isPendingValue(noiseVal);
                             const isElevPending = isPendingValue(elevVal);
 
-                            const floodLower = floodVal.toLowerCase();
                             const noiseLower = noiseVal.toLowerCase();
 
-                            const isHighFlood = floodLower.includes('high') || floodLower.includes('basin');
-                            const isModerateFlood = floodLower.includes('moderate') || floodLower.includes('medium');
                             const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
                             const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
@@ -1122,13 +1136,7 @@ function ExploreContent() {
                                     <div className="space-y-1.5 text-sm">
                                       {!isFloodPending && (
                                         <span
-                                          className={`inline-flex mr-1.5 px-2.5 py-1 rounded-control border font-medium ${
-                                            isHighFlood
-                                              ? 'bg-danger-soft text-danger border-danger/20'
-                                              : isModerateFlood
-                                              ? 'bg-caution-soft text-caution border-caution/20'
-                                              : 'bg-action-soft text-action-hover border-action/20'
-                                          }`}
+                                          className={`inline-flex mr-1.5 px-2.5 py-1 rounded-control border font-medium ${floodRiskClasses(floodVal)}`}
                                         >
                                           Flood: {floodVal}
                                         </span>
@@ -1230,7 +1238,7 @@ function ExploreContent() {
                         <div ref={placesSearchContainerRef} className="relative min-w-[min(100%,16rem)] flex-1 basis-64">
                       <form
                         onSubmit={handlePlacesSearchSubmit}
-                        className="flex min-h-11 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 transition focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15"
+                        className="flex min-h-10 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 transition focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15"
                       >
                         <Compass className="w-4 h-4 text-action shrink-0" />
                         <input
@@ -1674,11 +1682,8 @@ function ExploreContent() {
                           const isElevPending = isPendingValue(elevVal);
                           const allPending = isFloodPending && isNoisePending && isElevPending;
 
-                          const floodLower = floodVal.toLowerCase();
                           const noiseLower = noiseVal.toLowerCase();
 
-                          const isHighFlood = floodLower.includes('high') || floodLower.includes('basin');
-                          const isModerateFlood = floodLower.includes('moderate') || floodLower.includes('medium');
                           const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
                           const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
@@ -1697,7 +1702,7 @@ function ExploreContent() {
                                   {!isFloodPending && (
                                     <div className="flex justify-between gap-4 py-2.5">
                                       <dt className="text-muted">Flood indicator</dt>
-                                      <dd className={`font-medium text-right ${isHighFlood ? 'text-danger' : isModerateFlood ? 'text-caution' : 'text-action-hover'}`}>{floodVal}</dd>
+                                      <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${floodRiskClasses(floodVal)}`}>{floodVal}</dd>
                                     </div>
                                   )}
                                   {!isNoisePending && (
