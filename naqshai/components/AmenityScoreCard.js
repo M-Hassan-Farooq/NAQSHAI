@@ -183,6 +183,10 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
 
   const scoreMeta = getScoreColorClass(data.overallScore);
   const categories = data.categories || {};
+  const calculatedAt = data.calculatedAt ? new Date(data.calculatedAt) : null;
+  const calculatedDate = calculatedAt && Number.isFinite(calculatedAt.getTime())
+    ? calculatedAt.toLocaleDateString()
+    : null;
 
   return (
     <div className={`ui-panel p-4 space-y-4 ${className}`}>
@@ -232,6 +236,10 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
           {data.rating?.label || 'High Accessibility'}
         </span>
       </div>
+      <p className="text-xs leading-relaxed text-muted">
+        Distances are straight-line estimates to entries in NAQSHAI’s regional amenity dataset; facility coverage may be incomplete.
+        {calculatedDate ? ` Calculated ${calculatedDate}.` : ''}
+      </p>
 
       {/* 4 Amenity Category Progress Rows */}
       <div className="space-y-3 pt-1">

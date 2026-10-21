@@ -1529,13 +1529,13 @@ function ExploreContent() {
                 >
                   {selectedPlot && (
                     <>
-                      {/* Sidebar Header */}
-                      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-700 text-xs font-bold">
+                      {/* Inspector identity header */}
+                      <div className="p-4 border-b border-border flex justify-between items-center bg-surface-subtle/80">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono bg-surface px-2 py-1 rounded-control border border-border text-ink text-xs font-bold truncate">
                             {selectedPlot.id}
                           </span>
-                          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                          <span className="text-sm font-bold text-action-hover bg-action-soft px-2.5 py-1.5 rounded-control whitespace-nowrap">
                             {selectedPlot.price}
                           </span>
                         </div>
@@ -1543,7 +1543,7 @@ function ExploreContent() {
                           <button
                             type="button"
                             onClick={() => toggleFavorite(selectedPlot.id, selectedPlot)}
-                            className="p-1.5 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                            className="min-h-9 min-w-9 flex items-center justify-center hover:bg-rose-50 rounded-control text-muted hover:text-rose-500 transition cursor-pointer ui-focus-ring"
                             title={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
                             aria-label={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
                           >
@@ -1559,56 +1559,105 @@ function ExploreContent() {
                             type="button"
                             onClick={() => setSelectedPlot(null)}
                             aria-label="Close plot details panel"
-                            className="p-1 hover:bg-slate-200/60 rounded-full text-slate-500 transition cursor-pointer"
+                            className="min-h-9 min-w-9 flex items-center justify-center hover:bg-slate-200/60 rounded-control text-muted transition cursor-pointer ui-focus-ring"
                           >
                             <X className="w-5 h-5" />
                           </button>
                         </div>
                       </div>
 
-                      {/* Sidebar Content (Scrollable) */}
-                      <div className="p-5 flex-1 overflow-y-auto space-y-5 text-slate-800">
-                        {/* Title & Location */}
-                        <div>
-                          <h2 className="text-lg font-bold text-slate-900 leading-snug">{selectedPlot.name}</h2>
-                          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>{selectedPlot.society ? `${selectedPlot.society}, ` : ''}{selectedPlot.city}</span>
+                      {/* Plot identity, facts, and review information */}
+                      <div className="p-5 flex-1 overflow-y-auto space-y-5 text-ink">
+                        <section aria-labelledby="selected-plot-title">
+                          <h2 id="selected-plot-title" className="text-lg font-bold text-ink leading-snug">
+                            {selectedPlot.name}
+                          </h2>
+                          <p className="text-sm text-muted mt-1 flex items-start gap-2">
+                            <MapPin className="w-4 h-4 text-action shrink-0 mt-0.5" />
+                            <span>{[selectedPlot.society, selectedPlot.city].filter(Boolean).join(', ') || 'Location not provided'}</span>
                           </p>
-                        </div>
+                        </section>
 
-                        {/* 3D Walkthrough Toggle */}
-                        <button
-                          onClick={() => setIs3DMode(!is3DMode)}
-                          disabled={!selectedPlot.center}
-                          className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 font-medium py-2.5 px-4 rounded-xl border border-slate-200 transition text-xs shadow-xs"
-                        >
-                          <Eye className="w-4 h-4 text-emerald-700" />
-                          <span>
-                            {!selectedPlot.center
-                              ? 'Walkthrough Unavailable (No Boundary)'
-                              : is3DMode
-                              ? 'Exit 3D Walkthrough'
-                              : 'Launch 3D Walkthrough'}
-                          </span>
-                        </button>
-
-                        {/* Architectural Breakdown */}
-                        <div className="space-y-2">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Architectural Breakdown</h3>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                              <span className="text-slate-500 block text-[11px]">Plot Size</span>
-                              <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.size}</span>
+                        <section aria-labelledby="property-facts-title" className="space-y-2">
+                          <h3 id="property-facts-title" className="text-sm font-semibold text-ink">Property details</h3>
+                          <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
+                            <div className="flex justify-between gap-4 py-2.5">
+                              <dt className="text-muted">Plot size</dt>
+                              <dd className="font-semibold text-right">{selectedPlot.details?.size || 'Not provided'}</dd>
                             </div>
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                              <span className="text-slate-500 block text-[11px]">Category</span>
-                              <span className="font-semibold text-slate-800 mt-0.5 block">{selectedPlot.details.category || 'Residential'}</span>
+                            <div className="flex justify-between gap-4 py-2.5">
+                              <dt className="text-muted">Property type</dt>
+                              <dd className="font-semibold text-right">{selectedPlot.details?.category || 'Not provided'}</dd>
+                            </div>
+                            <div className="flex justify-between gap-4 py-2.5">
+                              <dt className="text-muted">Map boundary</dt>
+                              <dd className={`font-semibold text-right ${selectedPlot.hasGeometry ? 'text-action-hover' : 'text-caution'}`}>
+                                {selectedPlot.hasGeometry ? 'Available' : 'Not available'}
+                              </dd>
+                            </div>
+                            {selectedPlot.center && (
+                              <div className="flex justify-between gap-4 py-2.5">
+                                <dt className="text-muted">Map coordinates</dt>
+                                <dd className="font-mono text-xs text-right">
+                                  {selectedPlot.center.lat.toFixed(5)}, {selectedPlot.center.lng.toFixed(5)}
+                                </dd>
+                              </div>
+                            )}
+                          </dl>
+                          <p className="text-xs leading-relaxed text-muted">
+                            The mapped outline comes from listing data and is not a cadastral or on-site survey.
+                          </p>
+                        </section>
+
+                        <section aria-labelledby="verification-title" className="space-y-3">
+                          <div>
+                            <h3 id="verification-title" className="text-sm font-semibold text-ink">Verification checks</h3>
+                            <p className="text-xs text-muted mt-0.5">These checks have different scopes; none establishes legal ownership or title.</p>
+                          </div>
+                          <div className="divide-y divide-border rounded-card border border-border px-3">
+                            <div className="py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-medium text-ink">Listing review</span>
+                                <span className={`ui-badge ${selectedPlot.isVerified ? 'ui-badge-success' : 'ui-badge-neutral'}`}>
+                                  {selectedPlot.isVerified ? 'Approved for listing' : 'Not marked verified'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted mt-1.5">
+                                {selectedPlot.isVerified
+                                  ? 'This status reflects approval for public listing on NAQSHAI; it is not proof of ownership or title.'
+                                  : 'The public listing data does not record an approved verification status.'}
+                              </p>
+                              <p className="text-xs text-muted mt-1">
+                                Source: NAQSHAI listing status · Review date: not provided
+                              </p>
+                            </div>
+                            <div className="py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-medium text-ink">Mapped area check</span>
+                                <span className="ui-badge-neutral">
+                                  Result not available
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted mt-1.5">
+                                {selectedPlot.hasGeometry ? 'A mapped boundary is available, but size-to-boundary and overlap check results are not included in this public plot data.' : 'No mapped boundary or size-to-boundary and overlap check result is included in this public plot data.'}
+                              </p>
+                              <p className="text-xs text-muted mt-1">
+                                The mapped outline alone does not confirm dimensions on the ground.
+                              </p>
+                            </div>
+                            <div className="py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-medium text-ink">Document and identity match</span>
+                                <span className="ui-badge-neutral">Result not available</span>
+                              </div>
+                              <p className="text-xs text-muted mt-1.5">
+                                Document-review and seller-identity matching results are not included in the public plot data.
+                              </p>
                             </div>
                           </div>
-                        </div>
+                        </section>
 
-                        {/* Risk Intelligence Badges */}
+                        {/* Environmental indicators */}
                         {(() => {
                           const floodVal = selectedPlot.details?.floodRisk || '';
                           const noiseVal = selectedPlot.details?.noiseLevel || '';
@@ -1634,152 +1683,146 @@ function ExploreContent() {
                           const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
                           return (
-                            <div className="space-y-2">
-                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Risk Intelligence Assessment</h3>
+                            <section aria-labelledby="risk-indicators-title" className="space-y-2">
+                              <div>
+                                <h3 id="risk-indicators-title" className="text-sm font-semibold text-ink">Environmental indicators</h3>
+                                <p className="text-xs text-muted mt-0.5">Screening information only; not a site inspection or safety guarantee.</p>
+                              </div>
                               {allPending ? (
-                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2.5 leading-relaxed">
-                                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                                  <div>
-                                    <p className="font-medium text-slate-700">Geospatial Risk Survey Pending</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                      Detailed environmental hazard assessment for this plot is currently under geospatial review.
-                                    </p>
-                                  </div>
+                                <div className="rounded-card border border-border bg-surface-subtle px-3 py-2.5 text-sm text-muted">
+                                  No environmental indicators are available for this listing.
                                 </div>
                               ) : (
-                                <div className="flex flex-wrap gap-2 pt-0.5">
+                                <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
                                   {!isFloodPending && (
-                                    <span
-                                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-md text-xs font-semibold ${
-                                        isHighFlood
-                                          ? 'bg-red-50 text-red-800 border-red-200'
-                                          : isModerateFlood
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                      }`}
-                                    >
-                                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
-                                      Flood: {floodVal}
-                                    </span>
+                                    <div className="flex justify-between gap-4 py-2.5">
+                                      <dt className="text-muted">Flood indicator</dt>
+                                      <dd className={`font-medium text-right ${isHighFlood ? 'text-danger' : isModerateFlood ? 'text-caution' : 'text-action-hover'}`}>{floodVal}</dd>
+                                    </div>
                                   )}
                                   {!isNoisePending && (
-                                    <span
-                                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-md text-xs font-semibold ${
-                                        isHighNoise
-                                          ? 'bg-red-50 text-red-800 border-red-200'
-                                          : isQuietNoise
-                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                                      }`}
-                                    >
-                                      Noise: {noiseVal}
-                                    </span>
+                                    <div className="flex justify-between gap-4 py-2.5">
+                                      <dt className="text-muted">Noise indicator</dt>
+                                      <dd className={`font-medium text-right ${isHighNoise ? 'text-danger' : isQuietNoise ? 'text-action-hover' : 'text-caution'}`}>{noiseVal}</dd>
+                                    </div>
                                   )}
                                   {!isElevPending && (
-                                    <span className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                                      Elevation: {elevVal}
-                                    </span>
+                                    <div className="flex justify-between gap-4 py-2.5">
+                                      <dt className="text-muted">Elevation</dt>
+                                      <dd className="font-medium text-right">{elevVal}</dd>
+                                    </div>
                                   )}
-                                </div>
+                                </dl>
                               )}
-                            </div>
+                              <p className="text-xs text-muted">
+                                Source and assessment date are not provided in the public plot data.
+                              </p>
+                            </section>
                           );
                         })()}
 
-                        {/* Regulatory Authority Clearance (CDA / RDA) */}
+                        {/* Society-level regulatory registry lookup */}
                         {selectedPlot.regulatory && (
-                          <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
-                            selectedPlot.regulatory.tier === 'unauthorized'
-                              ? 'bg-amber-50/70 border-amber-200'
-                              : selectedPlot.regulatory.tier === 'conditional'
-                              ? 'bg-amber-50/80 border-amber-200'
-                              : 'bg-emerald-50/70 border-emerald-200'
-                          }`}>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold uppercase tracking-wider text-slate-800 text-[11px] flex items-center gap-1.5 font-mono">
-                                <ShieldCheck className={`w-4 h-4 ${
-                                  selectedPlot.regulatory.tier === 'unauthorized'
-                                    ? 'text-amber-600'
-                                    : selectedPlot.regulatory.tier === 'conditional'
-                                    ? 'text-amber-600'
-                                    : 'text-emerald-700'
-                                }`} />
-                                Authority Clearance ({selectedPlot.regulatory.authority})
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${selectedPlot.regulatory.badgeClass}`}>
+                          <section aria-labelledby="regulatory-status-title" className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <h3 id="regulatory-status-title" className="text-sm font-semibold text-ink">
+                                Society / scheme status
+                              </h3>
+                              <span className={`ui-badge ${selectedPlot.regulatory.tier === 'approved' || selectedPlot.regulatory.tier === 'government' ? 'ui-badge-success' : 'ui-badge-caution'}`}>
                                 {selectedPlot.regulatory.badgeText}
                               </span>
                             </div>
-
-                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                            <p className="text-sm text-muted leading-relaxed">
                               {selectedPlot.regulatory.summary}
                             </p>
-
-                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 p-2.5 rounded-lg border border-slate-200/60 font-mono">
-                              <div>
-                                <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">NOC Reference</span>
-                                <span className="font-semibold text-slate-800 truncate block">{selectedPlot.regulatory.nocNumber}</span>
+                            <dl className="divide-y divide-border rounded-card border-y border-border text-xs">
+                              <div className="flex justify-between gap-3 py-2">
+                                <dt className="text-muted">Authority</dt>
+                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.authority}</dd>
                               </div>
-                              <div>
-                                <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Layout Plan (LOP)</span>
-                                <span className="font-semibold text-slate-800 truncate block">{selectedPlot.regulatory.lopStatus}</span>
+                              <div className="flex justify-between gap-3 py-2">
+                                <dt className="text-muted">Registry NOC reference</dt>
+                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.nocNumber}</dd>
                               </div>
-                            </div>
+                              <div className="flex justify-between gap-3 py-2">
+                                <dt className="text-muted">Registry layout-plan status</dt>
+                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.lopStatus}</dd>
+                              </div>
+                            </dl>
+                            <p className="text-xs text-muted">
+                              NAQSHAI registry lookup · Currentness date not provided. This is a society/sector-level match, not confirmation of this plot’s NOC, ownership, title, or transfer eligibility.
+                            </p>
 
                             {selectedPlot.regulatory.warning && (
-                              <p className={`text-[10px] p-2 rounded-lg font-medium leading-relaxed ${
-                                selectedPlot.regulatory.tier === 'unauthorized'
-                                  ? 'bg-amber-100/90 text-amber-900 border border-amber-300'
-                                  : 'bg-amber-100/90 text-amber-900 border border-amber-300'
-                              }`}>
-                                ⚠️ {selectedPlot.regulatory.warning}
+                              <p className="rounded-control border border-caution/20 bg-caution-soft p-2.5 text-xs font-medium leading-relaxed text-caution">
+                                {selectedPlot.regulatory.warning}
                               </p>
                             )}
 
                             {selectedPlot.regulatory.officialVerificationUrl && (
-                              <div className="text-right pt-0.5">
+                              <div className="pt-0.5">
                                 <a
                                   href={selectedPlot.regulatory.officialVerificationUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 underline inline-flex items-center gap-1"
+                                  className="text-xs font-semibold text-action-hover hover:text-action underline inline-flex items-center gap-1 ui-focus-ring"
                                 >
-                                  Verify on {selectedPlot.regulatory.authority} Official Portal →
+                                  Check with {selectedPlot.regulatory.authority}
+                                  <span aria-hidden="true">→</span>
                                 </a>
                               </div>
                             )}
+                          </section>
+                        )}
+
+                        <section aria-labelledby="nearby-amenities-title" className="space-y-2">
+                          <h3 id="nearby-amenities-title" className="text-sm font-semibold text-ink">Nearby amenities and distances</h3>
+                          <AmenityScoreCard
+                            plotId={selectedPlot.id}
+                            lat={selectedPlot.center?.lat}
+                            lng={selectedPlot.center?.lng}
+                          />
+                        </section>
+
+                        {selectedPlot.details?.landmarks && selectedPlot.details.landmarks !== 'No proximity data provided.' && (
+                          <div className="space-y-1.5">
+                            <h3 className="text-sm font-semibold text-ink">Seller-provided proximity notes</h3>
+                            <p className="text-sm text-muted leading-relaxed">
+                              {selectedPlot.details.landmarks}
+                            </p>
                           </div>
                         )}
 
-                        {/* Interactive Neighborhood Amenity Scoring */}
-                        <AmenityScoreCard
-                          plotId={selectedPlot.id}
-                          lat={selectedPlot.center?.lat}
-                          lng={selectedPlot.center?.lng}
-                        />
-
-                        {/* Landmarks & Proximity */}
-                        <div className="space-y-1.5">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Landmarks & Proximity</h3>
-                          <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-                            {selectedPlot.details.landmarks}
-                          </p>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIs3DMode(!is3DMode)}
+                          disabled={!selectedPlot.center}
+                          className="w-full flex items-center justify-center gap-2 bg-surface-subtle hover:bg-action-soft disabled:opacity-50 disabled:cursor-not-allowed text-ink font-medium py-2.5 px-4 rounded-control border border-border transition text-sm ui-focus-ring"
+                        >
+                          <Eye className="w-4 h-4 text-action" />
+                          <span>
+                            {!selectedPlot.center
+                              ? 'Walkthrough unavailable (no map location)'
+                              : is3DMode
+                              ? 'Exit 3D walkthrough'
+                              : 'Launch 3D walkthrough'}
+                          </span>
+                        </button>
 
                         {/* WhatsApp Secondary Link */}
-                        <div className="pt-2">
+                        <div className="pt-1">
                           {selectedPlot.ownerContact ? (
                             <a
                               href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 px-4 rounded-xl transition text-xs shadow-xs"
+                              className="w-full flex items-center justify-center gap-2 bg-surface border border-border hover:bg-surface-subtle text-ink font-medium py-2.5 px-4 rounded-control transition text-sm ui-focus-ring"
                             >
-                              <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Contact Owner via WhatsApp</span>
+                              <Phone className="w-4 h-4 text-action" />
+                              <span>Contact owner via WhatsApp</span>
                             </a>
                           ) : (
-                            <div className="w-full text-center text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-xl py-2.5">
+                            <div className="w-full text-center text-sm text-muted bg-surface-subtle border border-border rounded-control py-2.5">
                               Owner contact not available
                             </div>
                           )}
