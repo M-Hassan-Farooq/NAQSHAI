@@ -175,13 +175,14 @@
     display: inline-flex;
     min-height: 1.5rem;
     align-items: center;
+    justify-content: center;
     gap: var(--space-ui-1);
     border: 1px solid transparent;
     border-radius: var(--ui-radius-pill);
     padding: 0.125rem var(--space-ui-2);
     font-size: 0.75rem;
     font-weight: 600;
-    line-height: 1.25;
+    line-height: 1;
   }
 
   .ui-badge-success {
