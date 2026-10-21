@@ -1233,12 +1233,12 @@ function ExploreContent() {
                     selectedPlot && !isMobile ? 'lg:right-[25rem]' : ''
                   }`}
                 >
-                    <div className="flex flex-wrap items-center gap-2 rounded-panel border border-border bg-surface/95 p-2 shadow-raised backdrop-blur-md">
+                    <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-panel border border-border bg-surface/95 p-1.5 shadow-raised backdrop-blur-md">
                       {isPlacesSearchOpen ? (
-                        <div ref={placesSearchContainerRef} className="relative min-w-[min(100%,16rem)] flex-1 basis-64">
+                        <div ref={placesSearchContainerRef} className="relative w-[min(16rem,100%)] min-w-0 flex-none">
                       <form
                         onSubmit={handlePlacesSearchSubmit}
-                        className="flex min-h-10 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 transition focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15"
+                        className="flex min-h-9 items-center gap-2 rounded-control border border-border bg-surface-subtle px-2.5 transition focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/15"
                       >
                         <Compass className="w-4 h-4 text-action shrink-0" />
                         <input
@@ -1250,7 +1250,7 @@ function ExploreContent() {
                           }}
                           aria-label="Search places and landmarks"
                           placeholder="Search places, societies, landmarks"
-                          className="w-full min-w-0 bg-transparent py-2 text-sm text-ink placeholder:text-muted outline-none"
+                          className="w-full min-w-0 bg-transparent py-1.5 text-sm text-ink placeholder:text-muted outline-none"
                         />
                         {isPlacesLoading && (
                           <Loader2 className="w-4 h-4 text-action animate-spin shrink-0" />
@@ -1305,7 +1305,7 @@ function ExploreContent() {
                         <button
                           type="button"
                           onClick={() => setIsPlacesSearchOpen(true)}
-                          className="min-h-11 rounded-control border border-border bg-surface-subtle px-3 text-sm font-semibold text-ink hover:bg-action-soft hover:text-action-hover transition flex items-center gap-2 cursor-pointer ui-focus-ring"
+                          className="min-h-9 rounded-control border border-border bg-surface-subtle px-2.5 text-sm font-semibold text-ink hover:bg-action-soft hover:text-action-hover transition flex items-center gap-2 cursor-pointer ui-focus-ring"
                           title="Show places search"
                         >
                           <Compass className="w-4 h-4 text-action" />
@@ -1313,7 +1313,7 @@ function ExploreContent() {
                         </button>
                       )}
 
-                      <label className="flex min-h-11 min-w-0 flex-1 basis-36 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 text-muted sm:flex-none">
+                      <label className="flex min-h-9 min-w-0 flex-1 basis-36 items-center gap-2 rounded-control border border-border bg-surface-subtle px-2.5 text-muted sm:flex-none">
                         <SlidersHorizontal className="w-4 h-4 shrink-0 text-action" />
                         <span className="sr-only">Filter plots by city</span>
                         <select
@@ -1334,7 +1334,7 @@ function ExploreContent() {
                         onClick={() => setIs3DMode((current) => !current)}
                         disabled={!selectedPlot?.center}
                         aria-pressed={is3DMode}
-                        className={`min-h-11 flex-1 sm:flex-none rounded-control border px-3 text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ui-focus-ring ${
+                        className={`min-h-9 flex-1 sm:flex-none rounded-control border px-2.5 text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ui-focus-ring ${
                           is3DMode
                             ? 'border-action bg-action text-white'
                             : 'border-border bg-surface-subtle text-ink hover:bg-action-soft hover:text-action-hover'
