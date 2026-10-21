@@ -87,7 +87,7 @@ export async function GET(request) {
         }
 
         const conflict = checkPolygonConflict(polygon, verifiedRows || []);
-        const areaCheck = verifyAreaMatch(polygon, plot.sizeDimensions || '10 Marla (35x70)', 0.90);
+        const areaCheck = verifyAreaMatch(polygon, plot.sizeDimensions || '10 Marla (35x70)', 0.90, 1.10);
         const regulatory = checkRegulatoryStatus(plot.society, plot.city, polygon);
 
         return {

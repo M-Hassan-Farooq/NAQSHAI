@@ -13,6 +13,7 @@ export const SQFT_PER_MARLA = 225; // 225 sq ft per Marla (CDA standard: 25x50 =
 export const MARLA_PER_KANAL = 20;  // 20 Marla = 1 Kanal (4500 sq ft)
 export const SQFT_PER_SQMETER = 10.7639104;
 export const MIN_AREA_MATCH_RATIO = 0.90; // At least 90% of claimed area required
+export const MAX_AREA_MATCH_RATIO = 1.10; // At most 110% of claimed area allowed (prevents encroachment & boundary exaggeration)
 
 /**
  * Parses claimed area string (e.g. "5 Marla (25x50)", "1 Kanal (50x90)") into numerical sq ft & sq meters.
@@ -122,39 +123,63 @@ export function calculatePolygonArea(polygonCoordinates) {
 
 /**
  * Verifies calculated polygon area against claimed plot size.
- * Enforces that calculated area must be >= 90% of claimed area.
+ * Enforces a strict two-sided tolerance window: 90% <= calculated <= 110%.
+ * Prevents both undersized polygons and oversized encroachment/boundary exaggeration.
  *
  * @param {Array<{ lat: number, lng: number }>} polygonCoordinates
  * @param {string} claimedSizeDimensions
  * @param {number} [minRatio=0.90]
+ * @param {number} [maxRatio=1.10]
  * @returns {object} Full verification breakdown
  */
-export function verifyAreaMatch(polygonCoordinates, claimedSizeDimensions, minRatio = MIN_AREA_MATCH_RATIO) {
+export function verifyAreaMatch(
+  polygonCoordinates,
+  claimedSizeDimensions,
+  minRatio = MIN_AREA_MATCH_RATIO,
+  maxRatio = MAX_AREA_MATCH_RATIO
+) {
   const claimed = parseClaimedArea(claimedSizeDimensions);
   const calculated = calculatePolygonArea(polygonCoordinates);
 
   const ratio = claimed.sqFt > 0 ? calculated.sqFt / claimed.sqFt : 0;
   const percentage = Math.round(ratio * 100);
   const minRequiredPercentage = Math.round(minRatio * 100);
-  const isValid = percentage >= minRequiredPercentage || ratio >= minRatio;
+  const maxAllowedPercentage = Math.round(maxRatio * 100);
 
   const minRequiredSqFt = Math.round(claimed.sqFt * minRatio);
+  const maxAllowedSqFt = Math.round(claimed.sqFt * maxRatio);
+
+  const isUndersized = calculated.sqFt > 0 && (percentage < minRequiredPercentage || ratio < minRatio);
+  const isOversized = calculated.sqFt > 0 && (percentage > maxAllowedPercentage || ratio > maxRatio);
+  const isValid = calculated.sqFt > 0 && !isUndersized && !isOversized;
 
   let message = '';
+  let status = 'rejected';
+
   if (calculated.sqFt === 0) {
+    status = 'unmeasured';
     message = 'Draw at least 3 points to calculate plot boundary area.';
   } else if (isValid) {
-    message = `Area Verified: Mapped area covers ${percentage}% of claimed size (exceeds ${Math.round(minRatio * 100)}% minimum).`;
+    status = 'verified';
+    message = `Area Verified: Mapped area covers ${percentage}% of declared size (within strict ${minRequiredPercentage}%–${maxAllowedPercentage}% cadastral tolerance).`;
+  } else if (isOversized) {
+    status = 'oversized';
+    message = `Area Verification Failed: Mapped boundary covers ${Math.round(calculated.sqFt).toLocaleString()} sq ft (${percentage}%), which exceeds the maximum allowable ${maxAllowedPercentage}% threshold (${maxAllowedSqFt.toLocaleString()} sq ft). Potential land encroachment or boundary inflation detected.`;
   } else {
-    message = `Area Verification Failed: Mapped boundary covers only ${Math.round(calculated.sqFt)} sq ft (${percentage}%), which is below the mandatory ${Math.round(minRatio * 100)}% threshold (${minRequiredSqFt} sq ft).`;
+    status = 'undersized';
+    message = `Area Verification Failed: Mapped boundary covers only ${Math.round(calculated.sqFt).toLocaleString()} sq ft (${percentage}%), which is below the mandatory ${minRequiredPercentage}% threshold (${minRequiredSqFt.toLocaleString()} sq ft).`;
   }
 
   return {
     isValid,
+    isUndersized,
+    isOversized,
     ratio: Math.round(ratio * 1000) / 1000,
     percentage,
     minRequiredRatio: minRatio,
+    maxAllowedRatio: maxRatio,
     minRequiredSqFt,
+    maxAllowedSqFt,
     claimed: {
       raw: claimedSizeDimensions,
       sqFt: Math.round(claimed.sqFt),
@@ -166,7 +191,7 @@ export function verifyAreaMatch(polygonCoordinates, claimedSizeDimensions, minRa
       sqMeters: Math.round(calculated.sqMeters),
       marla: Math.round(calculated.marla * 10) / 10,
     },
-    status: isValid ? 'verified' : 'rejected',
+    status,
     message,
   };
 }

@@ -79,12 +79,16 @@ export async function POST(request, { params }) {
       }
 
       const plotDetails = draftRow?.form_data?.plotDetails || {};
-      const areaCheck = verifyAreaMatch(candidatePolygon, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+      const areaCheck = verifyAreaMatch(candidatePolygon, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90, 1.10);
       if (!areaCheck.isValid) {
+        const errorMsg = areaCheck.isOversized
+          ? `Cannot approve listing: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft, ${areaCheck.percentage}%) exceeds the 110% maximum limit (${areaCheck.maxAllowedSqFt} sq ft) of claimed ${areaCheck.claimed.sqFt} sq ft. Potential encroachment or inflated boundary.`
+          : `Cannot approve listing: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft, ${areaCheck.percentage}%) is below the required 90% threshold (${areaCheck.minRequiredSqFt} sq ft) of claimed ${areaCheck.claimed.sqFt} sq ft.`;
+
         return NextResponse.json(
           {
             success: false,
-            error: `Cannot approve listing: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft, ${areaCheck.percentage}%) is below the required 90% threshold (${areaCheck.minRequiredSqFt} sq ft) of claimed ${areaCheck.claimed.sqFt} sq ft.`,
+            error: errorMsg,
           },
           { status: 400 }
         );

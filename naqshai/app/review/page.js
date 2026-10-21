@@ -903,9 +903,15 @@ export default function ReviewPage() {
                                 <span>Area Verification</span>
                               </span>
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                l.areaVerification.isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-200 text-amber-900'
+                                l.areaVerification.isValid
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-200 text-amber-900'
                               }`}>
-                                {l.areaVerification.percentage}% (Min: 90%)
+                                {l.areaVerification.isValid
+                                  ? `${l.areaVerification.percentage}% (90%–110% match)`
+                                  : l.areaVerification.isOversized
+                                  ? `⚠️ Oversized: ${l.areaVerification.percentage}%`
+                                  : `⚠️ Undersized: ${l.areaVerification.percentage}%`}
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-600 flex justify-between mt-1">
@@ -913,8 +919,10 @@ export default function ReviewPage() {
                               <span>Claimed: ~{l.areaVerification.claimed.sqFt.toLocaleString()} sq ft</span>
                             </div>
                             {!l.areaVerification.isValid && (
-                              <p className="mt-1.5 font-semibold text-amber-800 text-[10px] leading-tight">
-                                ⚠️ Below 90% threshold ({l.areaVerification.minRequiredSqFt.toLocaleString()} sq ft). Approval blocked.
+                              <p className="mt-1.5 font-semibold text-amber-900 text-[10px] leading-tight">
+                                {l.areaVerification.isOversized
+                                  ? `⚠️ Mapped boundary is oversized by ${l.areaVerification.percentage - 100}% (~${l.areaVerification.calculated.sqFt.toLocaleString()} vs max ${l.areaVerification.maxAllowedSqFt?.toLocaleString()} sq ft). Possible encroachment. Approval blocked.`
+                                  : `⚠️ Below 90% threshold (${l.areaVerification.minRequiredSqFt.toLocaleString()} sq ft). Approval blocked.`}
                               </p>
                             )}
                           </div>

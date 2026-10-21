@@ -83,9 +83,9 @@ const mockSmallBox = [
   { lat: baseLat + dLat * 0.70, lng: baseLng + dLng },
   { lat: baseLat + dLat * 0.70, lng: baseLng },
 ];
-const checkSmall = verifyAreaMatch(mockSmallBox, '5 Marla (25x50)', 0.90);
-console.log(`Scenario B (70% Under-drawn boundary): ${!checkSmall.isValid ? 'REJECTED AS EXPECTED' : 'FAILED TO REJECT'} - ${checkSmall.percentage}% coverage`);
-if (checkSmall.isValid || checkSmall.status !== 'rejected') {
+const checkSmall = verifyAreaMatch(mockSmallBox, '5 Marla (25x50)', 0.90, 1.10);
+console.log(`Scenario B (70% Under-drawn boundary): ${!checkSmall.isValid ? 'REJECTED AS EXPECTED' : 'FAILED TO REJECT'} - ${checkSmall.percentage}% coverage (status: ${checkSmall.status})`);
+if (checkSmall.isValid || checkSmall.status !== 'undersized') {
   console.error('✗ Scenario B should have been rejected for being below 90% threshold');
   process.exit(1);
 }
@@ -111,11 +111,40 @@ const mock88PercentBox = [
   { lat: baseLat + dLat * 0.88, lng: baseLng + dLng },
   { lat: baseLat + dLat * 0.88, lng: baseLng },
 ];
-const check88 = verifyAreaMatch(mock88PercentBox, '5 Marla (25x50)', 0.90);
-console.log(`Scenario D (88% boundary just below threshold): ${!check88.isValid ? 'REJECTED AS EXPECTED' : 'FAILED TO REJECT'} - ${check88.percentage}% coverage`);
-if (check88.isValid || check88.status !== 'rejected') {
+const check88 = verifyAreaMatch(mock88PercentBox, '5 Marla (25x50)', 0.90, 1.10);
+console.log(`Scenario D (88% boundary just below threshold): ${!check88.isValid ? 'REJECTED AS EXPECTED' : 'FAILED TO REJECT'} - ${check88.percentage}% coverage (status: ${check88.status})`);
+if (check88.isValid || check88.status !== 'undersized') {
   console.error('✗ Scenario D should be rejected because 88% < 90%');
   process.exit(1);
 }
 
-console.log('\n--- ALL AREA VERIFICATION TESTS PASSED SUCCESSFULLY! ---');
+// Test 3E: Drawn polygon covers 106% of claimed area (within 110% upper tolerance)
+const mock106PercentBox = [
+  { lat: baseLat, lng: baseLng },
+  { lat: baseLat, lng: baseLng + dLng },
+  { lat: baseLat + dLat * 1.06, lng: baseLng + dLng },
+  { lat: baseLat + dLat * 1.06, lng: baseLng },
+];
+const check106 = verifyAreaMatch(mock106PercentBox, '5 Marla (25x50)', 0.90, 1.10);
+console.log(`Scenario E (106% boundary within 110% ceiling): ${check106.isValid ? 'PASSED (Verified)' : 'FAILED'} - ${check106.percentage}% coverage (status: ${check106.status})`);
+if (!check106.isValid || check106.status !== 'verified') {
+  console.error('✗ Scenario E should pass under 110% ceiling');
+  process.exit(1);
+}
+
+// Test 3F: Drawn polygon is 140% of claimed area (e.g. 7 Marla drawn for 5 Marla claim -> OVERSIZED / ENCROACHMENT)
+const mock140PercentBox = [
+  { lat: baseLat, lng: baseLng },
+  { lat: baseLat, lng: baseLng + dLng },
+  { lat: baseLat + dLat * 1.40, lng: baseLng + dLng },
+  { lat: baseLat + dLat * 1.40, lng: baseLng },
+];
+const check140 = verifyAreaMatch(mock140PercentBox, '5 Marla (25x50)', 0.90, 1.10);
+console.log(`Scenario F (140% Oversized 7 Marla for 5 Marla): ${!check140.isValid ? 'REJECTED AS EXPECTED' : 'FAILED TO REJECT'} - ${check140.percentage}% coverage (status: ${check140.status})`);
+if (check140.isValid || check140.status !== 'oversized') {
+  console.error('✗ Scenario F should be rejected as oversized encroachment because 140% > 110%');
+  process.exit(1);
+}
+
+console.log('\n--- ALL AREA VERIFICATION TESTS (90%–110% BOUNDS) PASSED SUCCESSFULLY! ---');
+

@@ -222,10 +222,10 @@ export default function SellPlotPage() {
     return checkPolygonConflict(polygonCoordinates, existingPlots, draft?.published_plot_id);
   }, [polygonCoordinates, existingPlots, draft?.published_plot_id]);
 
-  // Real-time area calculation and 90% claimed area verification
+  // Real-time area calculation and 90%–110% cadastral tolerance verification
   const areaVerification = useMemo(() => {
     if (polygonCoordinates.length < 3) return null;
-    return verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+    return verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90, 1.10);
   }, [polygonCoordinates, plotDetails.sizeDimensions]);
   const {
     ready: draftReady,
@@ -482,11 +482,17 @@ export default function SellPlotPage() {
         );
         return;
       }
-      const areaCheck = verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90);
+      const areaCheck = verifyAreaMatch(polygonCoordinates, plotDetails.sizeDimensions || '10 Marla (35x70)', 0.90, 1.10);
       if (!areaCheck.isValid) {
-        setErrorMessage(
-          `Cannot proceed: Mapped plot area (${areaCheck.calculated.sqFt.toLocaleString()} sq ft) is only ${areaCheck.percentage}% of your claimed ${areaCheck.claimed.sqFt.toLocaleString()} sq ft (${areaCheck.claimed.raw}). Plot boundary must cover at least 90% (${areaCheck.minRequiredSqFt.toLocaleString()} sq ft) of claimed size to avoid automatic rejection.`
-        );
+        if (areaCheck.isOversized) {
+          setErrorMessage(
+            `Cannot proceed: Mapped plot area (~${areaCheck.calculated.sqFt.toLocaleString()} sq ft) is ${areaCheck.percentage}% of your declared ${areaCheck.claimed.sqFt.toLocaleString()} sq ft (${areaCheck.claimed.raw}), exceeding the maximum allowable 110% limit (${areaCheck.maxAllowedSqFt.toLocaleString()} sq ft). Please shrink or adjust boundary points to match your declared plot boundaries.`
+          );
+        } else {
+          setErrorMessage(
+            `Cannot proceed: Mapped plot area (~${areaCheck.calculated.sqFt.toLocaleString()} sq ft) is only ${areaCheck.percentage}% of your declared ${areaCheck.claimed.sqFt.toLocaleString()} sq ft (${areaCheck.claimed.raw}). Plot boundary must cover at least 90% (${areaCheck.minRequiredSqFt.toLocaleString()} sq ft) of declared size to avoid automatic rejection.`
+          );
+        }
         return;
       }
     }
@@ -1131,12 +1137,17 @@ export default function SellPlotPage() {
                       {areaVerification.isValid ? (
                         <span className="ui-badge-success">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          Meets area threshold
+                          Meets 90%–110% tolerance
+                        </span>
+                      ) : areaVerification.isOversized ? (
+                        <span className="ui-badge-caution">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Oversized ({areaVerification.percentage}%)
                         </span>
                       ) : (
                         <span className="ui-badge-caution">
                           <AlertCircle className="w-3.5 h-3.5" />
-                          Below 90% threshold
+                          Below 90% threshold ({areaVerification.percentage}%)
                         </span>
                       )}
                     </div>
@@ -1145,18 +1156,27 @@ export default function SellPlotPage() {
                   <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
                     <p><span className="block text-xs text-muted">Declared size</span><span className="font-semibold text-ink">{areaVerification.claimed.raw} · ~{areaVerification.claimed.sqFt.toLocaleString()} sq ft</span></p>
                     <p><span className="block text-xs text-muted">Mapped area</span><span className="font-semibold text-ink">~{areaVerification.calculated.sqFt.toLocaleString()} sq ft · {Math.round(areaVerification.calculated.sqMeters)} sq m</span></p>
-                    <p><span className="block text-xs text-muted">Area ratio · minimum 90%</span><span className={`font-semibold ${areaVerification.isValid ? 'text-action-hover' : 'text-caution'}`}>{areaVerification.percentage}%</span></p>
+                    <p><span className="block text-xs text-muted">Area ratio · 90%–110% tolerance</span><span className={`font-semibold ${areaVerification.isValid ? 'text-action-hover' : 'text-caution'}`}>{areaVerification.percentage}%</span></p>
                   </div>
 
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-label="Mapped area relative to declared area" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(areaVerification.percentage, 100)}>
-                    <div className={`h-full transition-all duration-500 ${areaVerification.isValid ? 'bg-action' : 'bg-caution'}`} style={{ width: `${Math.min(areaVerification.percentage, 100)}%` }} />
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-label="Mapped area relative to declared area" aria-valuemin={0} aria-valuemax={120} aria-valuenow={Math.min(areaVerification.percentage, 120)}>
+                    <div className={`h-full transition-all duration-500 ${areaVerification.isValid ? 'bg-action' : 'bg-caution'}`} style={{ width: `${Math.min((areaVerification.percentage / 120) * 100, 100)}%` }} />
                   </div>
-                  <p className="mt-2 text-xs text-muted">This compares the drawn polygon area with the declared plot-size estimate; it does not confirm legal boundaries, ownership, or on-site dimensions.</p>
+                  <p className="mt-2 text-xs text-muted">This compares the drawn polygon area with the declared plot-size estimate (allowing a ±10% margin of error for satellite drawing); it does not confirm legal boundaries, ownership, or on-site dimensions.</p>
 
                   {!areaVerification.isValid && (
                     <div className="mt-3 text-sm leading-relaxed text-caution">
-                      <strong>Update the outline:</strong> It covers only{' '}
-                      <strong>{areaVerification.calculated.sqFt.toLocaleString()} sq ft</strong> ({areaVerification.percentage}%), which is below the required 90% threshold ({areaVerification.minRequiredSqFt.toLocaleString()} sq ft) of your claimed {areaVerification.claimed.raw}. Please extend your boundary points to match the full plot area before proceeding.
+                      {areaVerification.isOversized ? (
+                        <>
+                          <strong>Adjust the boundary:</strong> The mapped outline covers{' '}
+                          <strong>~{areaVerification.calculated.sqFt.toLocaleString()} sq ft</strong> ({areaVerification.percentage}%), which exceeds the 110% upper limit ({areaVerification.maxAllowedSqFt.toLocaleString()} sq ft) of your declared {areaVerification.claimed.raw}. Please shrink or adjust boundary points to match your declared plot boundaries and prevent potential encroachment.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Update the outline:</strong> The mapped outline covers only{' '}
+                          <strong>~{areaVerification.calculated.sqFt.toLocaleString()} sq ft</strong> ({areaVerification.percentage}%), which is below the required 90% threshold ({areaVerification.minRequiredSqFt.toLocaleString()} sq ft) of your declared {areaVerification.claimed.raw}. Please extend your boundary points to match the full plot area before proceeding.
+                        </>
+                      )}
                     </div>
                   )}
                 </section>

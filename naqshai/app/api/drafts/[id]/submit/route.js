@@ -81,15 +81,19 @@ export async function POST(request, { params }) {
         );
       }
 
-      // Geospatial Area Verification: drawn boundary must cover at least 90% of claimed plot area
-      const areaCheck = verifyAreaMatch(polygonCoordinates, plot.sizeDimensions || '10 Marla (35x70)', 0.90);
+      // Geospatial Area Verification: drawn boundary must be within 90%–110% of claimed plot area
+      const areaCheck = verifyAreaMatch(polygonCoordinates, plot.sizeDimensions || '10 Marla (35x70)', 0.90, 1.10);
       if (!areaCheck.isValid) {
+        const rejectionReason = areaCheck.isOversized
+          ? `Automatic Rejection: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft) is ${areaCheck.percentage}% of claimed plot size (${areaCheck.claimed.sqFt} sq ft), which exceeds the 110% maximum allowable limit (${areaCheck.maxAllowedSqFt} sq ft). Potential land encroachment or boundary inflation detected.`
+          : `Automatic Rejection: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft) covers only ${areaCheck.percentage}% of claimed plot size (${areaCheck.claimed.sqFt} sq ft). In NAQSHAI, mapped plot boundaries must cover at least 90% (${areaCheck.minRequiredSqFt} sq ft) of claimed land area.`;
+
         // Automatically mark draft as rejected in database with clear audit reasoning
         await db
           .from('listing_drafts')
           .update({
             status: 'rejected',
-            rejection_reason: `Automatic Rejection: Drawn plot boundary area (${areaCheck.calculated.sqFt} sq ft) covers only ${areaCheck.percentage}% of claimed plot size (${areaCheck.claimed.sqFt} sq ft). In NAQSHAI, mapped plot boundaries must cover at least 90% (${areaCheck.minRequiredSqFt} sq ft) of claimed land area.`,
+            rejection_reason: rejectionReason,
           })
           .eq('id', id)
           .eq('user_id', user.id);
@@ -98,7 +102,7 @@ export async function POST(request, { params }) {
           {
             success: false,
             status: 'rejected',
-            error: `Plot automatically rejected: Drawn boundary area (${areaCheck.calculated.sqFt} sq ft) is only ${areaCheck.percentage}% of claimed ${areaCheck.claimed.sqFt} sq ft. Boundary must cover at least 90% (${areaCheck.minRequiredSqFt} sq ft) of claimed size.`,
+            error: rejectionReason,
           },
           { status: 400 }
         );
