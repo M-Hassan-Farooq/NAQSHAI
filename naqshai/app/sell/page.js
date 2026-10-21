@@ -21,7 +21,6 @@ import {
   CheckCircle2,
   MapPin,
   FileText,
-  UploadCloud,
   Trash2,
   RotateCcw,
   ShieldCheck,
@@ -37,7 +36,7 @@ import {
   Scale,
 } from 'lucide-react';
 
-const MAP_CONTAINER_STYLE = { width: '100%', height: '420px', borderRadius: '1rem' };
+const MAP_CONTAINER_STYLE = { width: '100%', height: '100%', borderRadius: '0.75rem' };
 const DEFAULT_CENTER = { lat: 33.6844, lng: 73.0479 };
 const SELL_MAP_OPTIONS = {
   mapTypeId: 'hybrid',
@@ -83,7 +82,7 @@ function formatPkr(num) {
 function SaveIndicator({ state, lastSavedAt, onRetry }) {
   if (state === 'saving') {
     return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted" role="status">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Saving…
       </span>
@@ -94,7 +93,7 @@ function SaveIndicator({ state, lastSavedAt, onRetry }) {
       ? new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
     return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-action-hover" role="status">
         <Check className="w-3.5 h-3.5" />
         Saved{t ? ` · ${t}` : ''}
       </span>
@@ -102,7 +101,7 @@ function SaveIndicator({ state, lastSavedAt, onRetry }) {
   }
   if (state === 'error') {
     return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-caution" role="status">
         <CloudOff className="w-3.5 h-3.5" />
         Unable to save
         <button
@@ -415,7 +414,6 @@ export default function SellPlotPage() {
     const path = `${uid}/${folder}/${field}-${Date.now()}-${safeName}`;
 
     setDocUploading((p) => ({ ...p, [field]: true }));
-    setDocError(`Uploading ${file.name}...`);
     try {
       const { error } = await supabase.storage
         .from('plot-documents')
@@ -572,7 +570,7 @@ export default function SellPlotPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
+    <div className="min-h-screen bg-page text-ink font-sans selection:bg-action-soft selection:text-action-hover pb-16">
 
       {/* Standardized Header Navigation Bar */}
       <Navbar
@@ -594,7 +592,7 @@ export default function SellPlotPage() {
 
 
       {/* Main Form Container */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-5 sm:pt-7">
 
         {/* Draft status banners */}
         {draft.initializing && (
@@ -673,15 +671,15 @@ export default function SellPlotPage() {
         )}
 
         {/* Title & Introduction */}
-        <div className="text-center mb-8">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <div className="mb-5 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-ink tracking-tight">
             List Your Plot on NAQSHAI
           </h1>
-          <p className="text-sm text-slate-600 mt-2 max-w-xl mx-auto">
-            Submit plot metadata, draw interactive polygon coordinates on satellite maps, and upload ownership documents for AI risk verification.
+          <p className="text-sm text-muted mt-1.5 max-w-2xl">
+            Add the listing details, map the plot boundary, then upload documents for review.
           </p>
-          <p className="text-xs text-slate-500 mt-2">
-            Your progress saves automatically — you can leave and pick up right where you left off.
+          <p className="text-xs text-muted mt-1.5">
+            Your draft saves automatically and can be resumed later.
           </p>
           {session?.user && !isReadOnly && (
             <div className="mt-3 flex justify-center md:hidden">
@@ -694,80 +692,25 @@ export default function SellPlotPage() {
           )}
         </div>
 
-        {/* 2. Step Progress Bar */}
+        {/* Compact step progress */}
         {currentStep <= 3 && (
-          <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4 mb-8">
-            <div className="flex items-center justify-between max-w-2xl mx-auto">
-
-              <div className="flex flex-col items-center gap-1.5 flex-1">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                    currentStep >= 1
-                      ? 'bg-emerald-700 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-400 border border-slate-200'
-                  }`}
-                >
-                  {currentStep > 1 ? <CheckCircle2 className="w-5 h-5" /> : '1'}
-                </div>
-                <span
-                  className={`text-xs font-semibold ${
-                    currentStep >= 1 ? 'text-emerald-800' : 'text-slate-400'
-                  }`}
-                >
-                  Plot Details
+          <div className="mb-4 sm:mb-5" role="group" aria-label={`Step ${currentStep} of 3`}>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-ink">
+                Step {currentStep} of 3
+                <span className="font-normal text-muted"> · {['Plot details', 'Boundary map', 'Documents'][currentStep - 1]}</span>
+              </span>
+              <span className="hidden sm:block text-xs text-muted">Autosaves as you go</span>
+            </div>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuemin={1} aria-valuemax={3} aria-valuenow={currentStep}>
+              <div className="h-full rounded-full bg-action transition-[width] duration-300" style={{ width: `${(currentStep / 3) * 100}%` }} />
+            </div>
+            <div className="mt-2 grid grid-cols-3 text-xs">
+              {['Plot details', 'Boundary map', 'Documents'].map((label, index) => (
+                <span key={label} className={`${index + 1 === currentStep ? 'font-semibold text-action-hover' : 'text-muted'} ${index === 1 ? 'text-center' : ''} ${index === 2 ? 'text-right' : ''}`}>
+                  {label}
                 </span>
-              </div>
-
-              <div
-                className={`h-0.5 flex-1 transition-all ${
-                  currentStep >= 2 ? 'bg-emerald-600' : 'bg-slate-200'
-                }`}
-              />
-
-              <div className="flex flex-col items-center gap-1.5 flex-1">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                    currentStep >= 2
-                      ? 'bg-emerald-700 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-400 border border-slate-200'
-                  }`}
-                >
-                  {currentStep > 2 ? <CheckCircle2 className="w-5 h-5" /> : '2'}
-                </div>
-                <span
-                  className={`text-xs font-semibold ${
-                    currentStep >= 2 ? 'text-emerald-800' : 'text-slate-400'
-                  }`}
-                >
-                  Boundary Map
-                </span>
-              </div>
-
-              <div
-                className={`h-0.5 flex-1 transition-all ${
-                  currentStep >= 3 ? 'bg-emerald-600' : 'bg-slate-200'
-                }`}
-              />
-
-              <div className="flex flex-col items-center gap-1.5 flex-1">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                    currentStep >= 3
-                      ? 'bg-emerald-700 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-400 border border-slate-200'
-                  }`}
-                >
-                  3
-                </div>
-                <span
-                  className={`text-xs font-semibold ${
-                    currentStep >= 3 ? 'text-emerald-800' : 'text-slate-400'
-                  }`}
-                >
-                  Documents
-                </span>
-              </div>
-
+              ))}
             </div>
           </div>
         )}
@@ -784,51 +727,62 @@ export default function SellPlotPage() {
         )}
 
         {/* 3. Multi-Step Form Card */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 sm:p-8">
+        <div className="ui-panel p-4 sm:p-6">
 
           {/* STEP 1: Plot & Seller Details */}
           {currentStep === 1 && (
-            <div className="space-y-8">
-              <fieldset disabled={isReadOnly} className="space-y-8 border-0 p-0 m-0 min-w-0 disabled:opacity-70">
+            <div className="space-y-6">
+              <div className="text-sm text-muted">Fields marked <span className="font-semibold text-danger">*</span> are required to continue.</div>
+              <fieldset disabled={isReadOnly} className="space-y-7 border-0 p-0 m-0 min-w-0 disabled:opacity-70">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <User className="w-5 h-5 text-emerald-700" />
-                  <span>1. Seller & Contact Profile</span>
+                <h2 className="text-base font-semibold text-ink flex items-center gap-2">
+                  <User className="w-4 h-4 text-action" />
+                  <span>Your contact details</span>
                 </h2>
+                <p className="text-sm text-muted mt-1">How the review team or interested buyers can identify and contact you.</p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Full Name *
+                    <label htmlFor="seller-full-name" className="block text-sm font-medium text-ink mb-1.5">
+                      Full name <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <input
                       type="text"
+                      id="seller-full-name"
                       placeholder="e.g. Ahsan Khan"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      autoComplete="name"
+                      required
+                      className="ui-input"
                       value={sellerInfo.fullName}
                       onChange={(e) => setSellerInfo({ ...sellerInfo, fullName: e.target.value })}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      WhatsApp Phone Number *
+                    <label htmlFor="seller-phone-number" className="block text-sm font-medium text-ink mb-1.5">
+                      WhatsApp phone number <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <input
-                      type="text"
                       placeholder="e.g. +923001234567"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      type="tel"
+                      id="seller-phone-number"
+                      autoComplete="tel"
+                      required
+                      aria-describedby="seller-phone-help"
+                      className="ui-input"
                       value={sellerInfo.phoneNumber}
                       onChange={(e) => setSellerInfo({ ...sellerInfo, phoneNumber: e.target.value })}
                     />
+                    <p id="seller-phone-help" className="mt-1 text-xs text-muted">Include country code, for example +923001234567.</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Seller Role
+                    <label htmlFor="seller-role" className="block text-sm font-medium text-ink mb-1.5">
+                      Your relationship to the plot
                     </label>
                     <select
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      id="seller-role"
+                      className="ui-input"
                       value={sellerInfo.sellerRole}
                       onChange={(e) => setSellerInfo({ ...sellerInfo, sellerRole: e.target.value })}
                     >
@@ -841,18 +795,21 @@ export default function SellPlotPage() {
               </div>
 
               <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <Building2 className="w-5 h-5 text-emerald-700" />
-                  <span>2. Plot Location & Specifications</span>
+                <h2 className="text-base font-semibold text-ink flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-action" />
+                  <span>Plot details</span>
                 </h2>
+                <p className="text-sm text-muted mt-1">Enter the plot’s location, size, type, and asking price.</p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      City *
+                    <label htmlFor="plot-city" className="block text-sm font-medium text-ink mb-1.5">
+                      City <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <select
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      id="plot-city"
+                      required
+                      className="ui-input"
                       value={plotDetails.city}
                       onChange={(e) => setPlotDetails({ ...plotDetails, city: e.target.value })}
                     >
@@ -862,26 +819,30 @@ export default function SellPlotPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Society / Housing Scheme *
+                    <label htmlFor="plot-society" className="block text-sm font-medium text-ink mb-1.5">
+                      Society / housing scheme <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <input
                       type="text"
+                      id="plot-society"
                       placeholder="e.g. Gulberg Greens"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      required
+                      className="ui-input"
                       value={plotDetails.society}
                       onChange={(e) => setPlotDetails({ ...plotDetails, society: e.target.value })}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Plot Number / ID *
+                    <label htmlFor="plot-number" className="block text-sm font-medium text-ink mb-1.5">
+                      Plot number / ID <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <input
                       type="text"
+                      id="plot-number"
                       placeholder="e.g. Plot-101"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      required
+                      className="ui-input font-mono"
                       value={plotDetails.plotNumber}
                       onChange={(e) => setPlotDetails({ ...plotDetails, plotNumber: e.target.value })}
                     />
@@ -890,11 +851,13 @@ export default function SellPlotPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Size & Dimensions *
+                    <label htmlFor="plot-size" className="block text-sm font-medium text-ink mb-1.5">
+                      Plot size / dimensions <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <select
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      id="plot-size"
+                      required
+                      className="ui-input"
                       value={plotDetails.sizeDimensions}
                       onChange={(e) => setPlotDetails({ ...plotDetails, sizeDimensions: e.target.value })}
                     >
@@ -905,11 +868,12 @@ export default function SellPlotPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Category
+                    <label htmlFor="plot-category" className="block text-sm font-medium text-ink mb-1.5">
+                      Plot use
                     </label>
                     <select
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      id="plot-category"
+                      className="ui-input"
                       value={plotDetails.category}
                       onChange={(e) => {
                         const category = e.target.value;
@@ -926,18 +890,21 @@ export default function SellPlotPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Demand Price (PKR) *
+                    <label htmlFor="plot-price" className="block text-sm font-medium text-ink mb-1.5">
+                      Asking price (PKR) <span className="text-danger" aria-hidden="true">*</span>
                     </label>
                     <input
                       type="number"
+                      id="plot-price"
                       placeholder="e.g. 18500000"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      min="1"
+                      required
+                      className="ui-input"
                       value={plotDetails.pricePkr}
                       onChange={(e) => setPlotDetails({ ...plotDetails, pricePkr: e.target.value })}
                     />
                     {plotDetails.pricePkr && (
-                      <p className="text-xs font-medium text-emerald-700 mt-1 font-mono">
+                      <p className="text-xs font-medium text-action-hover mt-1 font-mono">
                         {formatPkr(plotDetails.pricePkr)}
                       </p>
                     )}
@@ -945,13 +912,14 @@ export default function SellPlotPage() {
                 </div>
 
                 <div className="mt-4">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Proximity Notes & Nearby Landmarks
+                  <label htmlFor="plot-proximity-notes" className="block text-sm font-medium text-ink mb-1.5">
+                    Nearby landmarks or access notes <span className="font-normal text-muted">(optional)</span>
                   </label>
                   <textarea
+                    id="plot-proximity-notes"
                     rows={3}
                     placeholder="e.g. 200m from Main Expressway, 500m from Mosque, 30ft wide front road"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                    className="ui-input"
                     value={plotDetails.proximityNotes}
                     onChange={(e) => setPlotDetails({ ...plotDetails, proximityNotes: e.target.value })}
                   />
@@ -960,11 +928,11 @@ export default function SellPlotPage() {
 
               </fieldset>
 
-              <div className="flex justify-end pt-4 border-t border-slate-100">
+              <div className="flex justify-end pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2"
+                  className="ui-button-primary ui-focus-ring"
                 >
                   <span>Continue to Boundary Map</span>
                   <ArrowRight className="w-4 h-4" />
@@ -976,23 +944,24 @@ export default function SellPlotPage() {
           {/* STEP 2: Interactive Boundary Drawing Map */}
           {currentStep === 2 && (
             <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-emerald-700" />
-                    <span>2. Draw Interactive Plot Boundary</span>
+                  <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-action" />
+                    <span>Map the plot boundary</span>
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Search your location, then click on the satellite map to place corner points for your plot boundary.
+                  <p className="text-sm text-muted mt-1">
+                    Search for the society or landmark, then click each plot corner in order. Add at least three points; drag the outline or its points to adjust.
                   </p>
+                  <p className="text-xs text-muted mt-1">This is a technical map-area check, not legal or cadastral verification.</p>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto">
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
                   <button
                     type="button"
                     onClick={handleRemoveLastPoint}
                     disabled={isReadOnly || polygonCoordinates.length === 0}
-                    className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                    className="ui-button-secondary ui-focus-ring disabled:opacity-50"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Undo Point</span>
@@ -1002,7 +971,7 @@ export default function SellPlotPage() {
                     type="button"
                     onClick={handleClearPolygon}
                     disabled={isReadOnly || polygonCoordinates.length === 0}
-                    className="px-3.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                    className="ui-button-quiet ui-focus-ring text-danger hover:bg-danger-soft disabled:opacity-50"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Clear & Redraw</span>
@@ -1022,7 +991,7 @@ export default function SellPlotPage() {
                         Initializing Interactive Map Canvas...
                       </div>
                     ) : (
-                      <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+                      <div className="relative h-[min(58vh,34rem)] min-h-[24rem] overflow-hidden rounded-card border border-border bg-surface-subtle sm:h-[28rem]">
                         <GoogleMap
                           mapContainerStyle={MAP_CONTAINER_STYLE}
                           center={DEFAULT_CENTER}
@@ -1032,15 +1001,16 @@ export default function SellPlotPage() {
                           options={SELL_MAP_OPTIONS}
                         >
                           {/* Search Bar Overlay */}
-                          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-72 sm:w-96 px-4">
+                          <div className="absolute top-3 left-3 right-14 z-10 sm:left-1/2 sm:right-auto sm:w-[min(24rem,calc(100%-2rem))] sm:-translate-x-1/2">
                             <Autocomplete
                               onLoad={onAutocompleteLoad}
                               onPlaceChanged={onPlaceChanged}
                             >
                               <input
                                 type="text"
-                                placeholder="Search society, sector, or landmark..."
-                                className="w-full px-4 py-2 bg-white/95 backdrop-blur-md text-slate-800 font-medium text-xs rounded-xl shadow-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                                aria-label="Search plot location on map"
+                                placeholder="Search society, sector, landmark"
+                                className="ui-input bg-surface/95 shadow-raised"
                               />
                             </Autocomplete>
                           </div>
@@ -1106,29 +1076,6 @@ export default function SellPlotPage() {
                             />
                           ))}
 
-                          {/* Map Legend Overlay */}
-                          <div className="absolute bottom-3 left-3 z-10 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-md border border-slate-200 text-[11px] font-medium text-slate-700 flex flex-wrap items-center gap-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-3 h-3 rounded bg-emerald-500/40 border border-emerald-700 inline-block" />
-                              <span>Your Plot {areaVerification?.isValid ? '(Verified)' : ''}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-3 h-3 rounded bg-slate-500/20 border border-slate-500 inline-block" />
-                              <span>Registered Plots (Occupied)</span>
-                            </div>
-                            {areaVerification && !areaVerification.isValid && !boundaryConflict.hasConflict && (
-                              <div className="flex items-center gap-1.5 text-amber-700 font-bold">
-                                <span className="w-3 h-3 rounded bg-amber-500/40 border border-amber-600 inline-block" />
-                                <span>Area Below 90%</span>
-                              </div>
-                            )}
-                            {boundaryConflict.hasConflict && (
-                              <div className="flex items-center gap-1.5 text-red-600 font-bold animate-pulse">
-                                <span className="w-3 h-3 rounded bg-red-500/40 border border-red-600 inline-block" />
-                                <span>Overlap Conflict!</span>
-                              </div>
-                            )}
-                          </div>
                         </GoogleMap>
                       </div>
                     )}
@@ -1136,155 +1083,128 @@ export default function SellPlotPage() {
                 )}
               </GoogleMapsSafeLoader>
 
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted" aria-label="Map legend">
+                <span className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm border border-action bg-action/30" aria-hidden="true" />
+                  Your mapped boundary
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm border border-slate-500 bg-slate-500/20" aria-hidden="true" />
+                  Registered plot boundaries
+                </span>
+                {boundaryConflict.hasConflict && (
+                  <span className="flex items-center gap-2 font-medium text-danger">
+                    <span className="h-3 w-3 rounded-sm border border-danger bg-danger/30" aria-hidden="true" />
+                    Overlap detected
+                  </span>
+                )}
+              </div>
+
               {/* Boundary Overlap Warning Banner */}
               {boundaryConflict.hasConflict && (
-                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-red-800 text-xs">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="ui-alert-danger flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <p className="font-bold text-red-900">Plot Boundary Overlap Detected</p>
-                    <p className="text-red-700 leading-relaxed">
+                    <p className="font-semibold">Boundary overlap detected</p>
+                    <p className="leading-relaxed">
                       Your boundary overlaps with existing registered plot{' '}
                       <span className="font-semibold underline">
                         {boundaryConflict.conflictingPlot?.title || boundaryConflict.conflictingPlot?.id}
                       </span>
-                      . In NAQSHAI, plots cannot be drawn over previously mapped land. Please undo or clear your points to select unclaimed land.
+                      . Adjust the mapped outline so it no longer overlaps this registered boundary.
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Interactive Area Verification Card */}
+              {/* Technical area comparison */}
               {polygonCoordinates.length >= 3 && areaVerification && (
-                <div
-                  className={`p-4 rounded-xl border transition ${
-                    areaVerification.isValid
-                      ? 'bg-emerald-50/60 border-emerald-200'
-                      : 'bg-amber-50/70 border-amber-300'
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/60">
+                <section className={`rounded-card border p-4 transition ${areaVerification.isValid ? 'border-action/25 bg-action-soft/50' : 'border-caution/30 bg-caution-soft/60'}`} aria-labelledby="area-check-title">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
                     <div className="flex items-center gap-2">
-                      <Scale className={`w-4 h-4 ${areaVerification.isValid ? 'text-emerald-700' : 'text-amber-700'}`} />
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                        Geospatial Plot Area Verification
+                      <Scale className={`w-4 h-4 ${areaVerification.isValid ? 'text-action-hover' : 'text-caution'}`} />
+                      <h3 id="area-check-title" className="text-sm font-semibold text-ink">
+                        Technical area check
                       </h3>
                     </div>
                     <div>
                       {areaVerification.isValid ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Verified ({areaVerification.percentage}% of Claimed)
+                        <span className="ui-badge-success">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Meets area threshold
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-400">
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
-                          Below 90% Threshold ({areaVerification.percentage}%)
+                        <span className="ui-badge-caution">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Below 90% threshold
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-xs">
-                    <div className="bg-white p-3 rounded-lg border border-slate-200/80">
-                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-0.5">
-                        Claimed Plot Size
-                      </span>
-                      <span className="font-bold text-slate-800 text-sm">
-                        {areaVerification.claimed.raw}
-                      </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        ~{areaVerification.claimed.sqFt.toLocaleString()} sq ft ({areaVerification.claimed.marla} Marla)
-                      </p>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-lg border border-slate-200/80">
-                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-0.5">
-                        Mapped Boundary Area
-                      </span>
-                      <span className={`font-bold text-sm ${areaVerification.isValid ? 'text-emerald-700' : 'text-amber-800'}`}>
-                        ~{areaVerification.calculated.sqFt.toLocaleString()} sq ft
-                      </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        ~{areaVerification.calculated.marla} Marla ({Math.round(areaVerification.calculated.sqMeters)} sq m)
-                      </p>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-lg border border-slate-200/80 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1">
-                          <span>Accuracy Ratio</span>
-                          <span className={areaVerification.isValid ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
-                            {areaVerification.percentage}% (Min: 90%)
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-500 ${
-                              areaVerification.isValid ? 'bg-emerald-600' : 'bg-amber-500'
-                            }`}
-                            style={{ width: `${Math.min(areaVerification.percentage, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        {areaVerification.isValid
-                          ? 'Satisfies mandatory verification threshold.'
-                          : `Must cover at least ${areaVerification.minRequiredSqFt.toLocaleString()} sq ft.`}
-                      </p>
-                    </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <p><span className="block text-xs text-muted">Declared size</span><span className="font-semibold text-ink">{areaVerification.claimed.raw} · ~{areaVerification.claimed.sqFt.toLocaleString()} sq ft</span></p>
+                    <p><span className="block text-xs text-muted">Mapped area</span><span className="font-semibold text-ink">~{areaVerification.calculated.sqFt.toLocaleString()} sq ft · {Math.round(areaVerification.calculated.sqMeters)} sq m</span></p>
+                    <p><span className="block text-xs text-muted">Area ratio · minimum 90%</span><span className={`font-semibold ${areaVerification.isValid ? 'text-action-hover' : 'text-caution'}`}>{areaVerification.percentage}%</span></p>
                   </div>
 
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-label="Mapped area relative to declared area" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(areaVerification.percentage, 100)}>
+                    <div className={`h-full transition-all duration-500 ${areaVerification.isValid ? 'bg-action' : 'bg-caution'}`} style={{ width: `${Math.min(areaVerification.percentage, 100)}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs text-muted">This compares the drawn polygon area with the declared plot-size estimate; it does not confirm legal boundaries, ownership, or on-site dimensions.</p>
+
                   {!areaVerification.isValid && (
-                    <div className="mt-3 p-2.5 bg-amber-100/90 border border-amber-300 rounded-lg text-xs text-amber-900 leading-relaxed font-medium">
-                      ⚠️ <strong>Automatic Rejection Guard:</strong> Your drawn polygon covers only{' '}
+                    <div className="mt-3 text-sm leading-relaxed text-caution">
+                      <strong>Update the outline:</strong> It covers only{' '}
                       <strong>{areaVerification.calculated.sqFt.toLocaleString()} sq ft</strong> ({areaVerification.percentage}%), which is below the required 90% threshold ({areaVerification.minRequiredSqFt.toLocaleString()} sq ft) of your claimed {areaVerification.claimed.raw}. Please extend your boundary points to match the full plot area before proceeding.
                     </div>
                   )}
-                </div>
+                </section>
               )}
 
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <section className="space-y-3" aria-labelledby="boundary-points-title">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Captured Boundary Coordinates ({polygonCoordinates.length} Points)
+                  <span id="boundary-points-title" className="text-sm font-semibold text-ink">
+                    Boundary points <span className="font-normal text-muted">({polygonCoordinates.length})</span>
                   </span>
                   {boundaryConflict.hasConflict ? (
-                    <span className="text-xs font-semibold px-2.5 py-0.5 bg-red-100 text-red-800 border border-red-300 rounded-full flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3 text-red-600" />
-                      Overlap Conflict
+                    <span className="ui-badge-danger">
+                      <AlertCircle className="w-3 h-3" />
+                      Overlap detected
                     </span>
                   ) : polygonCoordinates.length >= 3 ? (
-                    <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full">
-                      Polygon Sealed
+                    <span className="ui-badge-success">
+                      <CheckCircle2 className="w-3 h-3" />
+                      3+ points placed
                     </span>
                   ) : (
-                    <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
-                      Draw at least 3 points
+                    <span className="ui-badge-caution">
+                      Add {3 - polygonCoordinates.length} more {3 - polygonCoordinates.length === 1 ? 'point' : 'points'}
                     </span>
                   )}
                 </div>
 
                 {polygonCoordinates.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 font-mono text-xs text-slate-600">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 border-y border-border py-2 font-mono text-xs text-muted">
                     {polygonCoordinates.map((pt, idx) => (
-                      <div key={idx} className="bg-white border border-slate-200 p-2 rounded-lg text-center">
-                        <span className="text-emerald-700 font-bold mr-1">P{idx + 1}:</span>
-                        {pt.lat}, {pt.lng}
+                      <div key={idx} className="flex gap-2 py-1">
+                        <span className="font-semibold text-action-hover">Point {idx + 1}</span>
+                        <span>{pt.lat}, {pt.lng}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500 italic mt-2">
-                    No coordinates drawn yet. Search for your plot location and click points directly on the map to define plot boundaries.
+                  <p className="text-sm text-muted">
+                    No points yet. Search for the plot, then tap or click its corners on the map.
                   </p>
                 )}
-              </div>
+              </section>
 
-              <div className="flex justify-between pt-4 border-t border-slate-100">
+              <div className="flex justify-between gap-3 pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={handlePrevStep}
-                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition flex items-center gap-2"
+                  className="ui-button-secondary ui-focus-ring"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
@@ -1293,7 +1213,7 @@ export default function SellPlotPage() {
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2"
+                  className="ui-button-primary ui-focus-ring"
                 >
                   <span>Continue to Documents</span>
                   <ArrowRight className="w-4 h-4" />
@@ -1305,154 +1225,98 @@ export default function SellPlotPage() {
           {/* STEP 3: Document Uploads */}
           {currentStep === 3 && (
             <div className="space-y-6">
-              <div className="pb-3 border-b border-slate-100">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-emerald-700" />
-                  <span>3. Upload Verification Documents</span>
+              <div>
+                <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-action" />
+                  <span>Upload documents for review</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Upload plot ownership papers and national identity card scans for automated risk intelligence check.
+                <p className="text-sm text-muted mt-1">
+                  Add the allotment or transfer letter to submit. CNIC front and back are optional supporting documents.
                 </p>
               </div>
 
-              <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Asynchronous AI Verification Notice</p>
-                  <p className="mt-0.5 text-emerald-800">
-                    Verification is performed asynchronously. Your listing will appear with an <strong>&apos;Under Review&apos;</strong> status until validated.
-                  </p>
-                </div>
+              <div className="ui-alert-info space-y-1.5">
+                <p className="font-semibold">What the review checks</p>
+                <p className="text-sm">
+                  The document review may read names, plot number, society, and stated size, compare them with your listing and CNIC, and flag unclear or conflicting information for operator review.
+                </p>
+                <p className="text-xs">
+                  This automated comparison does not confirm legal ownership, title, or document authenticity. Your listing remains under review after submission.
+                </p>
               </div>
 
               {docError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                <div className="ui-alert-danger flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-danger mt-0.5" />
                   <span>{docError}</span>
                 </div>
               )}
 
               <fieldset disabled={isReadOnly} className="border-0 p-0 m-0 min-w-0 disabled:opacity-70">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {/* Allotment Letter Upload */}
-                <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
-                  <div className="flex flex-col items-center text-center">
-                    <UploadCloud className="w-8 h-8 text-emerald-700 group-hover:scale-110 transition-transform mb-2" />
-                    <span className="text-xs font-bold text-slate-800">Allotment / Transfer Letter *</span>
-                    <span className="text-xs text-slate-400 mt-0.5">PDF or High-res Image (Max 10MB)</span>
-
-                    <label className="mt-4 px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
-                      Browse File
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        className="hidden"
-                        onChange={(e) => handleFileChange('allotmentLetter', e)}
-                      />
-                    </label>
-
-                    {docUploading.allotmentLetter ? (
-                      <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading…
+                <div className="divide-y divide-border border-y border-border">
+                  {[
+                    { field: 'allotmentLetter', title: 'Allotment / transfer letter', detail: 'Required · Used to compare the listed plot number, society, allottee name, and stated size.', required: true },
+                    { field: 'cnicFront', title: 'CNIC front', detail: 'Optional · Used for name and identity comparison with the seller details and allotment letter.', required: false },
+                    { field: 'cnicBack', title: 'CNIC back', detail: 'Optional · Supporting identity document for operator review.', required: false },
+                  ].map(({ field, title, detail, required }) => {
+                    const file = uploadedFiles[field];
+                    const uploading = !!docUploading[field];
+                    return (
+                      <div key={field} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <FileText className="mt-0.5 h-5 w-5 shrink-0 text-action" aria-hidden="true" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-ink">
+                              {title} {required ? <span className="text-danger" aria-label="required">*</span> : <span className="font-normal text-muted">(optional)</span>}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted">{detail}</p>
+                            <p className="mt-1 text-xs text-muted">PDF or image · Maximum 10 MB</p>
+                            {uploading ? (
+                              <p className="mt-2 flex items-center gap-2 text-sm text-muted" role="status">
+                                <Loader2 className="h-4 w-4 animate-spin text-action" />
+                                Uploading file… please wait
+                              </p>
+                            ) : file ? (
+                              <div className="mt-2 flex min-w-0 items-center gap-2 text-sm text-action-hover" role="status">
+                                <Check className="h-4 w-4 shrink-0" />
+                                <span className="truncate font-medium">{file.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFile(field)}
+                                  className="ui-button-quiet ui-focus-ring min-h-8 px-2 text-danger"
+                                  aria-label={`Remove ${title}`}
+                                >
+                                  <X className="h-4 w-4" />
+                                  Remove
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-muted">No file uploaded</p>
+                            )}
+                          </div>
+                        </div>
+                        <label className="ui-button-secondary ui-focus-ring shrink-0 cursor-pointer">
+                          {uploading ? 'Uploading…' : file ? 'Replace file' : 'Choose file'}
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="sr-only"
+                            aria-label={`Choose ${title} (PDF or image, maximum 10 MB)`}
+                            onChange={(e) => handleFileChange(field, e)}
+                          />
+                        </label>
                       </div>
-                    ) : uploadedFiles.allotmentLetter && (
-                      <div className="mt-2 flex items-center gap-1.5 max-w-full">
-                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-md truncate">
-                          ✓ {uploadedFiles.allotmentLetter.name}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFile('allotmentLetter')}
-                          className="p-1 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition shrink-0"
-                          title="Remove file"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* CNIC Front Upload */}
-                <div className="p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-white hover:border-emerald-300 transition group">
-                  <div className="flex flex-col items-center text-center">
-                    <UploadCloud className="w-8 h-8 text-emerald-700 group-hover:scale-110 transition-transform mb-2" />
-                    <span className="text-xs font-bold text-slate-800">CNIC Front & Back</span>
-                    <span className="text-xs text-slate-400 mt-0.5">National Identity Card Scan</span>
-
-                    <div className="flex gap-2 mt-4">
-                      <label className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
-                        CNIC Front
-                        <input
-                          type="file"
-                          accept="image/*,.pdf"
-                          className="hidden"
-                          onChange={(e) => handleFileChange('cnicFront', e)}
-                        />
-                      </label>
-
-                      <label className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
-                        CNIC Back
-                        <input
-                          type="file"
-                          accept="image/*,.pdf"
-                          className="hidden"
-                          onChange={(e) => handleFileChange('cnicBack', e)}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="mt-2 space-y-1 w-full flex flex-col items-center">
-                      {docUploading.cnicFront && (
-                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Uploading front…
-                        </div>
-                      )}
-                      {!docUploading.cnicFront && uploadedFiles.cnicFront && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded truncate">
-                            Front: {uploadedFiles.cnicFront.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFile('cnicFront')}
-                            className="p-0.5 text-red-600 hover:bg-red-100 rounded"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                      {docUploading.cnicBack && (
-                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Uploading back…
-                        </div>
-                      )}
-                      {!docUploading.cnicBack && uploadedFiles.cnicBack && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded truncate">
-                            Back: {uploadedFiles.cnicBack.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFile('cnicBack')}
-                            className="p-0.5 text-red-600 hover:bg-red-100 rounded"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
               </fieldset>
 
-              <div className="flex justify-between pt-4 border-t border-slate-100">
+              <div className="flex justify-between gap-3 pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={handlePrevStep}
                   disabled={submitting}
-                  className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-5 py-2.5 rounded-xl text-sm transition flex items-center gap-2 disabled:opacity-50"
+                  className="ui-button-secondary ui-focus-ring disabled:opacity-50"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
@@ -1462,7 +1326,7 @@ export default function SellPlotPage() {
                   type="button"
                   onClick={handleSubmitListing}
                   disabled={submitting || isReadOnly}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-2 disabled:opacity-50"
+                  className="ui-button-primary ui-focus-ring disabled:opacity-50"
                 >
                   {submitting ? (
                     <>
