@@ -69,13 +69,13 @@ export default function Navbar({
               sizes="32px"
             />
           </div>
-          <span className="font-bold text-base text-ink tracking-tight flex items-center gap-1.5">
+          <span className="font-bold text-base text-ink tracking-tight flex items-center leading-none">
             <span>NAQSHAI</span>
           </span>
         </Link>
 
         {badgeText && (
-          <span className="ui-badge-success hidden sm:inline-block shrink-0">
+          <span className="ui-badge-success hidden sm:inline-flex items-center justify-center shrink-0 leading-none py-1 px-2.5">
             {badgeText}
           </span>
         )}
