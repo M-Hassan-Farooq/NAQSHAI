@@ -11,7 +11,7 @@ import {
   CheckCircle2, 
   AlertCircle 
 } from 'lucide-react';
-import { calculateAmenityScores } from '@/lib/amenityCalculator';
+import { calculateAmenityScores, getAmenityRating } from '@/lib/amenityCalculator';
 
 // Client-side in-memory cache to guarantee 0ms instant loading for visited plots
 const amenityCache = new Map();
@@ -20,39 +20,37 @@ const CATEGORY_META = {
   healthcare: {
     label: 'Healthcare',
     icon: HeartPulse,
-    barColor: 'bg-action',
     bgColor: 'bg-action-soft text-action-hover border-border'
   },
   education: {
     label: 'Education',
     icon: GraduationCap,
-    barColor: 'bg-action-hover',
     bgColor: 'bg-surface-subtle text-ink border-border'
   },
   commerce: {
     label: 'Commerce & Retail',
     icon: ShoppingBag,
-    barColor: 'bg-action',
     bgColor: 'bg-action-soft text-action-hover border-border'
   },
   transit: {
     label: 'Transit & Arterials',
     icon: Bus,
-    barColor: 'bg-action-hover',
     bgColor: 'bg-surface-subtle text-ink border-border'
   }
 };
 
 function getScoreColorClass(score) {
-  if (score >= 60) return { text: 'text-action-hover', stroke: '#08785d', bg: 'ui-badge-success' };
-  if (score >= 40) return { text: 'text-caution', stroke: '#9a5a0a', bg: 'ui-badge-caution' };
-  return { text: 'text-muted', stroke: '#596963', bg: 'ui-badge-neutral' };
+  if (score >= 70) return { text: 'text-action-hover', stroke: '#08785d', bg: 'ui-badge-success', bar: 'bg-action' };
+  if (score >= 50) return { text: 'text-amber-800', stroke: '#ca8a04', bg: 'bg-amber-50 text-amber-800 border border-amber-200', bar: 'bg-yellow-500' };
+  if (score >= 35) return { text: 'text-orange-800', stroke: '#ea580c', bg: 'bg-orange-50 text-orange-800 border border-orange-200', bar: 'bg-orange-500' };
+  return { text: 'text-danger', stroke: '#b4232f', bg: 'ui-badge-danger', bar: 'bg-danger' };
 }
 
 export default function AmenityScoreCard({ plotId, lat, lng, center, className = '' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedCategories, setSelectedCategories] = useState(() => Object.keys(CATEGORY_META));
 
   const resolvedLat = lat !== undefined && lat !== null ? Number(lat) : center?.lat;
   const resolvedLng = lng !== undefined && lng !== null ? Number(lng) : center?.lng;
@@ -181,8 +179,21 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
     );
   }
 
-  const scoreMeta = getScoreColorClass(data.overallScore);
   const categories = data.categories || {};
+  const selectedWeight = selectedCategories.reduce(
+    (total, key) => total + (categories[key]?.weightPercentage ?? 0),
+    0
+  );
+  const selectedScore = selectedCategories.length === Object.keys(CATEGORY_META).length
+    ? data.overallScore
+    : selectedWeight
+      ? Math.round(selectedCategories.reduce(
+        (total, key) => total + (categories[key]?.score ?? 0) * (categories[key]?.weightPercentage ?? 0),
+        0
+      ) / selectedWeight)
+      : 0;
+  const scoreMeta = getScoreColorClass(selectedScore);
+  const rating = getAmenityRating(selectedScore);
   const calculatedAt = data.calculatedAt ? new Date(data.calculatedAt) : null;
   const calculatedDate = calculatedAt && Number.isFinite(calculatedAt.getTime())
     ? calculatedAt.toLocaleDateString()
@@ -222,8 +233,8 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
                 d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
               />
             </svg>
-            <span className="absolute text-xs font-extrabold text-slate-800">
-              {data.overallScore}
+            <span className={`absolute text-xs font-extrabold ${scoreMeta.text}`}>
+              {selectedScore}
             </span>
           </div>
         </div>
@@ -233,7 +244,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
       <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
         <span className="text-[11px] text-slate-500 font-medium">Rating Index</span>
         <span className={scoreMeta.bg}>
-          {data.rating?.label || 'High Accessibility'}
+          {rating.label}
         </span>
       </div>
       <p className="text-xs leading-relaxed text-muted">
@@ -241,11 +252,45 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
         {calculatedDate ? ` Calculated ${calculatedDate}.` : ''}
       </p>
 
+      <details className="border-y border-border py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-ink ui-focus-ring">
+          Customize rating
+          <span className="ml-2 text-xs font-normal text-muted">
+            {selectedCategories.length} of {Object.keys(CATEGORY_META).length} categories
+          </span>
+        </summary>
+        <fieldset className="mt-3 space-y-2">
+          <legend className="mb-2 text-xs text-muted">
+            Choose which amenity categories contribute to the overall score. Select at least one.
+          </legend>
+          {Object.entries(CATEGORY_META).map(([key, meta]) => (
+            <label key={key} className="flex min-h-9 items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={selectedCategories.includes(key)}
+                disabled={selectedCategories.length === 1 && selectedCategories.includes(key)}
+                onChange={(event) => {
+                  setSelectedCategories((current) => (
+                    event.target.checked
+                      ? [...current, key]
+                      : current.filter((selectedKey) => selectedKey !== key)
+                  ));
+                }}
+                className="h-4 w-4 accent-action"
+              />
+              {meta.label}
+            </label>
+          ))}
+        </fieldset>
+      </details>
+
       {/* 4 Amenity Category Progress Rows */}
       <div className="space-y-3 pt-1">
         {Object.entries(CATEGORY_META).map(([key, meta]) => {
-          const item = categories[key] || { score: 50, distanceKm: 2.5, nearestName: 'Regional Facility' };
+          const item = categories[key];
           const Icon = meta.icon;
+          if (!item) return null;
+          const itemScoreMeta = getScoreColorClass(item.score);
 
           return (
             <div key={key} className="space-y-1">
@@ -260,7 +305,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
                   <span className="text-[11px] text-slate-400 font-sans">
                     {item.distanceKm} km
                   </span>
-                  <span className="font-bold text-slate-800 text-[11px]">
+                  <span className={`font-bold text-[11px] ${itemScoreMeta.text}`}>
                     {item.score}/100
                   </span>
                 </div>
@@ -269,7 +314,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
               {/* Progress Track */}
               <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${meta.barColor}`}
+                  className={`h-full rounded-full transition-all duration-500 ${itemScoreMeta.bar}`}
                   style={{ width: `${Math.max(5, item.score)}%` }}
                 />
               </div>

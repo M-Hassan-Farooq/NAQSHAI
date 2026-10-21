@@ -47,6 +47,7 @@ const RESIDENTIAL_PLOT_SIZE_OPTIONS = [
   { label: '3 Marla (20x34)', value: '3 Marla (20x34)' },
   { label: '5 Marla (25x50)', value: '5 Marla (25x50)' },
   { label: '7 Marla (30x55)', value: '7 Marla (30x55)' },
+  { label: '8 Marla (30x60)', value: '8 Marla (30x60)' },
   { label: '10 Marla (35x70)', value: '10 Marla (35x70)' },
   { label: '1 Kanal (50x90)', value: '1 Kanal (50x90)' },
   { label: '2 Kanal (75x120)', value: '2 Kanal (75x120)' },
@@ -515,6 +516,10 @@ export default function SellPlotPage() {
     try {
       if (!uploadedFiles.allotmentLetter) {
         setErrorMessage('Please upload the allotment or transfer letter before submitting.');
+        return;
+      }
+      if (!uploadedFiles.cnicFront || !uploadedFiles.cnicBack) {
+        setErrorMessage('Please upload both the front and back of your CNIC before submitting.');
         return;
       }
       if (Object.values(docUploading).some(Boolean)) {
@@ -1231,7 +1236,7 @@ export default function SellPlotPage() {
                   <span>Upload documents for review</span>
                 </h2>
                 <p className="text-sm text-muted mt-1">
-                  Add the allotment or transfer letter to submit. CNIC front and back are optional supporting documents.
+                  Add the allotment or transfer letter for plot-document review.
                 </p>
               </div>
 
@@ -1256,8 +1261,8 @@ export default function SellPlotPage() {
                 <div className="divide-y divide-border border-y border-border">
                   {[
                     { field: 'allotmentLetter', title: 'Allotment / transfer letter', detail: 'Required · Used to compare the listed plot number, society, allottee name, and stated size.', required: true },
-                    { field: 'cnicFront', title: 'CNIC front', detail: 'Optional · Used for name and identity comparison with the seller details and allotment letter.', required: false },
-                    { field: 'cnicBack', title: 'CNIC back', detail: 'Optional · Supporting identity document for operator review.', required: false },
+                    { field: 'cnicFront', title: 'CNIC front', detail: 'Used for name and identity comparison with the seller details and allotment letter.', required: true },
+                    { field: 'cnicBack', title: 'CNIC back', detail: 'Supporting identity document for operator review.', required: true },
                   ].map(({ field, title, detail, required }) => {
                     const file = uploadedFiles[field];
                     const uploading = !!docUploading[field];
