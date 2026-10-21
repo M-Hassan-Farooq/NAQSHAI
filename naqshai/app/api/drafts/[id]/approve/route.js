@@ -18,7 +18,7 @@ async function embedApprovedPlot(dbAdmin, plotId) {
     if (!apiKey || !plotId) return;
     const { data: plot, error } = await dbAdmin
       .from('plots')
-      .select('id, title, city, category, size_dimensions, proximity_notes, flood_risk, noise_level, elevation_profile')
+      .select('id, title, city, category, size_dimensions, flood_risk, noise_level, elevation_profile')
       .eq('id', plotId)
       .maybeSingle();
     if (error || !plot) return;

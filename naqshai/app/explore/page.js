@@ -1789,15 +1789,6 @@ function ExploreContent() {
                           />
                         </section>
 
-                        {selectedPlot.details?.landmarks && selectedPlot.details.landmarks !== 'No proximity data provided.' && (
-                          <div className="space-y-1.5">
-                            <h3 className="text-sm font-semibold text-ink">Seller-provided proximity notes</h3>
-                            <p className="text-sm text-muted leading-relaxed">
-                              {selectedPlot.details.landmarks}
-                            </p>
-                          </div>
-                        )}
-
                         <button
                           type="button"
                           onClick={() => setIs3DMode(!is3DMode)}

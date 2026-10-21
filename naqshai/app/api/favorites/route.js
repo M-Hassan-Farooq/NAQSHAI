@@ -54,7 +54,7 @@ export async function GET(request) {
     const { data: plotsData, error: plotsError } = await db
       .from('plots')
       .select(
-        'id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, sellers ( phone_number, full_name )'
+        'id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, polygon_coordinates, is_verified, created_at, sellers ( phone_number, full_name )'
       )
       .in('id', favoriteIds);
 
@@ -70,7 +70,6 @@ export async function GET(request) {
         city: row.city,
         category: row.category,
         size_dimensions: row.size_dimensions,
-        proximityNotes: row.proximity_notes,
         polygonCoordinates: Array.isArray(row.polygon_coordinates) ? row.polygon_coordinates : []
       });
 
@@ -86,7 +85,6 @@ export async function GET(request) {
           elevation,
           floodRisk,
           noiseLevel,
-          landmarks: row.proximity_notes || 'No proximity data provided.',
         },
         flood_risk: floodRisk,
         noise_level: noiseLevel,

@@ -87,7 +87,6 @@ export function formatPlot(row) {
       regulatoryStatus: regulatory.badgeText,
       regulatoryAuthority: regulatory.authority,
       regulatoryNoc: regulatory.nocNumber,
-      landmarks: row.proximity_notes || 'No proximity data provided.',
     },
     ownerContact: seller && seller.phone_number ? seller.phone_number : '',
     isVerified: !!row.is_verified,

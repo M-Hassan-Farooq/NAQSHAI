@@ -147,7 +147,6 @@ export default function SellPlotPage() {
     sizeDimensions: '10 Marla (35x70)',
     category: 'Residential',
     pricePkr: '',
-    proximityNotes: '',
   });
 
   // Step 2 State: Polygon Boundary Coordinates & Autocomplete Reference
@@ -197,6 +196,7 @@ export default function SellPlotPage() {
     if (formData.plotDetails) {
       setPlotDetails((prev) => {
         const hydratedPlotDetails = { ...prev, ...formData.plotDetails };
+        delete hydratedPlotDetails.proximityNotes;
         const category = hydratedPlotDetails.category === 'Commercial' ? 'Commercial' : 'Residential';
         const sizeOptions = getPlotSizeOptions(category);
         return {
@@ -922,19 +922,6 @@ export default function SellPlotPage() {
                   </div>
                 </div>
 
-                <div className="mt-4">
-                  <label htmlFor="plot-proximity-notes" className="block text-sm font-medium text-ink mb-1.5">
-                    Nearby landmarks or access notes <span className="font-normal text-muted">(optional)</span>
-                  </label>
-                  <textarea
-                    id="plot-proximity-notes"
-                    rows={3}
-                    placeholder="e.g. 200m from Main Expressway, 500m from Mosque, 30ft wide front road"
-                    className="ui-input"
-                    value={plotDetails.proximityNotes}
-                    onChange={(e) => setPlotDetails({ ...plotDetails, proximityNotes: e.target.value })}
-                  />
-                </div>
               </div>
 
               </fieldset>

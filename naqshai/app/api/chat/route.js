@@ -81,7 +81,6 @@ async function searchVectorPlots(ai, db, queryText) {
             city: row.city,
             category: row.category,
             size_dimensions: row.size_dimensions,
-            proximityNotes: row.proximity_notes
           });
           const society = extractSociety(row.title);
           const regulatory = checkRegulatoryStatus(society, row.city);
@@ -98,7 +97,6 @@ async function searchVectorPlots(ai, db, queryText) {
             floodRisk: (!row.flood_risk || row.flood_risk.includes('Pending') || row.flood_risk === 'Low Hazard') ? env.floodRisk : row.flood_risk,
             noiseLevel: (!row.noise_level || row.noise_level.includes('Pending') || row.noise_level === 'Low (Quiet Zone)') ? env.noiseLevel : row.noise_level,
             elevationProfile: (!row.elevation_profile || row.elevation_profile.includes('Pending')) ? env.elevationProfile : row.elevation_profile,
-            proximityNotes: row.proximity_notes || '',
             regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
             regulatoryWarning: regulatory.warning || null,
             isVerified: !!row.is_verified
@@ -129,7 +127,6 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         flood_risk,
         noise_level,
         elevation_profile,
-        proximity_notes,
         is_verified,
         sellers (
           id,
@@ -162,7 +159,6 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         city: row.city,
         category: row.category,
         size_dimensions: row.size_dimensions,
-        proximityNotes: row.proximity_notes
       });
 
       const isPending = (val, defaultVal) => {
@@ -186,7 +182,6 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         floodRisk: isPending(row.flood_risk, 'low hazard') ? env.floodRisk : row.flood_risk,
         noiseLevel: isPending(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level,
         elevationProfile: isPending(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile,
-        proximityNotes: row.proximity_notes || '',
         regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
         regulatoryWarning: regulatory.warning || null,
         sellerName: seller?.full_name || '',
@@ -256,9 +251,7 @@ async function executeSearchPlots(ai, db, args) {
       const target = societyOrSector.toLowerCase().replace(/[-_\s]/g, '');
       const pSoc = (plot.society || '').toLowerCase().replace(/[-_\s]/g, '');
       const pTitle = (plot.title || '').toLowerCase().replace(/[-_\s]/g, '');
-      const pNotes = (plot.proximityNotes || '').toLowerCase().replace(/[-_\s]/g, '');
-
-      if (!pSoc.includes(target) && !pTitle.includes(target) && !pNotes.includes(target)) {
+      if (!pSoc.includes(target) && !pTitle.includes(target)) {
         return false;
       }
     }

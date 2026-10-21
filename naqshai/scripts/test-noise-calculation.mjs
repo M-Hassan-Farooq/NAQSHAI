@@ -19,7 +19,6 @@ const p2 = {
   title: 'Plot 55 - Sector F-7/2, Islamabad',
   society: 'F-7',
   city: 'Islamabad',
-  proximityNotes: 'Park facing, internal street cul-de-sac',
   polygonCoordinates: [
     { lat: 33.7250, lng: 73.0520 }, // Residential street in F-7
     { lat: 33.7252, lng: 73.0523 },
@@ -60,7 +59,6 @@ const p5 = {
   title: 'Plot 99 - Bahria Town, Rawalpindi',
   society: 'Bahria Town',
   city: 'Rawalpindi',
-  proximityNotes: 'Near main boulevard and commercial market'
 };
 
 // Test 6: DB row shape with polygon_coordinates JSONB

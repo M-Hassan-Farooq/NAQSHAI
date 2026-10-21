@@ -80,7 +80,6 @@ export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, pol
     title,
     society: plot.society,
     city: plot.city,
-    proximityNotes: plot.proximityNotes,
     polygonCoordinates
   });
 
@@ -94,7 +93,6 @@ export async function persistListing(dbAdmin, { uid, seller = {}, plot = {}, pol
     flood_risk: envMetrics.floodRisk,
     noise_level: envMetrics.noiseLevel,
     elevation_profile: envMetrics.elevationProfile,
-    proximity_notes: plot.proximityNotes || 'Proximity data under verification',
     polygon_coordinates: polygonCoordinates || [],
     documents: documents || [],
     is_verified: isVerified,
