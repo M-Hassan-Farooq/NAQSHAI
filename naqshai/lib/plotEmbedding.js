@@ -38,7 +38,6 @@ export function buildPlotEmbeddingText(plot) {
     plot.city,
     plot.category,
     plot.size_dimensions,
-    plot.proximity_notes,
     flood ? `flood risk: ${flood}` : '',
     noise ? `noise level: ${noise}` : '',
     elev ? `elevation: ${elev}` : '',

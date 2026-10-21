@@ -334,8 +334,6 @@ function evaluateGeospatialNoise(centroid, plotContext = {}) {
  * @param {string} [plot.society]
  * @param {string} [plot.city]
  * @param {string} [plot.category]
- * @param {string} [plot.proximityNotes]
- * @param {string} [plot.proximity_notes]
  * @param {Array} [plot.polygonCoordinates]
  * @param {Array} [plot.polygon_coordinates]
  * @param {Array} [plot.paths]
@@ -349,10 +347,9 @@ export function computeEnvironmentalMetrics(plot = {}) {
   const society = String(plot.society || '');
   const city = String(plot.city || '');
   const category = String(plot.category || '');
-  const proximityNotes = String(plot.proximityNotes || plot.proximity_notes || '');
   const sizeDims = String(plot.size_dimensions || plot.size || '');
 
-  const fullText = `${id} ${title} ${society} ${city} ${category} ${proximityNotes} ${sizeDims}`.toLowerCase();
+  const fullText = `${id} ${title} ${society} ${city} ${category} ${sizeDims}`.toLowerCase();
   const seed = hashString(`${id}-${title}-${city}`);
   const centroid = extractPlotCentroid(plot);
 

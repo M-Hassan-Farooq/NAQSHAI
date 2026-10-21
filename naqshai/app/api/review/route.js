@@ -42,7 +42,7 @@ export async function GET(request) {
 
     const { data: verifiedRows, error: verifiedError } = await dbAdmin
       .from('plots')
-      .select('id, seller_id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, proximity_notes, polygon_coordinates, is_verified, created_at, updated_at, sellers ( phone_number, full_name )')
+      .select('id, seller_id, title, city, price_pkr, size_dimensions, category, flood_risk, noise_level, elevation_profile, polygon_coordinates, is_verified, created_at, updated_at, sellers ( phone_number, full_name )')
       .order('created_at', { ascending: false });
 
     if (verifiedError) {
@@ -107,7 +107,6 @@ export async function GET(request) {
             pricePkr: plot.pricePkr || '',
             sizeDimensions: plot.sizeDimensions || '',
             category: plot.category || '',
-            proximityNotes: plot.proximityNotes || '',
           },
           polygon,
           documents,
@@ -136,7 +135,6 @@ export async function GET(request) {
         floodRisk: row.flood_risk || '',
         noiseLevel: row.noise_level || '',
         elevationProfile: row.elevation_profile || '',
-        proximityNotes: row.proximity_notes || '',
         polygon,
         regulatory,
         created_at: row.created_at,

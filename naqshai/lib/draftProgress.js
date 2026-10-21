@@ -54,7 +54,6 @@ export function isDraftMeaningful(formData) {
   return !!(
     p.plotNumber ||
     p.pricePkr ||
-    p.proximityNotes ||
     (Array.isArray(f.polygonCoordinates) && f.polygonCoordinates.length > 0) ||
     docs.allotmentLetter ||
     docs.cnicFront ||

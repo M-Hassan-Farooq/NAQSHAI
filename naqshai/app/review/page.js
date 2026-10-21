@@ -568,12 +568,6 @@ export default function ReviewPage() {
                             <dd className="font-medium text-slate-700">{l.plot.city || '—'}</dd>
                           </div>
                         </dl>
-                        {l.plot.proximityNotes && (
-                          <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                            <span className="font-semibold text-slate-600">Notes: </span>
-                            {l.plot.proximityNotes}
-                          </p>
-                        )}
                       </div>
 
                       {/* Regulatory Authority Clearance (CDA / RDA) */}

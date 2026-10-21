@@ -46,7 +46,7 @@ export async function POST(request) {
     // Pull one bounded batch of plots that still lack an embedding.
     const { data: plots, error } = await dbAdmin
       .from('plots')
-      .select('id, title, city, category, size_dimensions, proximity_notes, flood_risk, noise_level, elevation_profile')
+      .select('id, title, city, category, size_dimensions, flood_risk, noise_level, elevation_profile')
       .is('embedding', null)
       .limit(limit);
 
