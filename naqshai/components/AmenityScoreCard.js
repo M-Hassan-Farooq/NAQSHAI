@@ -194,10 +194,6 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
       : 0;
   const scoreMeta = getScoreColorClass(selectedScore);
   const rating = getAmenityRating(selectedScore);
-  const calculatedAt = data.calculatedAt ? new Date(data.calculatedAt) : null;
-  const calculatedDate = calculatedAt && Number.isFinite(calculatedAt.getTime())
-    ? calculatedAt.toLocaleDateString()
-    : null;
 
   return (
     <div className={`ui-panel p-4 space-y-4 ${className}`}>
@@ -247,10 +243,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
           {rating.label}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-muted">
-        Distances are straight-line estimates to entries in NAQSHAI’s regional amenity dataset; facility coverage may be incomplete.
-        {calculatedDate ? ` Calculated ${calculatedDate}.` : ''}
-      </p>
+      <p className="text-xs text-muted">Calculated using radial distance.</p>
 
       <details className="border-y border-border py-2">
         <summary className="cursor-pointer text-sm font-semibold text-ink ui-focus-ring">
@@ -305,7 +298,7 @@ export default function AmenityScoreCard({ plotId, lat, lng, center, className =
                   <span className="text-[11px] text-slate-400 font-sans">
                     {item.distanceKm} km
                   </span>
-                  <span className={`font-bold text-[11px] ${itemScoreMeta.text}`}>
+                  <span className={`rounded-control px-1.5 py-0.5 font-bold text-[11px] ${itemScoreMeta.bg}`}>
                     {item.score}/100
                   </span>
                 </div>

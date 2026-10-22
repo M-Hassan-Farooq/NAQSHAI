@@ -1521,7 +1521,7 @@ function ExploreContent() {
                         </div>
                       </div>
 
-                      {/* Plot identity, facts, and review information */}
+                      {/* Plot identity and details */}
                       <div className="p-5 flex-1 overflow-y-auto space-y-5 text-ink">
                         <section aria-labelledby="selected-plot-title">
                           <h2 id="selected-plot-title" className="text-lg font-bold text-ink leading-snug">
@@ -1533,9 +1533,28 @@ function ExploreContent() {
                           </p>
                         </section>
 
-                        <section aria-labelledby="property-facts-title" className="space-y-2">
-                          <h3 id="property-facts-title" className="text-sm font-semibold text-ink">Property details</h3>
-                          <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setIs3DMode(!is3DMode)}
+                          disabled={!selectedPlot.center}
+                          className="w-full flex items-center justify-center gap-2 bg-surface-subtle hover:bg-action-soft disabled:opacity-50 disabled:cursor-not-allowed text-ink font-medium py-2.5 px-4 rounded-control border border-border transition text-sm ui-focus-ring"
+                        >
+                          <Eye className="w-4 h-4 text-action" />
+                          <span>
+                            {!selectedPlot.center
+                              ? 'Walkthrough unavailable (no map location)'
+                              : is3DMode
+                              ? 'Exit 3D walkthrough'
+                              : 'Launch 3D walkthrough'}
+                          </span>
+                        </button>
+
+                        <details className="group rounded-card border border-border">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
+                            <span>Property details</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                          </summary>
+                          <dl className="divide-y divide-border border-t border-border px-3 text-sm">
                             <div className="flex justify-between gap-4 py-2.5">
                               <dt className="text-muted">Plot size</dt>
                               <dd className="font-semibold text-right">{selectedPlot.details?.size || 'Not provided'}</dd>
@@ -1544,73 +1563,8 @@ function ExploreContent() {
                               <dt className="text-muted">Property type</dt>
                               <dd className="font-semibold text-right">{selectedPlot.details?.category || 'Not provided'}</dd>
                             </div>
-                            <div className="flex justify-between gap-4 py-2.5">
-                              <dt className="text-muted">Map boundary</dt>
-                              <dd className={`font-semibold text-right ${selectedPlot.hasGeometry ? 'text-action-hover' : 'text-caution'}`}>
-                                {selectedPlot.hasGeometry ? 'Available' : 'Not available'}
-                              </dd>
-                            </div>
-                            {selectedPlot.center && (
-                              <div className="flex justify-between gap-4 py-2.5">
-                                <dt className="text-muted">Map coordinates</dt>
-                                <dd className="font-mono text-xs text-right">
-                                  {selectedPlot.center.lat.toFixed(5)}, {selectedPlot.center.lng.toFixed(5)}
-                                </dd>
-                              </div>
-                            )}
                           </dl>
-                          <p className="text-xs leading-relaxed text-muted">
-                            The mapped outline comes from listing data and is not a cadastral or on-site survey.
-                          </p>
-                        </section>
-
-                        <section aria-labelledby="verification-title" className="space-y-3">
-                          <div>
-                            <h3 id="verification-title" className="text-sm font-semibold text-ink">Verification checks</h3>
-                            <p className="text-xs text-muted mt-0.5">These checks have different scopes; none establishes legal ownership or title.</p>
-                          </div>
-                          <div className="divide-y divide-border rounded-card border border-border px-3">
-                            <div className="py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-ink">Listing review</span>
-                                <span className={`ui-badge ${selectedPlot.isVerified ? 'ui-badge-success' : 'ui-badge-neutral'}`}>
-                                  {selectedPlot.isVerified ? 'Approved for listing' : 'Not marked verified'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-muted mt-1.5">
-                                {selectedPlot.isVerified
-                                  ? 'This status reflects approval for public listing on NAQSHAI; it is not proof of ownership or title.'
-                                  : 'The public listing data does not record an approved verification status.'}
-                              </p>
-                              <p className="text-xs text-muted mt-1">
-                                Source: NAQSHAI listing status · Review date: not provided
-                              </p>
-                            </div>
-                            <div className="py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-ink">Mapped area check</span>
-                                <span className="ui-badge-neutral">
-                                  Result not available
-                                </span>
-                              </div>
-                              <p className="text-xs text-muted mt-1.5">
-                                {selectedPlot.hasGeometry ? 'A mapped boundary is available, but size-to-boundary and overlap check results are not included in this public plot data.' : 'No mapped boundary or size-to-boundary and overlap check result is included in this public plot data.'}
-                              </p>
-                              <p className="text-xs text-muted mt-1">
-                                The mapped outline alone does not confirm dimensions on the ground.
-                              </p>
-                            </div>
-                            <div className="py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-ink">Document and identity match</span>
-                                <span className="ui-badge-neutral">Result not available</span>
-                              </div>
-                              <p className="text-xs text-muted mt-1.5">
-                                Document-review and seller-identity matching results are not included in the public plot data.
-                              </p>
-                            </div>
-                          </div>
-                        </section>
+                        </details>
 
                         {/* Environmental indicators */}
                         {(() => {
@@ -1635,141 +1589,146 @@ function ExploreContent() {
                           const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
 
                           return (
-                            <section aria-labelledby="risk-indicators-title" className="space-y-2">
-                              <div>
-                                <h3 id="risk-indicators-title" className="text-sm font-semibold text-ink">Environmental indicators</h3>
-                                <p className="text-xs text-muted mt-0.5">Screening information only; not a site inspection or safety guarantee.</p>
+                            <details className="group rounded-card border border-border">
+                              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
+                                <span>Environmental indicators</span>
+                                <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                              </summary>
+                              <div className="space-y-2 border-t border-border p-3">
+                                <p className="text-xs text-muted">Screening information only; not a site inspection or safety guarantee.</p>
+                                {allPending ? (
+                                  <div className="rounded-card border border-border bg-surface-subtle px-3 py-2.5 text-sm text-muted">
+                                    No environmental indicators are available for this listing.
+                                  </div>
+                                ) : (
+                                  <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
+                                    {!isFloodPending && (
+                                      <div className="flex justify-between gap-4 py-2.5">
+                                        <dt className="text-muted">Flood indicator</dt>
+                                        <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${floodRiskClasses(floodVal)}`}>{floodVal}</dd>
+                                      </div>
+                                    )}
+                                    {!isNoisePending && (
+                                      <div className="flex justify-between gap-4 py-2.5">
+                                        <dt className="text-muted">Noise indicator</dt>
+                                        <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${isHighNoise ? 'bg-danger-soft text-danger border-danger/20' : isQuietNoise ? 'bg-action-soft text-action-hover border-action/20' : 'bg-caution-soft text-caution border-caution/20'}`}>{noiseVal}</dd>
+                                      </div>
+                                    )}
+                                    {!isElevPending && (
+                                      <div className="flex justify-between gap-4 py-2.5">
+                                        <dt className="text-muted">Elevation</dt>
+                                        <dd className="inline-flex max-w-[65%] rounded-control border border-border bg-surface-subtle px-2 py-1 text-right text-xs font-medium text-ink">{elevVal}</dd>
+                                      </div>
+                                    )}
+                                  </dl>
+                                )}
+                                <p className="text-xs text-muted">
+                                  Source and assessment date are not provided in the public plot data.
+                                </p>
                               </div>
-                              {allPending ? (
-                                <div className="rounded-card border border-border bg-surface-subtle px-3 py-2.5 text-sm text-muted">
-                                  No environmental indicators are available for this listing.
-                                </div>
-                              ) : (
-                                <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
-                                  {!isFloodPending && (
-                                    <div className="flex justify-between gap-4 py-2.5">
-                                      <dt className="text-muted">Flood indicator</dt>
-                                      <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${floodRiskClasses(floodVal)}`}>{floodVal}</dd>
-                                    </div>
-                                  )}
-                                  {!isNoisePending && (
-                                    <div className="flex justify-between gap-4 py-2.5">
-                                      <dt className="text-muted">Noise indicator</dt>
-                                      <dd className={`font-medium text-right ${isHighNoise ? 'text-danger' : isQuietNoise ? 'text-action-hover' : 'text-caution'}`}>{noiseVal}</dd>
-                                    </div>
-                                  )}
-                                  {!isElevPending && (
-                                    <div className="flex justify-between gap-4 py-2.5">
-                                      <dt className="text-muted">Elevation</dt>
-                                      <dd className="font-medium text-right">{elevVal}</dd>
-                                    </div>
-                                  )}
-                                </dl>
-                              )}
-                              <p className="text-xs text-muted">
-                                Source and assessment date are not provided in the public plot data.
-                              </p>
-                            </section>
+                            </details>
                           );
                         })()}
 
                         {/* Society-level regulatory registry lookup */}
                         {selectedPlot.regulatory && (
-                          <section aria-labelledby="regulatory-status-title" className="space-y-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <h3 id="regulatory-status-title" className="text-sm font-semibold text-ink">
-                                Society / scheme status
-                              </h3>
-                              <span className={`ui-badge ${selectedPlot.regulatory.tier === 'approved' || selectedPlot.regulatory.tier === 'government' ? 'ui-badge-success' : 'ui-badge-caution'}`}>
-                                {selectedPlot.regulatory.badgeText}
+                          <details className="group rounded-card border border-border">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
+                              <span className="min-w-0 flex-1">Housing scheme status</span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className={`ui-badge whitespace-nowrap ${selectedPlot.regulatory.tier === 'approved' || selectedPlot.regulatory.tier === 'government' ? 'ui-badge-success' : 'ui-badge-caution'}`}>
+                                  {selectedPlot.regulatory.badgeText}
+                                </span>
+                                <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
                               </span>
-                            </div>
-                            <p className="text-sm text-muted leading-relaxed">
-                              {selectedPlot.regulatory.summary}
-                            </p>
-                            <dl className="divide-y divide-border rounded-card border-y border-border text-xs">
-                              <div className="flex justify-between gap-3 py-2">
-                                <dt className="text-muted">Authority</dt>
-                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.authority}</dd>
-                              </div>
-                              <div className="flex justify-between gap-3 py-2">
-                                <dt className="text-muted">Registry NOC reference</dt>
-                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.nocNumber}</dd>
-                              </div>
-                              <div className="flex justify-between gap-3 py-2">
-                                <dt className="text-muted">Registry layout-plan status</dt>
-                                <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.lopStatus}</dd>
-                              </div>
-                            </dl>
-                            <p className="text-xs text-muted">
-                              NAQSHAI registry lookup · Currentness date not provided. This is a society/sector-level match, not confirmation of this plot’s NOC, ownership, title, or transfer eligibility.
-                            </p>
-
-                            {selectedPlot.regulatory.warning && (
-                              <p className="rounded-control border border-caution/20 bg-caution-soft p-2.5 text-xs font-medium leading-relaxed text-caution">
-                                {selectedPlot.regulatory.warning}
+                            </summary>
+                            <div className="space-y-3 border-t border-border p-3">
+                              <p className="text-sm text-muted leading-relaxed">
+                                {selectedPlot.regulatory.summary}
                               </p>
-                            )}
-
-                            {selectedPlot.regulatory.officialVerificationUrl && (
-                              <div className="pt-0.5">
-                                <a
-                                  href={selectedPlot.regulatory.officialVerificationUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs font-semibold text-action-hover hover:text-action underline inline-flex items-center gap-1 ui-focus-ring"
-                                >
-                                  Check with {selectedPlot.regulatory.authority}
-                                  <span aria-hidden="true">→</span>
-                                </a>
-                              </div>
-                            )}
-                          </section>
+                              <dl className="divide-y divide-border rounded-card border-y border-border text-xs">
+                                <div className="flex justify-between gap-3 py-2">
+                                  <dt className="text-muted">Authority</dt>
+                                  <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.authority || 'Not provided'}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3 py-2">
+                                  <dt className="text-muted">Jurisdiction</dt>
+                                  <dd className="font-medium text-right text-ink">{selectedPlot.regulatory.jurisdiction || 'Not provided'}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3 py-2">
+                                  <dt className="text-muted">Registry NOC reference</dt>
+                                  <dd className="max-w-[65%] font-medium text-right text-ink">{selectedPlot.regulatory.nocNumber || 'Not provided'}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3 py-2">
+                                  <dt className="text-muted">Layout-plan status</dt>
+                                  <dd className="max-w-[65%] font-medium text-right text-ink">{selectedPlot.regulatory.lopStatus || 'Not provided'}</dd>
+                                </div>
+                              </dl>
+                              <p className="text-xs text-muted">
+                                NAQSHAI registry lookup; currentness date not provided. This is a society/sector-level match, not confirmation of this plot’s NOC, ownership, title, or transfer eligibility.
+                              </p>
+                              {(selectedPlot.regulatory.warning || selectedPlot.regulatory.officialVerificationUrl) && (
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  {selectedPlot.regulatory.warning && (
+                                    <p className="text-xs leading-relaxed text-caution">
+                                      {selectedPlot.regulatory.warning}
+                                    </p>
+                                  )}
+                                  {selectedPlot.regulatory.officialVerificationUrl && (
+                                    <a
+                                      href={selectedPlot.regulatory.officialVerificationUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs font-semibold text-action-hover hover:text-action underline inline-flex items-center gap-1 ui-focus-ring"
+                                    >
+                                      Check with {selectedPlot.regulatory.authority}
+                                      <span aria-hidden="true">→</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </details>
                         )}
 
-                        <section aria-labelledby="nearby-amenities-title" className="space-y-2">
-                          <h3 id="nearby-amenities-title" className="text-sm font-semibold text-ink">Nearby amenities and distances</h3>
-                          <AmenityScoreCard
-                            plotId={selectedPlot.id}
-                            lat={selectedPlot.center?.lat}
-                            lng={selectedPlot.center?.lng}
-                          />
-                        </section>
-
-                        <button
-                          type="button"
-                          onClick={() => setIs3DMode(!is3DMode)}
-                          disabled={!selectedPlot.center}
-                          className="w-full flex items-center justify-center gap-2 bg-surface-subtle hover:bg-action-soft disabled:opacity-50 disabled:cursor-not-allowed text-ink font-medium py-2.5 px-4 rounded-control border border-border transition text-sm ui-focus-ring"
-                        >
-                          <Eye className="w-4 h-4 text-action" />
-                          <span>
-                            {!selectedPlot.center
-                              ? 'Walkthrough unavailable (no map location)'
-                              : is3DMode
-                              ? 'Exit 3D walkthrough'
-                              : 'Launch 3D walkthrough'}
-                          </span>
-                        </button>
+                        <details className="group rounded-card border border-border">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
+                            <span>Nearby amenities and distances</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="border-t border-border p-2">
+                            <AmenityScoreCard
+                              plotId={selectedPlot.id}
+                              lat={selectedPlot.center?.lat}
+                              lng={selectedPlot.center?.lng}
+                            />
+                          </div>
+                        </details>
 
                         {/* WhatsApp Secondary Link */}
-                        <div className="pt-1">
-                          {selectedPlot.ownerContact ? (
-                            <a
-                              href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full flex items-center justify-center gap-2 bg-surface border border-border hover:bg-surface-subtle text-ink font-medium py-2.5 px-4 rounded-control transition text-sm ui-focus-ring"
-                            >
-                              <Phone className="w-4 h-4 text-action" />
-                              <span>Contact owner via WhatsApp</span>
-                            </a>
-                          ) : (
-                            <div className="w-full text-center text-sm text-muted bg-surface-subtle border border-border rounded-control py-2.5">
-                              Owner contact not available
-                            </div>
-                          )}
-                        </div>
+                        <details className="group rounded-card border border-border">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
+                            <span>Owner contact</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="border-t border-border p-3">
+                            {selectedPlot.ownerContact ? (
+                              <a
+                                href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full flex items-center justify-center gap-2 bg-surface border border-border hover:bg-surface-subtle text-ink font-medium py-2.5 px-4 rounded-control transition text-sm ui-focus-ring"
+                              >
+                                <Phone className="w-4 h-4 text-action" />
+                                <span>Contact owner via WhatsApp</span>
+                              </a>
+                            ) : (
+                              <div className="w-full text-center text-sm text-muted bg-surface-subtle border border-border rounded-control py-2.5">
+                                Owner contact not available
+                              </div>
+                            )}
+                          </div>
+                        </details>
                       </div>
 
                       {/* Sidebar Footer / CTA */}
