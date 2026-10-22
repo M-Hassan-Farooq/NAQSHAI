@@ -1,9 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
 
-const SUPPORTED_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash'
+export const SUPPORTED_MODELS = [
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-flash-latest',
+  'gemini-3.7-flash',
+  'gemini-3.8-flash'
 ];
 
 /**
@@ -37,8 +41,17 @@ async function fetchDocumentPart(dbAdmin, bucketName, filePath) {
       return null;
     }
 
-    const arrayBuffer = await data.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString('base64');
+    let base64Data = '';
+    if (typeof data.arrayBuffer === 'function') {
+      const arrayBuffer = await data.arrayBuffer();
+      base64Data = Buffer.from(arrayBuffer).toString('base64');
+    } else if (Buffer.isBuffer(data)) {
+      base64Data = data.toString('base64');
+    } else if (data instanceof ArrayBuffer) {
+      base64Data = Buffer.from(data).toString('base64');
+    } else {
+      base64Data = Buffer.from(data).toString('base64');
+    }
     const mimeType = data.type || getMimeType(filePath);
 
     return {
@@ -221,9 +234,11 @@ JSON Structure:
   const ai = new GoogleGenAI({ apiKey });
 
   let rawOutput = null;
+  let lastModelError = '';
 
   for (const modelName of SUPPORTED_MODELS) {
     try {
+      console.log(`[aiDocumentVerifier] Attempting document audit via model: ${modelName}`);
       const response = await ai.models.generateContent({
         model: modelName,
         contents,
@@ -233,13 +248,21 @@ JSON Structure:
         }
       });
 
-      const text = response?.text?.();
-      if (text) {
-        rawOutput = text;
+      // Handle both string property (@google/genai) and function getter or candidate text
+      const text = typeof response?.text === 'function'
+        ? response.text()
+        : (typeof response?.text === 'string' ? response.text : response?.candidates?.[0]?.content?.parts?.[0]?.text);
+
+      if (text && typeof text === 'string' && text.trim().length > 0) {
+        rawOutput = text.trim();
+        console.log(`[aiDocumentVerifier] Successfully audited documents with model: ${modelName}`);
         break;
+      } else {
+        console.warn(`[aiDocumentVerifier] Model ${modelName} returned empty text, attempting next fallback...`);
       }
     } catch (err) {
-      console.warn(`[aiDocumentVerifier] Model ${modelName} call failed:`, err?.message || err);
+      lastModelError = err?.message || String(err);
+      console.warn(`[aiDocumentVerifier] Model ${modelName} failed (${lastModelError}), falling back to next model...`);
     }
   }
 
@@ -247,9 +270,9 @@ JSON Structure:
     return {
       overallStatus: 'UNREADABLE',
       confidenceScore: 0,
-      summary: 'AI verification models were unable to process the uploaded documents at this time.',
-      cnicAudit: { detected: false, notes: 'Model execution timeout or error' },
-      allotmentAudit: { detected: false, notes: 'Model execution timeout or error' },
+      summary: `AI verification models were unable to process the uploaded documents at this time.${lastModelError ? ` (${lastModelError})` : ''}`,
+      cnicAudit: { detected: false, notes: lastModelError || 'Model execution timeout or error' },
+      allotmentAudit: { detected: false, notes: lastModelError || 'Model execution timeout or error' },
       redFlags: ['AI analysis request failed. Manual audit required.'],
       recommendation: 'MANUAL_REVIEW_REQUIRED',
       verifiedAt: new Date().toISOString()

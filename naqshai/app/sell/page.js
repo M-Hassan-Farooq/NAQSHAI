@@ -116,7 +116,223 @@ function SaveIndicator({ state, lastSavedAt, onRetry }) {
       </span>
     );
   }
-  return null;
+// Elegant Phone Verification Modal (Refined Architectural Light)
+function PhoneVerificationModal({
+  isOpen,
+  onClose,
+  phoneNumber,
+  otpState,
+  setOtpState,
+  onVerify,
+  onResend,
+}) {
+  const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const inputRefs = useRef([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        inputRefs.current[0]?.focus();
+      }, 100);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (otpState.code) {
+      const chars = otpState.code.slice(0, 6).split('');
+      const arr = Array(6).fill('').map((_, i) => chars[i] || '');
+      setDigits(arr);
+    } else {
+      setDigits(['', '', '', '', '', '']);
+    }
+  }, [otpState.code]);
+
+  const handleDigitChange = (index, value) => {
+    const char = value.replace(/[^0-9]/g, '').slice(-1);
+    const newDigits = [...digits];
+    newDigits[index] = char;
+    setDigits(newDigits);
+    const code = newDigits.join('');
+    setOtpState((prev) => ({ ...prev, code, error: '' }));
+
+    if (char && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+    if (!pasted) return;
+    const newDigits = Array(6).fill('').map((_, i) => pasted[i] || '');
+    setDigits(newDigits);
+    setOtpState((prev) => ({ ...prev, code: pasted, error: '' }));
+    const targetIdx = Math.min(pasted.length, 5);
+    inputRefs.current[targetIdx]?.focus();
+  };
+
+  const handleAutoFillAndVerify = async () => {
+    const code = otpState.demoCode || '123456';
+    const newDigits = Array(6).fill('').map((_, i) => code[i] || '');
+    setDigits(newDigits);
+    setOtpState((prev) => ({ ...prev, code, error: '' }));
+    await onVerify(code);
+  };
+
+  if (!isOpen) return null;
+
+  const isFull = digits.every((d) => d !== '');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+      <div
+        className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-7 relative animate-in zoom-in-95 duration-150 space-y-5"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="otp-modal-title"
+      >
+        {/* Close Button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+          aria-label="Close verification modal"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Header Icon & Title */}
+        <div className="text-center space-y-2">
+          <div className="w-13 h-13 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
+            <ShieldCheck className="w-7 h-7" />
+          </div>
+          <h3 id="otp-modal-title" className="text-lg font-bold text-slate-900">
+            Verify WhatsApp Mobile
+          </h3>
+          <p className="text-xs text-slate-500 max-w-xs mx-auto">
+            We sent a 6-digit verification code to{' '}
+            <span className="font-mono font-bold text-slate-800">{phoneNumber}</span>
+          </p>
+        </div>
+
+        {/* Demo Mode Notice Banner */}
+        {otpState.isDemoMode ? (
+          <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-left space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                Hackathon Demo Mode
+              </span>
+              <span className="text-[10px] text-amber-700 font-medium">Twilio SMS unconfigured</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              Real SMS gateway is not configured on this server. Your test OTP code is:
+            </p>
+            <div className="flex items-center justify-between gap-2 bg-white/90 border border-amber-300 rounded-xl px-3 py-1.5">
+              <span className="text-xs text-slate-600 font-medium">Demo Code:</span>
+              <span className="font-mono font-extrabold text-base tracking-widest text-emerald-700">
+                {otpState.demoCode || '123456'}
+              </span>
+              <button
+                type="button"
+                onClick={handleAutoFillAndVerify}
+                disabled={otpState.verifying}
+                className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+              >
+                {otpState.verifying ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3 text-emerald-600" />
+                )}
+                <span>⚡ Auto-Fill & Verify</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 text-center text-xs text-emerald-900">
+            SMS dispatched to your mobile phone. Check your messages.
+          </div>
+        )}
+
+        {/* 6 Individual Digit Inputs */}
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold text-slate-700 text-center uppercase tracking-wider">
+            Enter 6-Digit Code
+          </label>
+          <div className="flex items-center justify-center gap-2 sm:gap-2.5" onPaste={handlePaste}>
+            {digits.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => (inputRefs.current[idx] = el)}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleDigitChange(idx, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(idx, e)}
+                className={`w-11 h-13 sm:w-12 sm:h-14 text-center font-mono font-bold text-xl sm:text-2xl rounded-xl border-2 transition outline-none ${
+                  digit
+                    ? 'border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-xs'
+                    : 'border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-500/10'
+                }`}
+              />
+            ))}
+          </div>
+          {otpState.error && (
+            <p className="text-center text-xs font-semibold text-rose-600 pt-1 flex items-center justify-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>{otpState.error}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Verify Button */}
+        <button
+          type="button"
+          onClick={() => onVerify()}
+          disabled={otpState.verifying || !isFull}
+          className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-2"
+        >
+          {otpState.verifying ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Verifying code…</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Verify Code</span>
+            </>
+          )}
+        </button>
+
+        {/* Resend footer */}
+        <div className="text-center text-xs text-slate-500 pt-1">
+          {otpState.cooldown > 0 ? (
+            <span className="text-slate-400">
+              Resend code in <strong className="font-mono text-slate-600">{otpState.cooldown}s</strong>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={onResend}
+              disabled={otpState.sending}
+              className="text-emerald-700 font-semibold hover:underline cursor-pointer"
+            >
+              Didn't receive code? Resend OTP
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function SellPlotPage() {
@@ -312,9 +528,10 @@ export default function SellPlotPage() {
     }
   };
 
-  // OTP Verification handler
-  const handleVerifyOtp = async () => {
-    if (!otpState.code || otpState.code.trim().length < 4) {
+  // OTP Verification handler (supports manual code or 1-click auto-fill)
+  const handleVerifyOtp = async (explicitCode) => {
+    const code = (typeof explicitCode === 'string' ? explicitCode : otpState.code).trim();
+    if (!code || code.length < 4) {
       setOtpState((prev) => ({ ...prev, error: 'Please enter the 6-digit verification code.' }));
       return;
     }
@@ -325,7 +542,7 @@ export default function SellPlotPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: sellerInfo.phoneNumber,
-          code: otpState.code.trim(),
+          code,
         }),
       });
       const data = await res.json();
@@ -901,7 +1118,9 @@ export default function SellPlotPage() {
                         required
                         disabled={isReadOnly || sellerInfo.phoneVerified}
                         aria-describedby="seller-phone-help"
-                        className="ui-input flex-1"
+                        className={`ui-input flex-1 ${
+                          sellerInfo.phoneVerified ? 'bg-emerald-50/50 border-emerald-300 text-emerald-950 font-medium' : ''
+                        }`}
                         value={sellerInfo.phoneNumber}
                         onChange={(e) =>
                           setSellerInfo({
@@ -916,7 +1135,7 @@ export default function SellPlotPage() {
                           type="button"
                           disabled={isReadOnly}
                           onClick={() => setSellerInfo({ ...sellerInfo, phoneVerified: false })}
-                          className="px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition shrink-0 cursor-pointer"
+                          className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition shrink-0 cursor-pointer"
                           title="Change phone number"
                         >
                           Change
@@ -942,81 +1161,29 @@ export default function SellPlotPage() {
                             {otpState.cooldown > 0
                               ? `${otpState.cooldown}s`
                               : otpState.isOpen
-                              ? 'Resend OTP'
+                              ? 'Enter Code'
                               : 'Send OTP'}
                           </span>
                         </button>
                       )}
                     </div>
-                    <p id="seller-phone-help" className="mt-1 text-xs text-muted">
-                      {sellerInfo.phoneVerified
-                        ? 'Your WhatsApp number is verified and ready for buyer inquiries.'
-                        : 'Enter your WhatsApp mobile number. We will verify it with a 6-digit OTP.'}
+                    <p id="seller-phone-help" className="mt-1.5 text-xs text-muted flex items-center justify-between">
+                      <span>
+                        {sellerInfo.phoneVerified
+                          ? '✓ WhatsApp number verified for buyer inquiries.'
+                          : 'Enter your WhatsApp mobile number to verify.'}
+                      </span>
+                      {!sellerInfo.phoneVerified && otpState.isOpen && (
+                        <button
+                          type="button"
+                          onClick={() => setOtpState((prev) => ({ ...prev, isOpen: true }))}
+                          className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer inline-flex items-center gap-0.5"
+                        >
+                          <span>Enter Code</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
                     </p>
-
-                    {/* OTP Input Card */}
-                    {!sellerInfo.phoneVerified && otpState.isOpen && (
-                      <div className="mt-3 p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                              <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                              <span>Enter 6-Digit Verification Code</span>
-                            </p>
-                            <p className="text-[11px] text-emerald-800 mt-0.5">
-                              Sent to <span className="font-mono font-bold">{sellerInfo.phoneNumber}</span>
-                            </p>
-                          </div>
-                          {otpState.isDemoMode && (
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-300 shrink-0">
-                              Hackathon Demo Mode
-                            </span>
-                          )}
-                        </div>
-
-                        {otpState.isDemoMode && otpState.demoCode && (
-                          <div className="text-[11px] bg-white border border-emerald-300 rounded-xl px-3 py-1.5 text-emerald-900 flex items-center justify-between">
-                            <span>Demo Verification Code:</span>
-                            <span className="font-mono font-bold text-sm tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {otpState.demoCode}
-                            </span>
-                          </div>
-                        )}
-
-                        {otpState.error && (
-                          <p className="text-xs text-red-600 font-medium">{otpState.error}</p>
-                        )}
-
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            maxLength={6}
-                            placeholder="e.g. 123456"
-                            value={otpState.code}
-                            onChange={(e) =>
-                              setOtpState({
-                                ...otpState,
-                                code: e.target.value.replace(/[^0-9]/g, ''),
-                              })
-                            }
-                            className="ui-input font-mono text-center tracking-widest text-base font-bold bg-white"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleVerifyOtp}
-                            disabled={otpState.verifying || otpState.code.length < 4}
-                            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition shrink-0 flex items-center gap-1.5 shadow-sm cursor-pointer"
-                          >
-                            {otpState.verifying ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            )}
-                            <span>Verify Code</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div>
@@ -1614,6 +1781,17 @@ export default function SellPlotPage() {
           )}
 
         </div>
+
+        {/* Dedicated Phone OTP Verification Modal */}
+        <PhoneVerificationModal
+          isOpen={otpState.isOpen && !sellerInfo.phoneVerified}
+          onClose={() => setOtpState((prev) => ({ ...prev, isOpen: false, error: '' }))}
+          phoneNumber={sellerInfo.phoneNumber}
+          otpState={otpState}
+          setOtpState={setOtpState}
+          onVerify={handleVerifyOtp}
+          onResend={handleSendOtp}
+        />
       </main>
     </div>
   );

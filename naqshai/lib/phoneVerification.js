@@ -201,9 +201,13 @@ export function verifyOtp(rawPhone, inputCode) {
   // Success: clear the used OTP
   otpStore.delete(normalized);
 
+  const token = `pv_${Buffer.from(`${normalized}_${Date.now()}`).toString('base64url')}`;
+
   return {
     success: true,
     normalizedPhone: normalized,
+    phone: normalized,
+    token,
     message: 'WhatsApp mobile number successfully verified!',
   };
 }
