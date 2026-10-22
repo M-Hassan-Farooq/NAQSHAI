@@ -1,4 +1,4 @@
-import { checkRegulatoryStatus } from './regulatoryRegistry';
+import { checkRegulatoryStatus } from './regulatoryRegistry.js';
 
 // Shared formatter that turns a raw `plots` table row (with its embedded
 // `sellers` join) into the public plot shape consumed by the 3D map, the
@@ -92,3 +92,25 @@ export function formatPlot(row) {
     isVerified: !!row.is_verified,
   };
 }
+
+/**
+ * Normalizes phone numbers (especially Pakistani formats) for WhatsApp wa.me links
+ * Converts 03xx to 923xx, strips leading +, 00, dashes, and spaces.
+ */
+export function formatWhatsAppUrl(phone, message = '') {
+  if (!phone) return null;
+  let digits = String(phone).replace(/[^0-9]/g, '');
+  if (!digits) return null;
+
+  if (digits.startsWith('0092')) {
+    digits = '92' + digits.slice(4);
+  } else if (digits.startsWith('0') && digits.length === 11) {
+    digits = '92' + digits.slice(1);
+  } else if (digits.length === 10 && digits.startsWith('3')) {
+    digits = '92' + digits;
+  }
+
+  const query = message ? `?text=${encodeURIComponent(message)}` : '';
+  return `https://wa.me/${digits}${query}`;
+}
+

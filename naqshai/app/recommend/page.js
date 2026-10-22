@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/Navbar';
 import UserNav from '@/components/UserNav';
+import { formatWhatsAppUrl } from '@/lib/formatPlot';
 import {
   Bot,
   Send,
@@ -667,9 +668,9 @@ function ChatInterface() {
                                                 </div>
 
                                                 <div className="pt-2 flex flex-col gap-2">
-                                                    {plot.sellerPhone && (
+                                                    {formatWhatsAppUrl(plot.sellerPhone) && (
                                                         <a
-                                                            href={`https://wa.me/${plot.sellerPhone.replace(/[^0-9]/g, '')}?text=Hi,%20I%20saw%20${encodeURIComponent(plot.id)}%20on%20NAQSHAI`}
+                                                            href={formatWhatsAppUrl(plot.sellerPhone, `Hi, I saw plot ${plot.id} on NAQSHAI.`)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-medium transition shadow-sm"

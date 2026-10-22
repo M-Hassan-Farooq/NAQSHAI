@@ -12,6 +12,7 @@ import UserNav from '@/components/UserNav';
 
 import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { useFavorites } from '@/context/FavoritesContext';
+import { formatWhatsAppUrl } from '@/lib/formatPlot';
 import {
   Search,
   ShieldAlert,
@@ -1863,14 +1864,14 @@ function ExploreContent() {
                             <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
                           </summary>
                           <div className="border-t border-border p-3">
-                            {selectedPlot.ownerContact ? (
+                            {formatWhatsAppUrl(selectedPlot.ownerContact) ? (
                               <a
-                                href={`https://wa.me/${selectedPlot.ownerContact.replace(/[^0-9]/g, '')}?text=Hi,%20I%20am%20interested%20in%20${encodeURIComponent(selectedPlot.name)}`}
+                                href={formatWhatsAppUrl(selectedPlot.ownerContact, `Hi, I am interested in ${selectedPlot.name} listed on NAQSHAI.`)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="w-full flex items-center justify-center gap-2 bg-surface border border-border hover:bg-surface-subtle text-ink font-medium py-2.5 px-4 rounded-control transition text-sm ui-focus-ring"
+                                className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold py-2.5 px-4 rounded-xl transition text-sm ui-focus-ring cursor-pointer shadow-xs"
                               >
-                                <Phone className="w-4 h-4 text-action" />
+                                <Phone className="w-4 h-4 text-emerald-700" />
                                 <span>Contact owner via WhatsApp</span>
                               </a>
                             ) : (
