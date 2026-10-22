@@ -50,12 +50,15 @@ export function isValidPhone(phone) {
 }
 
 /**
- * Clean up expired OTPs to avoid memory bloat
+ * Clean up expired OTPs to avoid memory bloat.
+ * Retains records for an extra 10 minutes past expiration so users
+ * receive an informative "code expired" error rather than generic "not found".
  */
 function cleanupExpired() {
   const now = Date.now();
+  const retentionWindow = 10 * 60 * 1000; // 10 minutes grace period
   for (const [phone, data] of otpStore.entries()) {
-    if (data.expiresAt < now) {
+    if (data.expiresAt + retentionWindow < now) {
       otpStore.delete(phone);
     }
   }
