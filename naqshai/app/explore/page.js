@@ -156,6 +156,7 @@ function ExploreContent() {
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [is3DMode, setIs3DMode] = useState(false);
   const [streetViewStatus, setStreetViewStatus] = useState('IDLE'); // 'IDLE' | 'CHECKING' | 'READY' | 'UNAVAILABLE' | 'ERROR'
+  const [isInspectorMinimized, setIsInspectorMinimized] = useState(false);
   // Marker-cluster layer (below POLYGON_MIN_ZOOM) vs individual polygons (at/above).
   // Stored as a boolean that flips only when zoom CROSSES the threshold, so dragging
   // the zoom control no longer re-renders the whole view on every incremental tick.
@@ -483,6 +484,8 @@ function ExploreContent() {
   const handleSelectPlot = useCallback((plot) => {
     setSelectedPlot(plot);
     setIs3DMode(false);
+    setStreetViewStatus('IDLE');
+    setIsInspectorMinimized(false);
     setIsSidebarOpen((prev) => (isMobile ? false : prev));
   }, [isMobile]);
 
@@ -490,12 +493,56 @@ function ExploreContent() {
   const handleSeeOnMap = useCallback((plot) => {
     setSelectedPlot(plot);
     setIs3DMode(false);
+    setStreetViewStatus('IDLE');
+    setIsInspectorMinimized(false);
     setIsSidebarOpen((prev) => (isMobile ? false : prev));
     if (plot.center && mapRef.current) {
       mapRef.current.panTo(plot.center);
       mapRef.current.setZoom(17);
     }
   }, [isMobile]);
+
+  const handleExit3D = useCallback(() => {
+    setIs3DMode(false);
+    setStreetViewStatus('IDLE');
+  }, []);
+
+  const handleToggle3D = useCallback(() => {
+    if (!selectedPlot?.center) return;
+    setIs3DMode((prev) => {
+      const next = !prev;
+      if (next && isMobile) {
+        setIsInspectorMinimized(true);
+      }
+      if (!next) {
+        setStreetViewStatus('IDLE');
+      }
+      return next;
+    });
+  }, [selectedPlot, isMobile]);
+
+  const handleClosePlot = useCallback(() => {
+    setSelectedPlot(null);
+    setIs3DMode(false);
+    setStreetViewStatus('IDLE');
+    setIsInspectorMinimized(false);
+  }, []);
+
+  // Trigger map canvas resize recalculation when inspector minimizes/expands or 3D toggles
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.google?.maps?.event && mapRef.current) {
+      const t1 = setTimeout(() => {
+        if (mapRef.current) window.google.maps.event.trigger(mapRef.current, 'resize');
+      }, 50);
+      const t2 = setTimeout(() => {
+        if (mapRef.current) window.google.maps.event.trigger(mapRef.current, 'resize');
+      }, 320);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [isInspectorMinimized, is3DMode]);
 
   // Auto-fit camera once
   useEffect(() => {
@@ -1384,7 +1431,7 @@ function ExploreContent() {
 
                 {/* 3D Walkthrough Status / Fallback Overlay */}
                 {is3DMode && streetViewStatus !== 'READY' && streetViewStatus !== 'IDLE' && (
-                  <div className="absolute top-16 right-4 z-30 max-w-sm w-full">
+                  <div className="absolute top-16 left-4 right-4 sm:left-auto sm:right-4 z-30 max-w-sm sm:w-full mx-auto sm:mx-0">
                     <div className="bg-white/95 backdrop-blur-md text-slate-800 rounded-2xl p-4 shadow-xl text-center space-y-3 border border-slate-200">
                       {streetViewStatus === 'CHECKING' ? (
                         <div className="flex flex-col items-center gap-2 py-2">
@@ -1410,7 +1457,7 @@ function ExploreContent() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setIs3DMode(false)}
+                              onClick={handleExit3D}
                               className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition border border-slate-200"
                             >
                               Exit 3D View
@@ -1465,7 +1512,9 @@ function ExploreContent() {
 
                 {/* Availability legend (bottom-left) */}
                 {!plotsLoading && !plotsError && plots.length > 0 && (
-                  <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 flex items-center gap-2.5">
+                  <div className={`absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200 shadow-md rounded-xl px-3 py-2 items-center gap-2.5 ${
+                    selectedPlot && isInspectorMinimized ? 'hidden sm:flex' : 'flex'
+                  }`}>
                     <span className="w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow-xs shrink-0" />
                     <div className="leading-tight">
                       <p className="text-xs font-semibold text-slate-700">Available plots</p>
@@ -1476,10 +1525,76 @@ function ExploreContent() {
                   </div>
                 )}
 
+                {/* Floating Quick Control Bar when Inspector is Minimized */}
+                {selectedPlot && isInspectorMinimized && (
+                  <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl rounded-2xl p-2.5 sm:px-4 sm:py-3 flex items-center gap-2.5 sm:gap-4 max-w-[94vw] w-auto transition-all animate-in fade-in slide-in-from-bottom-4 duration-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {is3DMode && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      )}
+                      <div className="min-w-0 max-w-[140px] sm:max-w-[220px]">
+                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+                          {selectedPlot.name}
+                        </p>
+                        <p className="text-[11px] font-semibold text-emerald-700 truncate leading-tight">
+                          {selectedPlot.price}
+                          {is3DMode && (
+                            <span className="ml-1 text-slate-400 font-normal hidden xs:inline">• 3D Active</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {is3DMode ? (
+                        <button
+                          type="button"
+                          onClick={handleExit3D}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-1.5 rounded-xl border border-slate-200 transition flex items-center gap-1 cursor-pointer"
+                          title="Exit 3D walkthrough"
+                        >
+                          <X className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Exit 3D</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleToggle3D}
+                          disabled={!selectedPlot.center}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-emerald-200 transition flex items-center gap-1 cursor-pointer"
+                          title="Launch 3D walkthrough"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>3D View</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setIsInspectorMinimized(false)}
+                        className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
+                        title="View full property details"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Details</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClosePlot}
+                        aria-label="Close plot"
+                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Slide-Out Property Inspector (Sidebar Drawer) */}
                 <div
                   className={`absolute top-0 right-0 h-full w-96 max-w-full bg-white shadow-2xl border-l border-slate-200 z-30 transform transition-transform duration-300 flex flex-col ${
-                    selectedPlot ? 'translate-x-0' : 'translate-x-full'
+                    selectedPlot && !isInspectorMinimized ? 'translate-x-0' : 'translate-x-full'
                   }`}
                 >
                   {selectedPlot && (
@@ -1497,6 +1612,15 @@ function ExploreContent() {
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            onClick={() => setIsInspectorMinimized(true)}
+                            aria-label="Minimize plot details to view map"
+                            title="Minimize details to view map"
+                            className="min-h-9 min-w-9 flex items-center justify-center hover:bg-slate-200/60 rounded-control text-muted transition cursor-pointer ui-focus-ring"
+                          >
+                            <Minimize2 className="w-4 h-4 text-slate-500" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => toggleFavorite(selectedPlot.id, selectedPlot)}
                             className="min-h-9 min-w-9 flex items-center justify-center hover:bg-rose-50 rounded-control text-muted hover:text-rose-500 transition cursor-pointer ui-focus-ring"
                             title={isFavorite(selectedPlot.id) ? 'Remove from favorites' : 'Save to favorites'}
@@ -1512,7 +1636,7 @@ function ExploreContent() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSelectedPlot(null)}
+                            onClick={handleClosePlot}
                             aria-label="Close plot details panel"
                             className="min-h-9 min-w-9 flex items-center justify-center hover:bg-slate-200/60 rounded-control text-muted transition cursor-pointer ui-focus-ring"
                           >
@@ -1523,6 +1647,33 @@ function ExploreContent() {
 
                       {/* Plot identity and details */}
                       <div className="p-5 flex-1 overflow-y-auto space-y-5 text-ink">
+                        {/* Active 3D Walkthrough Live Banner */}
+                        {is3DMode && (
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between gap-2 shadow-xs">
+                            <div className="flex items-center gap-2 text-xs text-emerald-800 font-semibold min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                              <span className="truncate">3D Walkthrough is live on the map</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setIsInspectorMinimized(true)}
+                                className="text-xs font-bold text-emerald-800 hover:text-emerald-950 bg-white hover:bg-emerald-100/60 px-2.5 py-1.5 rounded-lg border border-emerald-300 shadow-xs transition"
+                              >
+                                View 3D
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleExit3D}
+                                className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white px-2 py-1.5 rounded-lg border border-slate-200 shadow-xs transition"
+                                title="Exit 3D view"
+                              >
+                                Exit
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         <section aria-labelledby="selected-plot-title">
                           <h2 id="selected-plot-title" className="text-lg font-bold text-ink leading-snug">
                             {selectedPlot.name}
@@ -1535,7 +1686,7 @@ function ExploreContent() {
 
                         <button
                           type="button"
-                          onClick={() => setIs3DMode(!is3DMode)}
+                          onClick={handleToggle3D}
                           disabled={!selectedPlot.center}
                           className="w-full flex items-center justify-center gap-2 bg-surface-subtle hover:bg-action-soft disabled:opacity-50 disabled:cursor-not-allowed text-ink font-medium py-2.5 px-4 rounded-control border border-border transition text-sm ui-focus-ring"
                         >
