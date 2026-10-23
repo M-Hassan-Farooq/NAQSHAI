@@ -1,13 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
+import { calculatePolygonArea, verifyAreaMatch } from './areaCalculator.js';
 
 export const SUPPORTED_MODELS = [
+  'gemini-2.5-flash',
   'gemini-3.5-flash',
   'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-flash-lite-latest',
   'gemini-flash-latest',
   'gemini-3.7-flash',
-  'gemini-3.8-flash'
+  'gemini-3.8-flash',
 ];
 
 /**
@@ -57,8 +59,8 @@ async function fetchDocumentPart(dbAdmin, bucketName, filePath) {
     return {
       inlineData: {
         data: base64Data,
-        mimeType: mimeType === 'application/octet-stream' ? getMimeType(filePath) : mimeType
-      }
+        mimeType: mimeType === 'application/octet-stream' ? getMimeType(filePath) : mimeType,
+      },
     };
   } catch (err) {
     console.warn(`[aiDocumentVerifier] Exception fetching file "${filePath}":`, err?.message || err);
@@ -67,188 +69,251 @@ async function fetchDocumentPart(dbAdmin, bucketName, filePath) {
 }
 
 /**
+ * Builds a standardized fallback report if models or storage fail
+ */
+function buildFallbackReport(reason = 'Verification could not be processed automatically.') {
+  const now = new Date().toISOString();
+  const isNoDocs = reason.toLowerCase().includes('no documents');
+  return {
+    confidence_score: 0,
+    verdict: 'UNREADABLE',
+    extracted_owner_name: null,
+    extracted_cnic: null,
+    extracted_plot_number: null,
+    extracted_society_or_sector: null,
+    extracted_size: null,
+    extracted_serial_or_qr: null,
+    detected_authority: 'UNKNOWN',
+    checks: {
+      name_matches_claim: false,
+      plot_matches_claim: false,
+      size_matches_claim: false,
+      polygon_area_reasonable: false,
+      serial_number_present: false,
+    },
+    flags: [reason],
+    summary: reason,
+    ai_verified_at: now,
+
+    // Backward compatibility aliases
+    overallStatus: 'UNREADABLE',
+    confidenceScore: 0,
+    cnicAudit: { detected: false, notes: reason },
+    allotmentAudit: { detected: false, notes: reason },
+    redFlags: [reason],
+    recommendation: isNoDocs ? 'REJECT' : 'MANUAL_REVIEW_REQUIRED',
+    verifiedAt: now,
+  };
+}
+
+/**
+ * Extracts all candidate document storage paths from form_data
+ */
+function extractCandidateDocPaths(formData = {}) {
+  const paths = [];
+  const addPath = (path, label) => {
+    if (!path || typeof path !== 'string') return;
+    const clean = path.trim();
+    if (clean && !paths.some((p) => p.path === clean)) {
+      paths.push({ path: clean, label: label || 'Document' });
+    }
+  };
+
+  const docs = formData.documents;
+  if (Array.isArray(docs)) {
+    for (const d of docs) {
+      if (typeof d === 'string') addPath(d, 'Document');
+      else if (d?.path) addPath(d.path, d.label || d.name || 'Document');
+    }
+  } else if (docs && typeof docs === 'object') {
+    for (const [k, v] of Object.entries(docs)) {
+      if (typeof v === 'string') addPath(v, k);
+      else if (v?.path) addPath(v.path, v.label || v.name || k);
+    }
+  }
+
+  const uploaded = formData.uploadedFiles || {};
+  if (uploaded.allotmentLetter) {
+    const p = typeof uploaded.allotmentLetter === 'string' ? uploaded.allotmentLetter : uploaded.allotmentLetter.path;
+    addPath(p, 'Allotment / Transfer / Fard Slip');
+  }
+  if (uploaded.cnicFront) {
+    const p = typeof uploaded.cnicFront === 'string' ? uploaded.cnicFront : uploaded.cnicFront.path;
+    addPath(p, 'CNIC Front');
+  }
+  if (uploaded.cnicBack) {
+    const p = typeof uploaded.cnicBack === 'string' ? uploaded.cnicBack : uploaded.cnicBack.path;
+    addPath(p, 'CNIC Back');
+  }
+
+  // Fallbacks for top level keys
+  if (formData.allotmentLetter) {
+    addPath(typeof formData.allotmentLetter === 'string' ? formData.allotmentLetter : formData.allotmentLetter.path, 'Allotment Letter');
+  }
+  if (formData.cnicFront) {
+    addPath(typeof formData.cnicFront === 'string' ? formData.cnicFront : formData.cnicFront.path, 'CNIC Front');
+  }
+  if (formData.cnicBack) {
+    addPath(typeof formData.cnicBack === 'string' ? formData.cnicBack : formData.cnicBack.path, 'CNIC Back');
+  }
+
+  return paths;
+}
+
+/**
  * Performs Multimodal AI Verification on listing documents against metadata.
  *
  * @param {Object} params
  * @param {Object} params.formData - Entire listing draft form_data
  * @param {Object} params.dbAdmin - Privileged Supabase client
- * @returns {Promise<Object>} Verification audit result
+ * @returns {Promise<Object>} Verification audit report matching strict JSON schema
  */
-export async function verifyListingDocuments({ formData = {}, dbAdmin }) {
+export async function auditListingDocumentsWithVision({ formData = {}, dbAdmin }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return {
-      overallStatus: 'UNREADABLE',
-      confidenceScore: 0,
-      summary: 'AI Verification unavailable: GEMINI_API_KEY is not configured on the server.',
-      cnicAudit: { detected: false, notes: 'Missing API key' },
-      allotmentAudit: { detected: false, notes: 'Missing API key' },
-      redFlags: ['Server API key missing for Gemini OCR engine.'],
-      recommendation: 'MANUAL_REVIEW_REQUIRED',
-      verifiedAt: new Date().toISOString()
-    };
+    return buildFallbackReport('AI Verification unavailable: GEMINI_API_KEY is not configured on the server.');
   }
 
   const seller = formData.sellerInfo || {};
   const plot = formData.plotDetails || {};
-  const uploaded = formData.uploadedFiles || {};
+  const sellerName = seller.fullName || formData.seller_name || '';
+  const phoneNumber = seller.phoneNumber || formData.phone || '';
+  const city = plot.city || formData.city || '';
+  const society = plot.society || formData.society || '';
+  const plotNumber = plot.plotNumber || formData.plot_number || '';
+  const sizeDimensions = plot.sizeDimensions || formData.size_dimensions || '';
+  const demandPrice = plot.pricePkr ? `PKR ${plot.pricePkr}` : (formData.price_pkr ? `PKR ${formData.price_pkr}` : 'Not specified');
+  const authorityDocType = formData.authority_doc_type || formData.authorityDocType || 'UNKNOWN';
+  const documentSerialNumber = formData.document_serial_number || formData.documentSerialNumber || '';
 
   // Extract storage paths
-  const allotmentPath = typeof uploaded.allotmentLetter === 'string'
-    ? uploaded.allotmentLetter
-    : uploaded.allotmentLetter?.path;
-  const cnicFrontPath = typeof uploaded.cnicFront === 'string'
-    ? uploaded.cnicFront
-    : uploaded.cnicFront?.path;
-  const cnicBackPath = typeof uploaded.cnicBack === 'string'
-    ? uploaded.cnicBack
-    : uploaded.cnicBack?.path;
-
-  if (!allotmentPath && !cnicFrontPath) {
-    return {
-      overallStatus: 'UNREADABLE',
-      confidenceScore: 0,
-      summary: 'No documents were uploaded to verify.',
-      cnicAudit: { detected: false, notes: 'No CNIC uploaded' },
-      allotmentAudit: { detected: false, notes: 'No Allotment Letter uploaded' },
-      redFlags: ['Required ownership documents are missing from this draft.'],
-      recommendation: 'REJECT',
-      verifiedAt: new Date().toISOString()
-    };
+  const docCandidates = extractCandidateDocPaths(formData);
+  if (!docCandidates.length) {
+    return buildFallbackReport('No documents attached to this draft for verification.');
   }
 
-  // Fetch document parts
-  const [allotmentPart, cnicFrontPart, cnicBackPart] = await Promise.all([
-    fetchDocumentPart(dbAdmin, 'plot-documents', allotmentPath),
-    fetchDocumentPart(dbAdmin, 'plot-documents', cnicFrontPath),
-    fetchDocumentPart(dbAdmin, 'plot-documents', cnicBackPath)
-  ]);
+  // Download all parts from private 'plot-documents' bucket
+  const partsWithLabels = await Promise.all(
+    docCandidates.map(async (c) => {
+      const part = await fetchDocumentPart(dbAdmin, 'plot-documents', c.path);
+      return part ? { label: c.label, part } : null;
+    })
+  );
 
-  if (!allotmentPart && !cnicFrontPart) {
-    return {
-      overallStatus: 'UNREADABLE',
-      confidenceScore: 0,
-      summary: 'Uploaded document files could not be read from storage.',
-      cnicAudit: { detected: false, notes: 'File read error' },
-      allotmentAudit: { detected: false, notes: 'File read error' },
-      redFlags: ['Storage read failed for uploaded documents.'],
-      recommendation: 'MANUAL_REVIEW_REQUIRED',
-      verifiedAt: new Date().toISOString()
-    };
+  const validParts = partsWithLabels.filter(Boolean);
+  if (!validParts.length) {
+    return buildFallbackReport('Uploaded documents could not be read from storage bucket.');
   }
 
-  const systemInstruction = `
-You are the NAQSHAI Legal & Identity Verification AI, an expert auditor for Pakistani property transactions in Islamabad (CDA) and Rawalpindi (RDA).
-Your role is to rigorously inspect uploaded property documents (Allotment / Transfer Letter, CNIC Front and CNIC Back) and cross-reference them against the seller's declared listing metadata.
+  // Geodesic area calculation on polygon coordinates
+  const polygon = formData.polygon_coordinates || formData.polygonCoordinates || [];
+  let polygonAreaInfo = 'No polygon boundary coordinates provided.';
+  let areaCheck = null;
+  if (Array.isArray(polygon) && polygon.length >= 3) {
+    const calc = calculatePolygonArea(polygon);
+    areaCheck = verifyAreaMatch(polygon, sizeDimensions || '10 Marla (35x70)');
+    polygonAreaInfo = `Calculated Geodesic Surface Area: ${Math.round(calc.sqFt)} sq ft (~${calc.marla.toFixed(2)} Marla / ${calc.kanal.toFixed(3)} Kanal). Area Match with declared size (${sizeDimensions || '10 Marla'}): ${areaCheck.isValid ? 'VALID MATCH' : (areaCheck.isOversized ? 'OVERSIZED ENCHROACHMENT RISK' : 'UNDERSIZED BOUNDARY')} (${areaCheck.percentage}% coverage).`;
+  }
 
-TASK & CHECKS:
-1. CNIC IDENTITY AUDIT:
-   - Identify whether a Pakistani National Identity Card (CNIC/NICOP) is present.
-   - Extract the seller's full legal name and CNIC number.
-   - Compare with DECLARED SELLER NAME. Allow for standard Pakistani naming variations (e.g. "Muhammad" vs "Mohd" vs "M.", honorifics like "Chaudhry" or "Raja").
-   - Flag if the names completely mismatch.
+  const systemInstruction = `You are the NAQSHAI Legal & Land Registry AI Verification Specialist, an expert cadastral and document auditor for real estate transactions in Islamabad (CDA) and Rawalpindi/Punjab (PLRA Punjab Zameen, Punjab e-Stamp, RDA).
+Your role is to rigorously inspect uploaded official property documents (Computerized PLRA Fard, Punjab e-Stamp Registry, CDA Verification Slip / NDC / Allotment Letter, Society Allotment Letter) and CNIC images, cross-matching them against the seller's declared listing metadata and cadastral polygon area.
 
-2. ALLOTMENT / TRANSFER LETTER AUDIT:
-   - Identify whether an official Allotment Letter, Transfer Letter, or Possession Certificate is present.
-   - Extract the Allottee / Transferee Name, Plot Number, Block/Sector, Housing Society Name, and Plot Size.
-   - Cross-check:
-     a) Does the extracted Allottee Name match the CNIC name / seller name?
-     b) Does the extracted Plot Number match the declared Plot Number?
-     c) Does the extracted Society / Block match the declared Society?
-     d) Compare the extracted Plot Size against the declared size, including any stated dimensions or area.
-        Set sizeMatch to true only when the document size is consistent with the declared size, false when they conflict,
-        and null when the document does not show enough size information to compare. Do not guess a missing size.
+KEY VERIFICATION OBJECTIVES:
+1. OFFICIAL SERIAL & TRACKING NUMBER EXTRACTION (Anti-Forgery):
+   - Extract any official cryptographic Serial Number, Tracking Number, Diary Number, Barcode number, or e-Stamp 16-digit verification code visible on the document.
+   - Examples of Pakistani official serial formats:
+     * PLRA Fard: e.g. "FARD-...", "PB-RWP-...", "RWP-...", "BKT-..." or 10-16 digit document serial / tracking number.
+     * Punjab e-Stamp: 16-digit alphanumeric e-Stamp ID (e.g. "PB-RWP-2024-...", "ES-...").
+     * CDA Islamabad: Diary No, NDC No, or Verification Slip tracking code.
+     * Society: Allotment reference / Member Reg # (e.g. "DHA-ISB-...", "BT-...", "PR-...", "MS-...").
+   - Compare with the declared "document_serial_number". If the seller declared a serial number, check if it matches the document or is a substring/variation.
+   - Set detected_authority to "PLRA" | "ESTAMP" | "CDA" | "SOCIETY" | "UNKNOWN".
 
-3. QUALITY, LEGIBILITY & AUTHENTICITY:
-   - Flag if text is illegible, severely blurred, cut off, or appears edited/doctored.
-   - Flag if non-property or dummy images (e.g., screenshots, random photos) were uploaded.
+2. SELLER & IDENTITY CROSS-MATCH:
+   - Extract the legal owner/allottee name and CNIC number from the ownership document and the CNIC front/back.
+   - Compare with DECLARED SELLER NAME. Allow for standard Pakistani transliteration variants (e.g. "Muhammad" vs "Mohd" vs "M.", "Syed", honorifics "Chaudhry", "Malik", "Raja", "Khan").
+   - Flag if the names fundamentally mismatch or belong to a different individual.
 
-4. OVERALL STATUS & RECOMMENDATION:
-   - overallStatus MUST be one of:
-     * "VERIFIED" (All names, plot numbers, society, and stated plot size match with high clarity, confidence >= 85)
-     * "CAUTION" (Minor discrepancies or size cannot be determined from the document; confidence 60-84)
-     * "MISMATCH" (Severe mismatch in seller identity, plot number, society, or plot size, confidence < 60)
-     * "UNREADABLE" (Blurry, incomplete, or non-document uploads)
-   - Use "MANUAL_REVIEW_REQUIRED" when the document does not show enough information to compare plot size.
-   - recommendation: "APPROVE" | "MANUAL_REVIEW_REQUIRED" | "REJECT"
+3. PROPERTY DETAILS CROSS-MATCH:
+   - Extract Plot Number, Street/Sector/Block, and Housing Society / City.
+   - Compare with declared Plot Number and declared Society / Sector.
+   - Extract Plot Size / Area from the document (e.g. "5 Marla", "10 Marla", "1 Kanal", or dimensions like "30x60", "35x70", "50x90", or square yards).
+   - Compare extracted size with claimed plot size AND with the calculated polygon area from the drawn map boundary.
+   - Is the polygon area consistent with the document's stated land size? (1 Marla is approx 225 sq ft in CDA/Islamabad and 225-272 sq ft in Punjab).
 
-RESPONSE FORMAT:
-You MUST respond with valid, parseable JSON only. Do NOT include markdown code blocks or any extraneous text.
-JSON Structure:
+4. AUTHENTICITY & QUALITY CHECKS:
+   - Check for signs of tampering, digital editing, font inconsistencies, blurring, cut-off seals, or fraudulent document templates.
+   - If text is unreadable or non-property files were uploaded, set verdict to "UNREADABLE".
+
+5. CONFIDENCE SCORE & VERDICT:
+   - confidence_score: integer from 0 to 100.
+     * >= 80: High confidence, official stamps/serials present, all claimed details match.
+     * 50-79: Moderate confidence or minor naming/size variations.
+     * < 50: Severe mismatches or unverified documents.
+   - verdict: MUST be one of "MATCH" | "PARTIAL_MATCH" | "MISMATCH" | "UNREADABLE".
+     * "MATCH": High confidence (>= 80), owner name, plot number, and size match.
+     * "PARTIAL_MATCH": Minor discrepancy, partial OCR readability, or slight size tolerance difference.
+     * "MISMATCH": Direct contradiction in owner name, plot number, or society.
+     * "UNREADABLE": Low resolution, illegible, missing key pages, or invalid file.
+
+STRICT JSON OUTPUT FORMAT (Respond ONLY with valid JSON matching this schema, no markdown wrapping, no extra commentary):
 {
-  "overallStatus": "VERIFIED" | "CAUTION" | "MISMATCH" | "UNREADABLE",
-  "confidenceScore": number (0 to 100),
-  "summary": "1-2 sentence executive verdict",
-  "cnicAudit": {
-    "detected": boolean,
-    "extractedName": string or null,
-    "extractedCnic": string or null,
-    "nameMatch": boolean,
-    "notes": string
+  "confidence_score": 0,
+  "verdict": "MATCH | PARTIAL_MATCH | MISMATCH | UNREADABLE",
+  "extracted_owner_name": "string or null",
+  "extracted_cnic": "string or null",
+  "extracted_plot_number": "string or null",
+  "extracted_society_or_sector": "string or null",
+  "extracted_size": "string or null",
+  "extracted_serial_or_qr": "string or null",
+  "detected_authority": "PLRA | ESTAMP | CDA | SOCIETY | UNKNOWN",
+  "checks": {
+    "name_matches_claim": true,
+    "plot_matches_claim": true,
+    "size_matches_claim": true,
+    "polygon_area_reasonable": true,
+    "serial_number_present": true
   },
-  "allotmentAudit": {
-    "detected": boolean,
-    "allotteeName": string or null,
-    "plotNumber": string or null,
-    "society": string or null,
-    "size": string or null,
-    "plotMatch": boolean,
-    "societyMatch": boolean,
-    "sizeMatch": boolean or null,
-    "ownerMatchesCnic": boolean,
-    "notes": string
-  },
-  "redFlags": [string],
-  "recommendation": "APPROVE" | "MANUAL_REVIEW_REQUIRED" | "REJECT"
-}
-`;
+  "flags": ["Array of any discrepancies, tampering signs, or missing fields"],
+  "summary": "Concise 1-2 sentence audit summary for the compliance operator."
+}`;
 
-  const declaredMetadataText = `
-=== DECLARED LISTING METADATA ===
-- Seller Full Name: "${seller.fullName || 'Not specified'}"
-- Seller Phone: "${seller.phoneNumber || 'Not specified'}"
-- Declared Plot Number: "${plot.plotNumber || 'Not specified'}"
-- Declared Society / Sector: "${plot.society || 'Not specified'}"
-- Declared City: "${plot.city || 'Not specified'}"
-- Declared Plot Size (compare with the allotment/transfer document): "${plot.sizeDimensions || 'Not specified'}"
-- Demand Price: "${plot.pricePkr ? `PKR ${plot.pricePkr}` : 'Not specified'}"
+  const declaredMetadataText = `=== DECLARED SELLER CLAIMED METADATA ===
+- Declared Seller Full Name: "${sellerName || 'Not specified'}"
+- Declared Seller Phone: "${phoneNumber || 'Not specified'}"
+- Declared Document Type / Authority: "${authorityDocType}"
+- Declared Document Serial / Tracking #: "${documentSerialNumber || 'Not provided'}"
+- Declared Plot Number: "${plotNumber || 'Not specified'}"
+- Declared Society / Sector: "${society || 'Not specified'}"
+- Declared City: "${city || 'Not specified'}"
+- Declared Plot Size: "${sizeDimensions || 'Not specified'}"
+- Demand Price: "${demandPrice}"
+- Cadastral Mapped Boundary Area: ${polygonAreaInfo}
 
-=== ATTACHED DOCUMENTS FOR VERIFICATION ===
-`;
+=== ATTACHED DOCUMENTS FOR OCR & AUDIT ===`;
 
   const contents = [declaredMetadataText];
-
-  if (cnicFrontPart) {
-    contents.push('--- [DOCUMENT 1: CNIC FRONT] ---');
-    contents.push(cnicFrontPart);
-  }
-  if (cnicBackPart) {
-    contents.push('--- [DOCUMENT 2: CNIC BACK] ---');
-    contents.push(cnicBackPart);
-  }
-  if (allotmentPart) {
-    contents.push('--- [DOCUMENT 3: ALLOTMENT / TRANSFER LETTER] ---');
-    contents.push(allotmentPart);
+  for (const item of validParts) {
+    contents.push(`--- [${item.label}] ---`);
+    contents.push(item.part);
   }
 
   const ai = new GoogleGenAI({ apiKey });
-
   let rawOutput = null;
   let lastModelError = '';
 
   for (const modelName of SUPPORTED_MODELS) {
     try {
-      console.log(`[aiDocumentVerifier] Attempting document audit via model: ${modelName}`);
+      console.log(`[aiDocumentVerifier] Attempting vision document audit via: ${modelName}`);
       const response = await ai.models.generateContent({
         model: modelName,
         contents,
         config: {
           systemInstruction,
-          responseMimeType: 'application/json'
-        }
+          responseMimeType: 'application/json',
+        },
       });
 
-      // Handle both string property (@google/genai) and function getter or candidate text
       const text = typeof response?.text === 'function'
         ? response.text()
         : (typeof response?.text === 'string' ? response.text : response?.candidates?.[0]?.content?.parts?.[0]?.text);
@@ -257,72 +322,97 @@ JSON Structure:
         rawOutput = text.trim();
         console.log(`[aiDocumentVerifier] Successfully audited documents with model: ${modelName}`);
         break;
-      } else {
-        console.warn(`[aiDocumentVerifier] Model ${modelName} returned empty text, attempting next fallback...`);
       }
     } catch (err) {
       lastModelError = err?.message || String(err);
-      console.warn(`[aiDocumentVerifier] Model ${modelName} failed (${lastModelError}), falling back to next model...`);
+      console.warn(`[aiDocumentVerifier] Model ${modelName} failed (${lastModelError}), trying next fallback...`);
     }
   }
 
   if (!rawOutput) {
-    return {
-      overallStatus: 'UNREADABLE',
-      confidenceScore: 0,
-      summary: `AI verification models were unable to process the uploaded documents at this time.${lastModelError ? ` (${lastModelError})` : ''}`,
-      cnicAudit: { detected: false, notes: lastModelError || 'Model execution timeout or error' },
-      allotmentAudit: { detected: false, notes: lastModelError || 'Model execution timeout or error' },
-      redFlags: ['AI analysis request failed. Manual audit required.'],
-      recommendation: 'MANUAL_REVIEW_REQUIRED',
-      verifiedAt: new Date().toISOString()
-    };
+    return buildFallbackReport(`AI models were unable to process document images: ${lastModelError || 'Execution failed'}`);
   }
 
   try {
     const cleaned = rawOutput.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(cleaned);
 
+    const confidenceScore = Math.min(100, Math.max(0, Number(parsed.confidence_score ?? parsed.confidenceScore) || 0));
+    let verdict = parsed.verdict;
+    if (!['MATCH', 'PARTIAL_MATCH', 'MISMATCH', 'UNREADABLE'].includes(verdict)) {
+      if (confidenceScore >= 80) verdict = 'MATCH';
+      else if (confidenceScore >= 50) verdict = 'PARTIAL_MATCH';
+      else verdict = 'MISMATCH';
+    }
+
+    const checks = {
+      name_matches_claim: Boolean(parsed.checks?.name_matches_claim ?? parsed.cnicAudit?.nameMatch),
+      plot_matches_claim: Boolean(parsed.checks?.plot_matches_claim ?? parsed.allotmentAudit?.plotMatch),
+      size_matches_claim: Boolean(parsed.checks?.size_matches_claim ?? (parsed.allotmentAudit?.sizeMatch !== false)),
+      polygon_area_reasonable: Boolean(
+        parsed.checks?.polygon_area_reasonable ?? (areaCheck ? areaCheck.isValid : true)
+      ),
+      serial_number_present: Boolean(
+        parsed.checks?.serial_number_present ?? (parsed.extracted_serial_or_qr || documentSerialNumber)
+      ),
+    };
+
+    const flags = Array.isArray(parsed.flags)
+      ? parsed.flags
+      : (Array.isArray(parsed.redFlags) ? parsed.redFlags : []);
+
+    const now = new Date().toISOString();
+
     return {
-      overallStatus: parsed.overallStatus || 'CAUTION',
-      confidenceScore: Math.min(100, Math.max(0, Number(parsed.confidenceScore) || 50)),
+      confidence_score: confidenceScore,
+      verdict,
+      extracted_owner_name: parsed.extracted_owner_name || parsed.cnicAudit?.extractedName || parsed.allotmentAudit?.allotteeName || null,
+      extracted_cnic: parsed.extracted_cnic || parsed.cnicAudit?.extractedCnic || null,
+      extracted_plot_number: parsed.extracted_plot_number || parsed.allotmentAudit?.plotNumber || null,
+      extracted_society_or_sector: parsed.extracted_society_or_sector || parsed.allotmentAudit?.society || null,
+      extracted_size: parsed.extracted_size || parsed.allotmentAudit?.size || null,
+      extracted_serial_or_qr: parsed.extracted_serial_or_qr || documentSerialNumber || null,
+      detected_authority: parsed.detected_authority || (authorityDocType !== 'UNKNOWN' ? authorityDocType : 'UNKNOWN'),
+      checks,
+      flags,
       summary: parsed.summary || 'Document audit completed.',
+      ai_verified_at: now,
+
+      // Backward compatibility aliases
+      overallStatus: verdict === 'MATCH' ? 'VERIFIED' : (verdict === 'PARTIAL_MATCH' ? 'CAUTION' : verdict),
+      confidenceScore,
+      recommendation: verdict === 'MATCH' ? 'APPROVE' : (verdict === 'MISMATCH' ? 'REJECT' : 'MANUAL_REVIEW_REQUIRED'),
       cnicAudit: {
-        detected: !!parsed.cnicAudit?.detected,
-        extractedName: parsed.cnicAudit?.extractedName || null,
-        extractedCnic: parsed.cnicAudit?.extractedCnic || null,
-        nameMatch: !!parsed.cnicAudit?.nameMatch,
-        notes: parsed.cnicAudit?.notes || ''
+        detected: Boolean(parsed.extracted_cnic || parsed.extracted_owner_name),
+        extractedName: parsed.extracted_owner_name || null,
+        extractedCnic: parsed.extracted_cnic || null,
+        nameMatch: checks.name_matches_claim,
+        notes: checks.name_matches_claim ? 'Name matches claimed seller.' : 'Name discrepancy detected.',
       },
       allotmentAudit: {
-        detected: !!parsed.allotmentAudit?.detected,
-        allotteeName: parsed.allotmentAudit?.allotteeName || null,
-        plotNumber: parsed.allotmentAudit?.plotNumber || null,
-        society: parsed.allotmentAudit?.society || null,
-        size: parsed.allotmentAudit?.size || null,
-        plotMatch: !!parsed.allotmentAudit?.plotMatch,
-        societyMatch: !!parsed.allotmentAudit?.societyMatch,
-        sizeMatch: typeof parsed.allotmentAudit?.sizeMatch === 'boolean'
-          ? parsed.allotmentAudit.sizeMatch
-          : null,
-        ownerMatchesCnic: !!parsed.allotmentAudit?.ownerMatchesCnic,
-        notes: parsed.allotmentAudit?.notes || ''
+        detected: Boolean(parsed.extracted_plot_number || parsed.extracted_serial_or_qr),
+        allotteeName: parsed.extracted_owner_name || null,
+        plotNumber: parsed.extracted_plot_number || null,
+        society: parsed.extracted_society_or_sector || null,
+        size: parsed.extracted_size || null,
+        plotMatch: checks.plot_matches_claim,
+        societyMatch: checks.plot_matches_claim,
+        sizeMatch: checks.size_matches_claim,
+        ownerMatchesCnic: checks.name_matches_claim,
+        notes: parsed.summary || '',
       },
-      redFlags: Array.isArray(parsed.redFlags) ? parsed.redFlags : [],
-      recommendation: parsed.recommendation || 'MANUAL_REVIEW_REQUIRED',
-      verifiedAt: new Date().toISOString()
+      redFlags: flags,
+      verifiedAt: now,
     };
   } catch (parseErr) {
     console.error('[aiDocumentVerifier] Failed to parse JSON response:', parseErr, rawOutput);
-    return {
-      overallStatus: 'CAUTION',
-      confidenceScore: 50,
-      summary: 'AI processed the documents but returned a non-standard response structure.',
-      cnicAudit: { detected: false, notes: 'Parse warning' },
-      allotmentAudit: { detected: false, notes: 'Parse warning' },
-      redFlags: ['Structured output parsing error.'],
-      recommendation: 'MANUAL_REVIEW_REQUIRED',
-      verifiedAt: new Date().toISOString()
-    };
+    return buildFallbackReport('AI processed documents but returned invalid JSON format.');
   }
+}
+
+/**
+ * Legacy wrapper function for existing callers
+ */
+export async function verifyListingDocuments({ formData = {}, dbAdmin }) {
+  return auditListingDocumentsWithVision({ formData, dbAdmin });
 }

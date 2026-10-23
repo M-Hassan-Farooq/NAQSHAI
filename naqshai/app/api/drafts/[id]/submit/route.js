@@ -139,11 +139,17 @@ export async function POST(request, { params }) {
       try {
         const dbAdmin = getAdminClient();
         const aiVerification = await verifyListingDocuments({ formData: fd, dbAdmin });
+        const now = new Date().toISOString();
         await dbAdmin
           .from('listing_drafts')
           .update({
-            form_data: { ...fd, aiVerification },
-            updated_at: new Date().toISOString(),
+            form_data: {
+              ...fd,
+              ai_verification_report: aiVerification,
+              ai_verified_at: now,
+              aiVerification,
+            },
+            updated_at: now,
           })
           .eq('id', id);
       } catch (bgErr) {

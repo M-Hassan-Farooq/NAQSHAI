@@ -113,7 +113,10 @@ export async function GET(request) {
           overlapConflict: conflict.hasConflict ? conflict.conflictingPlot : null,
           areaVerification: areaCheck,
           regulatory,
-          aiVerification: fd.aiVerification || null,
+          aiVerification: fd.ai_verification_report || fd.aiVerification || null,
+          ai_verification_report: fd.ai_verification_report || fd.aiVerification || null,
+          authority_doc_type: fd.authority_doc_type || fd.authorityDocType || '',
+          document_serial_number: fd.document_serial_number || fd.documentSerialNumber || '',
         };
       })
     );

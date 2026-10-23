@@ -34,9 +34,13 @@ export async function POST(request, { params }) {
       dbAdmin
     });
 
-    // Persist result into form_data.aiVerification
+    const now = new Date().toISOString();
+
+    // Persist result into form_data.ai_verification_report & form_data.aiVerification
     const updatedFormData = {
       ...formData,
+      ai_verification_report: aiVerification,
+      ai_verified_at: now,
       aiVerification
     };
 
@@ -44,7 +48,7 @@ export async function POST(request, { params }) {
       .from('listing_drafts')
       .update({
         form_data: updatedFormData,
-        updated_at: new Date().toISOString()
+        updated_at: now
       })
       .eq('id', id);
 
@@ -54,7 +58,8 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({
       success: true,
-      aiVerification
+      aiVerification,
+      ai_verification_report: aiVerification
     });
   } catch (err) {
     console.error('[review/verify] Exception running AI verification:', err);

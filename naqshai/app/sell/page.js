@@ -34,6 +34,7 @@ import {
   RefreshCw,
   ClipboardList,
   Scale,
+  ExternalLink,
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '100%', borderRadius: '0.75rem' };
@@ -116,6 +117,9 @@ function SaveIndicator({ state, lastSavedAt, onRetry }) {
       </span>
     );
   }
+  return null;
+}
+
 // Elegant Phone Verification Modal (Refined Architectural Light)
 function PhoneVerificationModal({
   isOpen,
@@ -126,8 +130,8 @@ function PhoneVerificationModal({
   onVerify,
   onResend,
 }) {
-  const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef([]);
+  const digits = Array(6).fill('').map((_, i) => (otpState.code ? otpState.code[i] || '' : ''));
 
   useEffect(() => {
     if (isOpen) {
@@ -137,21 +141,10 @@ function PhoneVerificationModal({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (otpState.code) {
-      const chars = otpState.code.slice(0, 6).split('');
-      const arr = Array(6).fill('').map((_, i) => chars[i] || '');
-      setDigits(arr);
-    } else {
-      setDigits(['', '', '', '', '', '']);
-    }
-  }, [otpState.code]);
-
   const handleDigitChange = (index, value) => {
     const char = value.replace(/[^0-9]/g, '').slice(-1);
     const newDigits = [...digits];
     newDigits[index] = char;
-    setDigits(newDigits);
     const code = newDigits.join('');
     setOtpState((prev) => ({ ...prev, code, error: '' }));
 
@@ -170,8 +163,6 @@ function PhoneVerificationModal({
     e.preventDefault();
     const pasted = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6);
     if (!pasted) return;
-    const newDigits = Array(6).fill('').map((_, i) => pasted[i] || '');
-    setDigits(newDigits);
     setOtpState((prev) => ({ ...prev, code: pasted, error: '' }));
     const targetIdx = Math.min(pasted.length, 5);
     inputRefs.current[targetIdx]?.focus();
@@ -179,15 +170,13 @@ function PhoneVerificationModal({
 
   const handleAutoFillAndVerify = async () => {
     const code = otpState.demoCode || '123456';
-    const newDigits = Array(6).fill('').map((_, i) => code[i] || '');
-    setDigits(newDigits);
     setOtpState((prev) => ({ ...prev, code, error: '' }));
     await onVerify(code);
   };
 
   if (!isOpen) return null;
 
-  const isFull = digits.every((d) => d !== '');
+  const isFull = (otpState.code || '').length === 6;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
@@ -326,7 +315,7 @@ function PhoneVerificationModal({
               disabled={otpState.sending}
               className="text-emerald-700 font-semibold hover:underline cursor-pointer"
             >
-              Didn't receive code? Resend OTP
+              Didn&apos;t receive code? Resend OTP
             </button>
           )}
         </div>
@@ -412,6 +401,8 @@ export default function SellPlotPage() {
     cnicFront: null,
     cnicBack: null,
   });
+  const [authorityDocType, setAuthorityDocType] = useState('PLRA_FARD');
+  const [documentSerialNumber, setDocumentSerialNumber] = useState('');
   const [docUploading, setDocUploading] = useState({});
   const [docError, setDocError] = useState('');
 
@@ -440,6 +431,12 @@ export default function SellPlotPage() {
     }
     if (Array.isArray(formData.polygonCoordinates)) setPolygonCoordinates(formData.polygonCoordinates);
     if (formData.uploadedFiles) setUploadedFiles((prev) => ({ ...prev, ...formData.uploadedFiles }));
+    if (formData.authority_doc_type || formData.authorityDocType) {
+      setAuthorityDocType(formData.authority_doc_type || formData.authorityDocType);
+    }
+    if (formData.document_serial_number || formData.documentSerialNumber) {
+      setDocumentSerialNumber(formData.document_serial_number || formData.documentSerialNumber);
+    }
     const step = meta?.currentStep;
     if (step) setCurrentStep(Math.min(Math.max(step, 1), 3));
   }, []);
@@ -476,9 +473,24 @@ export default function SellPlotPage() {
   const buildSnapshot = useCallback(
     (step) => ({
       current_step: step ?? currentStep,
-      form_data: { sellerInfo, plotDetails, polygonCoordinates, uploadedFiles },
+      form_data: {
+        sellerInfo,
+        plotDetails,
+        polygonCoordinates,
+        uploadedFiles,
+        authority_doc_type: authorityDocType,
+        document_serial_number: documentSerialNumber,
+      },
     }),
-    [currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]
+    [
+      currentStep,
+      sellerInfo,
+      plotDetails,
+      polygonCoordinates,
+      uploadedFiles,
+      authorityDocType,
+      documentSerialNumber,
+    ]
   );
 
   // OTP Countdown timer
@@ -627,9 +639,27 @@ export default function SellPlotPage() {
     if (!draftReady || isReadOnly) return;
     scheduleSave({
       current_step: currentStep,
-      form_data: { sellerInfo, plotDetails, polygonCoordinates, uploadedFiles },
+      form_data: {
+        sellerInfo,
+        plotDetails,
+        polygonCoordinates,
+        uploadedFiles,
+        authority_doc_type: authorityDocType,
+        document_serial_number: documentSerialNumber,
+      },
     });
-  }, [draftReady, isReadOnly, scheduleSave, currentStep, sellerInfo, plotDetails, polygonCoordinates, uploadedFiles]);
+  }, [
+    draftReady,
+    isReadOnly,
+    scheduleSave,
+    currentStep,
+    sellerInfo,
+    plotDetails,
+    polygonCoordinates,
+    uploadedFiles,
+    authorityDocType,
+    documentSerialNumber,
+  ]);
 
   const handleSignOut = async () => {
     const confirmed = window.confirm('Are you sure you want to sign out?');
@@ -1639,20 +1669,102 @@ export default function SellPlotPage() {
               <div>
                 <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
                   <FileText className="w-5 h-5 text-action" />
-                  <span>Upload documents for review</span>
+                  <span>Upload official documents for verification</span>
                 </h2>
                 <p className="text-sm text-muted mt-1">
-                  Add the allotment or transfer letter for plot-document review.
+                  Upload your computerized government/society ownership documents and CNIC for fast, citizen-mediated AI audit.
                 </p>
+              </div>
+
+              {/* Helper Banner with Government Portal Quick-Links */}
+              <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-900 font-semibold text-sm">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>Need to download your official computerized verification document?</span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Official verification slips and computerized registries can be downloaded directly from official authority portals:
+                </p>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <a
+                    href="https://punjab-zameen.gov.pk"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 rounded-lg shadow-2xs transition"
+                  >
+                    <span>PLRA Online Fard (Punjab Zameen)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href="https://estamp.punjab.gov.pk"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 rounded-lg shadow-2xs transition"
+                  >
+                    <span>Punjab e-Stamp Portal (16-Digit Serial)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href="https://www.cda.gov.pk"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 rounded-lg shadow-2xs transition"
+                  >
+                    <span>CDA Official Portal (Islamabad)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Official Authority & Serial Number Inputs */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+                <div>
+                  <label htmlFor="authority_doc_type" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Verification Authority / Document Type <span className="text-danger">*</span>
+                  </label>
+                  <select
+                    id="authority_doc_type"
+                    disabled={isReadOnly}
+                    value={authorityDocType}
+                    onChange={(e) => setAuthorityDocType(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-500 disabled:opacity-60"
+                  >
+                    <option value="PLRA_FARD">PLRA Computerized Fard (Rawalpindi / Punjab Zameen)</option>
+                    <option value="PUNJAB_ESTAMP">Punjab e-Stamp / Registry (16-Digit Serial)</option>
+                    <option value="CDA_SLIP">CDA Verification Slip / NDC / Allotment (Islamabad)</option>
+                    <option value="SOCIETY_ALLOTMENT">Approved Society Allotment / Transfer Letter (DHA, Bahria, Gulberg, etc.)</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Select the issuing authority so our Gemini Vision AI and verification operators can cross-match with the official government registry.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="document_serial_number" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Official Document Serial / Barcode / Tracking Number
+                  </label>
+                  <input
+                    id="document_serial_number"
+                    type="text"
+                    disabled={isReadOnly}
+                    value={documentSerialNumber}
+                    onChange={(e) => setDocumentSerialNumber(e.target.value)}
+                    placeholder="e.g. PB-RWP-XXXXXXXX or 16-digit Fard/CDA Diary No."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-500 disabled:opacity-60"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Optional if clearly visible on your uploaded document — our Gemini Vision AI will also extract this automatically.
+                  </p>
+                </div>
               </div>
 
               <div className="ui-alert-info space-y-1.5">
                 <p className="font-semibold">What the review checks</p>
                 <p className="text-sm">
-                  The document review may read names, plot number, society, and stated size, compare them with your listing and CNIC, and flag unclear or conflicting information for operator review.
+                  The AI and operator review reads your official tracking serial, allottee names, plot number, and cadastral boundary size, comparing them with your declared listing and CNIC before approval.
                 </p>
                 <p className="text-xs">
-                  This automated comparison does not confirm legal ownership, title, or document authenticity. Your listing remains under review after submission.
+                  This automated comparison assists compliance verification. Your listing will be reviewed by an authorized operator after submission.
                 </p>
               </div>
 

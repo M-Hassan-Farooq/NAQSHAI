@@ -24,6 +24,8 @@ import {
   Scale,
   Bot,
   Sparkles,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 // Operator review console. A single operator unlocks it with the shared passphrase
@@ -114,6 +116,7 @@ export default function ReviewPage() {
   const [notice, setNotice] = useState('');
   const [removalTarget, setRemovalTarget] = useState(null);
   const [verifyingId, setVerifyingId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
 
   // The passphrase we authenticate with lives in a ref-like state that we never
   // render into an input, so it is not echoed back to the screen.
@@ -247,22 +250,57 @@ export default function ReviewPage() {
     }
   };
 
+  const handleCopySerial = async (serial, id) => {
+    if (!serial) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(serial);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = serial;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId((prev) => (prev === id ? null : prev));
+      }, 2500);
+    } catch (err) {
+      console.warn('Failed to copy serial:', err);
+    }
+  };
+
   const handleRunAiVerification = async (id) => {
     setVerifyingId(id);
     setError('');
     try {
-      const res = await fetch(`/api/review/${id}/verify`, {
+      const res = await fetch('/api/review/verify-docs', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${passphrase}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${passphrase}`,
+        },
+        body: JSON.stringify({ draftId: id }),
       });
       const json = await res.json().catch(() => ({}));
-      if (res.ok && json.success && json.aiVerification) {
+      if (res.ok && json.success && (json.ai_verification_report || json.report || json.aiVerification)) {
+        const report = json.ai_verification_report || json.report || json.aiVerification;
         setListings((prev) =>
           prev.map((item) =>
-            item.id === id ? { ...item, aiVerification: json.aiVerification } : item
+            item.id === id
+              ? {
+                  ...item,
+                  aiVerification: report,
+                  ai_verification_report: report,
+                  document_serial_number: report.extracted_serial_or_qr || item.document_serial_number,
+                  authority_doc_type: report.detected_authority !== 'UNKNOWN' ? report.detected_authority : item.authority_doc_type,
+                }
+              : item
           )
         );
-        setNotice('AI Document Verification complete.');
+        setNotice('AI Document & Portal Verification audit complete.');
       } else {
         setError(json.error || 'AI verification failed.');
       }
@@ -498,16 +536,23 @@ export default function ReviewPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {l.aiVerification && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          l.aiVerification.overallStatus === 'VERIFIED'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : l.aiVerification.overallStatus === 'CAUTION'
-                            ? 'bg-amber-50 text-amber-900 border-amber-300'
-                            : 'bg-rose-50 text-rose-800 border-rose-200'
-                        }`}>
-                          AI: {l.aiVerification.overallStatus} ({l.aiVerification.confidenceScore}%)
-                        </span>
+                      {(l.ai_verification_report || l.aiVerification) && (
+                        (() => {
+                          const rep = l.ai_verification_report || l.aiVerification;
+                          const score = rep.confidence_score ?? rep.confidenceScore ?? 0;
+                          const verdict = rep.verdict || rep.overallStatus;
+                          const badgeClass =
+                            score >= 80
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : score >= 50
+                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                              : 'bg-rose-50 text-rose-800 border-rose-200';
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}`}>
+                              AI: {score}% Match {verdict ? `(${verdict})` : ''}
+                            </span>
+                          );
+                        })()
                       )}
                       <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-sky-50 text-sky-800 border-sky-200">
                         Awaiting review
@@ -678,191 +723,360 @@ export default function ReviewPage() {
                         )}
                       </div>
 
-                      {/* AI Document Verification Audit Card */}
-                      <div className="pt-3 border-t border-slate-100">
-                        <div className="flex items-center justify-between mb-2.5">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                              <Bot className="w-3.5 h-3.5" />
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold uppercase tracking-wider text-slate-800 block">
-                                AI Document Audit
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-normal">
-                                Multimodal inspection via Gemini
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {l.aiVerification ? (
-                              <span
-                                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                                  l.aiVerification.overallStatus === 'VERIFIED'
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    : l.aiVerification.overallStatus === 'CAUTION'
-                                    ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                    : 'bg-rose-50 text-rose-800 border-rose-200'
-                                }`}
-                              >
-                                {l.aiVerification.overallStatus} ({l.aiVerification.confidenceScore}% Confidence)
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
-                                Pending Analysis
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRunAiVerification(l.id)}
-                              disabled={verifyingId === l.id}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition disabled:opacity-50 cursor-pointer shadow-2xs"
-                              title="Run or refresh AI document verification"
-                            >
-                              {verifyingId === l.id ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Auditing…</span>
-                                </>
-                              ) : (
-                                <>
-                                  <RefreshCw className="w-3.5 h-3.5" />
-                                  <span>{l.aiVerification ? 'Re-verify' : 'Run AI Audit'}</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
+                      {/* AI Document & Portal Verification Audit Panel */}
+                      {(() => {
+                        const report = l.ai_verification_report || l.aiVerification;
+                        const score = report?.confidence_score ?? report?.confidenceScore ?? 0;
+                        const verdict = report?.verdict || report?.overallStatus || '';
+                        const checks = report?.checks || {
+                          name_matches_claim: report?.cnicAudit?.nameMatch,
+                          plot_matches_claim: report?.allotmentAudit?.plotMatch,
+                          size_matches_claim: report?.allotmentAudit?.sizeMatch !== false,
+                          polygon_area_reasonable: true,
+                          serial_number_present: Boolean(report?.extracted_serial_or_qr || l.document_serial_number),
+                        };
+                        const flags = (report?.flags && Array.isArray(report.flags) && report.flags.length > 0)
+                          ? report.flags
+                          : (report?.redFlags || []);
+                        const serialNumber = report?.extracted_serial_or_qr || l.document_serial_number || '';
+                        const detectedAuthority = (report?.detected_authority || l.authority_doc_type || 'UNKNOWN').toUpperCase();
+                        const isPlra = detectedAuthority.includes('PLRA') || detectedAuthority.includes('FARD');
+                        const isEstamp = detectedAuthority.includes('ESTAMP') || detectedAuthority.includes('STAMP');
+                        const isCda = detectedAuthority.includes('CDA') || detectedAuthority.includes('SOCIETY');
 
-                        {l.aiVerification ? (
-                          <div className="space-y-2.5 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                            <p className="text-[11px] text-slate-700 leading-relaxed font-medium bg-white p-2.5 rounded-lg border border-slate-200/70">
-                              <span className="font-bold text-slate-900">Summary: </span>
-                              {l.aiVerification.summary}
-                            </p>
-
-                            {/* Side-by-side comparison table */}
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-[11px] border-collapse bg-white rounded-lg overflow-hidden border border-slate-200">
-                                <thead>
-                                  <tr className="bg-slate-100/80 text-slate-600 border-b border-slate-200 font-semibold text-[10px] uppercase">
-                                    <th className="p-2">Verification Item</th>
-                                    <th className="p-2">Declared Listing</th>
-                                    <th className="p-2">Extracted Document</th>
-                                    <th className="p-2">Match Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  <tr>
-                                    <td className="p-2 font-medium text-slate-700">Seller Identity (CNIC)</td>
-                                    <td className="p-2 text-slate-600">{l.seller.fullName || '—'}</td>
-                                    <td className="p-2 text-slate-800 font-mono">
-                                      {l.aiVerification.cnicAudit?.extractedName || 'Not detected'}
-                                      {l.aiVerification.cnicAudit?.extractedCnic ? ` (${l.aiVerification.cnicAudit.extractedCnic})` : ''}
-                                    </td>
-                                    <td className="p-2">
-                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
-                                        l.aiVerification.cnicAudit?.nameMatch
-                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
-                                      }`}>
-                                        {l.aiVerification.cnicAudit?.nameMatch ? '✓ Verified' : '⚠️ Discrepancy'}
+                        return (
+                          <div className="pt-4 border-t border-slate-100 space-y-4">
+                            {/* Panel Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                  <Bot className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                                      AI Document &amp; Portal Verification
+                                    </span>
+                                    {report && (
+                                      <span
+                                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                          score >= 80
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                            : score >= 50
+                                            ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                                        }`}
+                                      >
+                                        {score}% Match {verdict ? `· ${verdict}` : ''}
                                       </span>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <td className="p-2 font-medium text-slate-700">Plot Number (Allotment)</td>
-                                    <td className="p-2 text-slate-600">{l.plot.plotNumber || '—'}</td>
-                                    <td className="p-2 text-slate-800 font-mono">
-                                      {l.aiVerification.allotmentAudit?.plotNumber || 'Not detected'}
-                                    </td>
-                                    <td className="p-2">
-                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
-                                        l.aiVerification.allotmentAudit?.plotMatch
-                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
-                                      }`}>
-                                        {l.aiVerification.allotmentAudit?.plotMatch ? '✓ Verified' : '⚠️ Discrepancy'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <td className="p-2 font-medium text-slate-700">Society / Sector</td>
-                                    <td className="p-2 text-slate-600">{l.plot.society || '—'}</td>
-                                    <td className="p-2 text-slate-800">
-                                      {l.aiVerification.allotmentAudit?.society || 'Not detected'}
-                                    </td>
-                                    <td className="p-2">
-                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
-                                        l.aiVerification.allotmentAudit?.societyMatch
-                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
-                                      }`}>
-                                        {l.aiVerification.allotmentAudit?.societyMatch ? '✓ Verified' : '⚠️ Review'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <td className="p-2 font-medium text-slate-700">Plot Size</td>
-                                    <td className="p-2 text-slate-600">{l.plot.sizeDimensions || '—'}</td>
-                                    <td className="p-2 text-slate-800">
-                                      {l.aiVerification.allotmentAudit?.size || 'Not detected'}
-                                    </td>
-                                    <td className="p-2">
-                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
-                                        l.aiVerification.allotmentAudit?.sizeMatch === true
-                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                          : l.aiVerification.allotmentAudit?.sizeMatch === false
-                                          ? 'bg-amber-50 text-amber-900 border border-amber-300'
-                                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                      }`}>
-                                        {l.aiVerification.allotmentAudit?.sizeMatch === true
-                                          ? '✓ Verified'
-                                          : l.aiVerification.allotmentAudit?.sizeMatch === false
-                                          ? '⚠️ Discrepancy'
-                                          : 'Review'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                  <tr>
-                                    <td className="p-2 font-medium text-slate-700">Allottee Matches CNIC</td>
-                                    <td className="p-2 text-slate-600">Allottee Title</td>
-                                    <td className="p-2 text-slate-800 font-mono">
-                                      {l.aiVerification.allotmentAudit?.allotteeName || '—'}
-                                    </td>
-                                    <td className="p-2">
-                                      <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
-                                        l.aiVerification.allotmentAudit?.ownerMatchesCnic
-                                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                          : 'bg-amber-50 text-amber-900 border border-amber-300'
-                                      }`}>
-                                        {l.aiVerification.allotmentAudit?.ownerMatchesCnic ? '✓ Verified' : '⚠️ Unconfirmed'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-
-                            {/* Red Flags / Quality Alerts */}
-                            {l.aiVerification.redFlags && l.aiVerification.redFlags.length > 0 && (
-                              <div className="space-y-1">
-                                {l.aiVerification.redFlags.map((flag, idx) => (
-                                  <div key={idx} className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg flex items-start gap-1.5">
-                                    <span className="shrink-0 mt-0.5">⚠️</span>
-                                    <span>{flag}</span>
+                                    )}
                                   </div>
-                                ))}
+                                  <span className="text-[10px] text-slate-400 font-normal">
+                                    Gemini 2.5 Flash Multimodal Vision OCR + Official Authority Check
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRunAiVerification(l.id)}
+                                disabled={verifyingId === l.id}
+                                className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition disabled:opacity-50 cursor-pointer shadow-2xs self-start sm:self-auto shrink-0"
+                                title="Run or re-run AI document audit"
+                              >
+                                {verifyingId === l.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />
+                                    <span>Auditing…</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 text-emerald-700" />
+                                    <span>{report ? 'Re-run AI Document Audit' : 'Run AI Document Audit'}</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {report ? (
+                              <div className="space-y-3.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                {/* Summary banner */}
+                                <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-xs text-slate-700 leading-relaxed shadow-2xs">
+                                  <span className="font-bold text-slate-900">AI Audit Summary: </span>
+                                  <span>{report.summary || 'Document audit completed.'}</span>
+                                </div>
+
+                                {/* Cross-Match Checklist Pills */}
+                                <div>
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                    Field-by-Field Cross-Match Checklist
+                                  </p>
+                                  <div className="flex flex-wrap gap-2 text-xs">
+                                    {/* Owner Name Match */}
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium ${
+                                      checks.name_matches_claim
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                                    }`}>
+                                      <span>{checks.name_matches_claim ? '✓' : '⚠️'}</span>
+                                      <span>Owner Name:</span>
+                                      <strong className="font-semibold">{report.extracted_owner_name || l.seller.fullName || 'Not detected'}</strong>
+                                    </span>
+
+                                    {/* CNIC Extracted */}
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium ${
+                                      report.extracted_cnic
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                                    }`}>
+                                      <span>{report.extracted_cnic ? '✓' : '⚠️'}</span>
+                                      <span>CNIC:</span>
+                                      <strong className="font-mono font-semibold">{report.extracted_cnic || 'Missing from doc'}</strong>
+                                    </span>
+
+                                    {/* Plot # & Sector Match */}
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium ${
+                                      checks.plot_matches_claim
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                                    }`}>
+                                      <span>{checks.plot_matches_claim ? '✓' : '⚠️'}</span>
+                                      <span>Plot #:</span>
+                                      <strong className="font-semibold">{report.extracted_plot_number || l.plot.plotNumber || 'Unverified'}</strong>
+                                    </span>
+
+                                    {/* Size & Polygon Match */}
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium ${
+                                      checks.size_matches_claim && checks.polygon_area_reasonable
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                                    }`}>
+                                      <span>{checks.size_matches_claim && checks.polygon_area_reasonable ? '✓' : '⚠️'}</span>
+                                      <span>Size &amp; Boundary:</span>
+                                      <strong className="font-semibold">{report.extracted_size || l.plot.sizeDimensions || 'Check boundary'}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Discrepancy & Flags Callout */}
+                                {flags.length > 0 && (
+                                  <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-300 text-amber-900 text-xs space-y-1.5">
+                                    <p className="font-bold flex items-center gap-1.5 text-xs text-amber-950 uppercase tracking-wide">
+                                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                      <span>Audit Flags &amp; Discrepancies ({flags.length})</span>
+                                    </p>
+                                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-900">
+                                      {flags.map((flag, idx) => (
+                                        <li key={idx} className="leading-snug">{flag}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* 1-Click Reverse Portal Lookup Box (Anti-Forgery Check) */}
+                                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                                    <div>
+                                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800 block">
+                                        Cryptographic Serial / Tracking Number Verification
+                                      </span>
+                                      <span className="text-[11px] text-slate-500">
+                                        Copy official tracking number and verify past government CAPTCHA before approving:
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 self-start sm:self-auto">
+                                      Authority: {detectedAuthority}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
+                                    {serialNumber ? (
+                                      <>
+                                        <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 tracking-wider">
+                                          {serialNumber}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopySerial(serialNumber, l.id)}
+                                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                        >
+                                          {copiedId === l.id ? (
+                                            <>
+                                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                              <span className="text-emerald-700">Copied!</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Copy className="w-3.5 h-3.5" />
+                                              <span>Copy Serial</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                        No tracking serial detected on document
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Deep-link action buttons to Official Government Verification Portals */}
+                                  <div className="pt-2.5 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                                      Verify on Official Govt Portal:
+                                    </span>
+                                    <a
+                                      href="https://punjab-zameen.gov.pk"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition ${
+                                        isPlra
+                                          ? 'bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm ring-2 ring-emerald-600/30'
+                                          : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium'
+                                      }`}
+                                    >
+                                      <span>Verify PLRA Fard ↗</span>
+                                      {isPlra && <span className="text-[9px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">Recommended</span>}
+                                    </a>
+
+                                    <a
+                                      href="https://estamp.punjab.gov.pk"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition ${
+                                        isEstamp
+                                          ? 'bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm ring-2 ring-emerald-600/30'
+                                          : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium'
+                                      }`}
+                                    >
+                                      <span>Verify e-Stamp ↗</span>
+                                      {isEstamp && <span className="text-[9px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">Recommended</span>}
+                                    </a>
+
+                                    <a
+                                      href="https://www.cda.gov.pk/housing/noc.asp"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition ${
+                                        isCda
+                                          ? 'bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm ring-2 ring-emerald-600/30'
+                                          : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium'
+                                      }`}
+                                    >
+                                      <span>Verify CDA Record / NOC ↗</span>
+                                      {isCda && <span className="text-[9px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">Recommended</span>}
+                                    </a>
+                                  </div>
+                                </div>
+
+                                {/* Detailed side-by-side comparison table */}
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-[11px] border-collapse bg-white rounded-lg overflow-hidden border border-slate-200">
+                                    <thead>
+                                      <tr className="bg-slate-100/80 text-slate-600 border-b border-slate-200 font-semibold text-[10px] uppercase">
+                                        <th className="p-2">Verification Item</th>
+                                        <th className="p-2">Declared Listing</th>
+                                        <th className="p-2">Extracted Document</th>
+                                        <th className="p-2">Match Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      <tr>
+                                        <td className="p-2 font-medium text-slate-700">Seller Identity (CNIC)</td>
+                                        <td className="p-2 text-slate-600">{l.seller.fullName || '—'}</td>
+                                        <td className="p-2 text-slate-800 font-mono">
+                                          {report.extracted_owner_name || 'Not detected'}
+                                          {report.extracted_cnic ? ` (${report.extracted_cnic})` : ''}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                            checks.name_matches_claim
+                                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                              : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                          }`}>
+                                            {checks.name_matches_claim ? '✓ Verified' : '⚠️ Discrepancy'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td className="p-2 font-medium text-slate-700">Plot Number (Allotment)</td>
+                                        <td className="p-2 text-slate-600">{l.plot.plotNumber || '—'}</td>
+                                        <td className="p-2 text-slate-800 font-mono">
+                                          {report.extracted_plot_number || 'Not detected'}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                            checks.plot_matches_claim
+                                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                              : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                          }`}>
+                                            {checks.plot_matches_claim ? '✓ Verified' : '⚠️ Discrepancy'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td className="p-2 font-medium text-slate-700">Society / Sector</td>
+                                        <td className="p-2 text-slate-600">{l.plot.society || '—'}</td>
+                                        <td className="p-2 text-slate-800">
+                                          {report.extracted_society_or_sector || 'Not detected'}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                            checks.plot_matches_claim
+                                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                              : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                          }`}>
+                                            {checks.plot_matches_claim ? '✓ Verified' : '⚠️ Review'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td className="p-2 font-medium text-slate-700">Plot Size &amp; Polygon</td>
+                                        <td className="p-2 text-slate-600">{l.plot.sizeDimensions || '—'}</td>
+                                        <td className="p-2 text-slate-800">
+                                          {report.extracted_size || 'Not detected'}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                            checks.size_matches_claim && checks.polygon_area_reasonable
+                                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                              : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                          }`}>
+                                            {checks.size_matches_claim && checks.polygon_area_reasonable
+                                              ? '✓ Verified'
+                                              : '⚠️ Check Tolerance'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td className="p-2 font-medium text-slate-700">Official Tracking Serial</td>
+                                        <td className="p-2 text-slate-600 font-mono">{l.document_serial_number || 'None declared'}</td>
+                                        <td className="p-2 text-slate-800 font-mono">
+                                          {report.extracted_serial_or_qr || 'Not detected'}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className={`inline-flex items-center gap-1 font-semibold text-[10px] px-1.5 py-0.5 rounded ${
+                                            serialNumber
+                                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                          }`}>
+                                            {serialNumber ? '✓ Available' : 'Optional'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                                <Sparkles className="w-4 h-4 text-emerald-600" />
+                                <span>AI document audit has not been generated yet. Click &apos;Run AI Document Audit&apos; above to verify uploaded files.</span>
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <div className="p-3.5 rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-                            <Sparkles className="w-4 h-4 text-emerald-600" />
-                            <span>AI document audit has not been generated yet. Click &apos;Run AI Audit&apos; above to verify uploaded files.</span>
-                          </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Boundary preview */}
