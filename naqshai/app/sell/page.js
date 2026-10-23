@@ -80,6 +80,34 @@ function formatPkr(num) {
   return `PKR ${val.toLocaleString('en-PK')}`;
 }
 
+// Client-safe Pakistani phone normalizer (maps 03xx, 3xx, +03xx, 92xx to +923xx)
+function formatPakistaniPhone(raw) {
+  if (!raw) return '';
+  const cleaned = String(raw).trim();
+  let digits = cleaned.replace(/[^0-9]/g, '');
+
+  if (cleaned.startsWith('+') && digits.startsWith('0')) {
+    digits = digits.replace(/^0+/, '');
+  }
+
+  if (digits.startsWith('0092')) {
+    return '+92' + digits.slice(4);
+  }
+  if (digits.startsWith('92') && digits.length >= 11) {
+    return '+' + digits;
+  }
+  if (digits.startsWith('0') && digits.length === 11) {
+    return '+92' + digits.slice(1);
+  }
+  if (digits.startsWith('3') && digits.length === 10) {
+    return '+92' + digits;
+  }
+  if (cleaned.startsWith('+')) {
+    return '+' + digits;
+  }
+  return '+' + digits;
+}
+
 // Honest autosave status — never shows "Saved" unless the server confirmed it.
 function SaveIndicator({ state, lastSavedAt, onRetry }) {
   if (state === 'saving') {
@@ -357,6 +385,7 @@ export default function SellPlotPage() {
     cooldown: 0,
     isDemoMode: false,
     demoCode: '',
+    challengeToken: '',
   });
 
   const [plotDetails, setPlotDetails] = useState({
@@ -504,33 +533,36 @@ export default function SellPlotPage() {
 
   // OTP Request handler
   const handleSendOtp = async () => {
-    if (!sellerInfo.phoneNumber || !sellerInfo.phoneNumber.trim()) {
+    const raw = sellerInfo.phoneNumber ? sellerInfo.phoneNumber.trim() : '';
+    if (!raw) {
       setOtpState((prev) => ({ ...prev, error: 'Please enter your WhatsApp mobile number first.' }));
       return;
     }
+    const normalized = formatPakistaniPhone(raw);
+    setSellerInfo((prev) => ({ ...prev, phoneNumber: normalized }));
     setOtpState((prev) => ({ ...prev, error: '', successMessage: '', sending: true }));
     try {
       const res = await fetch('/api/auth/phone/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: sellerInfo.phoneNumber.trim() }),
+        body: JSON.stringify({ phone: normalized }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to send verification code.');
       }
 
-      if (data.normalizedPhone) {
-        setSellerInfo((prev) => ({ ...prev, phoneNumber: data.normalizedPhone }));
-      }
+      const verifiedPhone = data.normalizedPhone || normalized;
+      setSellerInfo((prev) => ({ ...prev, phoneNumber: verifiedPhone }));
 
       setOtpState((prev) => ({
         ...prev,
         isOpen: true,
         sending: false,
-        cooldown: 60,
+        cooldown: data.isDemoMode ? 0 : 60,
         isDemoMode: !!data.isDemoMode,
         demoCode: data.demoOtp || '',
+        challengeToken: data.challengeToken || '',
         successMessage: data.isDemoMode
           ? `Demo code: ${data.demoOtp} (Enter this code to verify)`
           : 'Verification code sent to your phone via SMS.',
@@ -547,14 +579,16 @@ export default function SellPlotPage() {
       setOtpState((prev) => ({ ...prev, error: 'Please enter the 6-digit verification code.' }));
       return;
     }
+    const normalized = formatPakistaniPhone(sellerInfo.phoneNumber);
     setOtpState((prev) => ({ ...prev, error: '', verifying: true }));
     try {
       const res = await fetch('/api/auth/phone/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: sellerInfo.phoneNumber,
+          phone: normalized,
           code,
+          challengeToken: otpState.challengeToken,
         }),
       });
       const data = await res.json();
@@ -565,7 +599,7 @@ export default function SellPlotPage() {
       setSellerInfo((prev) => ({
         ...prev,
         phoneVerified: true,
-        phoneNumber: data.normalizedPhone || prev.phoneNumber,
+        phoneNumber: data.normalizedPhone || normalized,
       }));
 
       setOtpState((prev) => ({
@@ -1141,7 +1175,7 @@ export default function SellPlotPage() {
 
                     <div className="flex items-center gap-2">
                       <input
-                        placeholder="e.g. +923001234567 or 03001234567"
+                        placeholder="e.g. 03259503868 or +923259503868"
                         type="tel"
                         id="seller-phone-number"
                         autoComplete="tel"
@@ -1152,13 +1186,25 @@ export default function SellPlotPage() {
                           sellerInfo.phoneVerified ? 'bg-emerald-50/50 border-emerald-300 text-emerald-950 font-medium' : ''
                         }`}
                         value={sellerInfo.phoneNumber}
-                        onChange={(e) =>
-                          setSellerInfo({
-                            ...sellerInfo,
-                            phoneNumber: e.target.value,
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSellerInfo((prev) => ({
+                            ...prev,
+                            phoneNumber: val,
                             phoneVerified: false,
-                          })
-                        }
+                          }));
+                          if (otpState.error) {
+                            setOtpState((prev) => ({ ...prev, error: '' }));
+                          }
+                        }}
+                        onBlur={() => {
+                          if (sellerInfo.phoneNumber && !sellerInfo.phoneVerified) {
+                            const normalized = formatPakistaniPhone(sellerInfo.phoneNumber);
+                            if (normalized && normalized.length >= 11) {
+                              setSellerInfo((prev) => ({ ...prev, phoneNumber: normalized }));
+                            }
+                          }
+                        }}
                       />
                       {sellerInfo.phoneVerified ? (
                         <button
@@ -1197,6 +1243,12 @@ export default function SellPlotPage() {
                         </button>
                       )}
                     </div>
+                    {otpState.error && !otpState.isOpen && (
+                      <p className="mt-1.5 text-xs font-semibold text-rose-600 flex items-center gap-1.5 animate-in fade-in duration-150">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{otpState.error}</span>
+                      </p>
+                    )}
                     <p id="seller-phone-help" className="mt-1.5 text-xs text-muted flex items-center justify-between">
                       <span>
                         {sellerInfo.phoneVerified

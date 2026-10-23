@@ -4,7 +4,7 @@ import { verifyOtp } from '@/lib/phoneVerification.js';
 export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { phone, code } = body;
+    const { phone, code, challengeToken } = body;
 
     if (!phone || !code) {
       return NextResponse.json(
@@ -13,7 +13,7 @@ export async function POST(req) {
       );
     }
 
-    const result = verifyOtp(phone, code);
+    const result = verifyOtp(phone, code, challengeToken);
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }

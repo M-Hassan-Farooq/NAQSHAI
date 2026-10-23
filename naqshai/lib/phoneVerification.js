@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 /**
  * NAQSHAI Phone OTP Verification Engine (Smart Dual-Mode)
  *
@@ -13,6 +15,30 @@ if (!globalStore.__naqshaiOtpStore) {
 }
 const otpStore = globalStore.__naqshaiOtpStore;
 
+const HMAC_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.NEXTAUTH_SECRET || 'naqshai_dual_mode_otp_secret_key_2026';
+
+export function createChallengeToken(phone, code, expiresAt) {
+  const payload = `${phone}:${code}:${expiresAt}`;
+  const sig = crypto.createHmac('sha256', HMAC_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}:${sig}`).toString('base64url');
+}
+
+export function verifyChallengeToken(token, phone, inputCode) {
+  try {
+    if (!token) return false;
+    const raw = Buffer.from(token, 'base64url').toString('utf8');
+    const [storedPhone, storedCode, storedExpiresAt, storedSig] = raw.split(':');
+    if (!storedPhone || !storedCode || !storedExpiresAt || !storedSig) return false;
+    if (Date.now() > Number(storedExpiresAt)) return false;
+    if (storedPhone !== phone) return false;
+    if (storedCode !== inputCode) return false;
+    const expectedSig = crypto.createHmac('sha256', HMAC_SECRET).update(`${storedPhone}:${storedCode}:${storedExpiresAt}`).digest('hex');
+    return expectedSig === storedSig;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Normalizes phone numbers (especially Pakistani formats) into standard E.164:
  * e.g., '03001234567' -> '+923001234567'
@@ -20,15 +46,16 @@ const otpStore = globalStore.__naqshaiOtpStore;
 export function normalizePhoneNumber(rawPhone) {
   if (!rawPhone) return '';
   const cleaned = String(rawPhone).trim();
-  const digits = cleaned.replace(/[^0-9]/g, '');
+  let digits = cleaned.replace(/[^0-9]/g, '');
 
-  if (cleaned.startsWith('+')) {
-    return '+' + digits;
+  if (cleaned.startsWith('+') && digits.startsWith('0')) {
+    digits = digits.replace(/^0+/, '');
   }
+
   if (digits.startsWith('0092')) {
     return '+92' + digits.slice(4);
   }
-  if (digits.startsWith('92') && digits.length >= 12) {
+  if (digits.startsWith('92') && digits.length >= 11) {
     return '+' + digits;
   }
   if (digits.startsWith('0') && digits.length === 11) {
@@ -36,6 +63,9 @@ export function normalizePhoneNumber(rawPhone) {
   }
   if (digits.startsWith('3') && digits.length === 10) {
     return '+92' + digits;
+  }
+  if (cleaned.startsWith('+')) {
+    return '+' + digits;
   }
   return '+' + digits;
 }
@@ -45,7 +75,7 @@ export function normalizePhoneNumber(rawPhone) {
  */
 export function isValidPhone(phone) {
   const normalized = normalizePhoneNumber(phone);
-  // Must start with + and have 10 to 15 digits
+  // Must start with + and have 10 to 15 digits (excluding leading zeros after +)
   return /^\+[1-9]\d{9,14}$/.test(normalized);
 }
 
@@ -72,8 +102,12 @@ export async function sendOtp(rawPhone) {
 
   const normalized = normalizePhoneNumber(rawPhone);
   if (!isValidPhone(normalized)) {
-    throw new Error('Please enter a valid mobile number (e.g., +923001234567 or 03001234567).');
+    throw new Error('Please enter a valid mobile number (e.g., 03259503868 or +923259503868).');
   }
+
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+  const isDemo = !twilioSid || !twilioToken;
 
   // Rate-limiting check: minimum 30 seconds between requests for the same number
   const existing = otpStore.get(normalized);
@@ -96,8 +130,6 @@ export async function sendOtp(rawPhone) {
   });
 
   // Check if Twilio SMS is configured
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
 
   if (twilioSid && twilioToken && twilioFrom) {
@@ -119,6 +151,8 @@ export async function sendOtp(rawPhone) {
         body: body.toString(),
       });
 
+      const challengeToken = createChallengeToken(normalized, code, expiresAt);
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         console.warn('[Twilio SMS Error]:', errorData);
@@ -128,6 +162,7 @@ export async function sendOtp(rawPhone) {
           normalizedPhone: normalized,
           isDemoMode: true,
           demoOtp: code,
+          challengeToken,
           message: `SMS gateway error. Switched to demo mode: code is ${code}`,
         };
       }
@@ -136,40 +171,59 @@ export async function sendOtp(rawPhone) {
         success: true,
         normalizedPhone: normalized,
         isDemoMode: false,
+        challengeToken,
         message: 'Verification code sent via SMS.',
       };
     } catch (err) {
       console.warn('[Twilio Dispatch Exception]:', err);
+      const challengeToken = createChallengeToken(normalized, code, expiresAt);
       return {
         success: true,
         normalizedPhone: normalized,
         isDemoMode: true,
         demoOtp: code,
+        challengeToken,
         message: `Network error reaching SMS gateway. Demo code: ${code}`,
       };
     }
   }
 
   // Hackathon Smart Demo Mode
+  const challengeToken = createChallengeToken(normalized, code, expiresAt);
   return {
     success: true,
     normalizedPhone: normalized,
     isDemoMode: true,
     demoOtp: code,
+    challengeToken,
     message: `Verification code generated: ${code}`,
   };
 }
 
 /**
- * Verifies the 6-digit OTP code against the stored value.
+ * Verifies the 6-digit OTP code against the stored value or cryptographic challengeToken.
  */
-export function verifyOtp(rawPhone, inputCode) {
+export function verifyOtp(rawPhone, inputCode, challengeToken = null) {
   cleanupExpired();
 
   const normalized = normalizePhoneNumber(rawPhone);
+  const cleanInput = String(inputCode || '').trim();
   const record = otpStore.get(normalized);
 
   if (!record) {
+    // If serverless container cold-started or routed to a separate lambda instance on Vercel,
+    // verify through the cryptographically HMAC-signed challengeToken:
+    if (challengeToken && verifyChallengeToken(challengeToken, normalized, cleanInput)) {
+      const token = `pv_${Buffer.from(`${normalized}_${Date.now()}`).toString('base64url')}`;
+      return {
+        success: true,
+        normalizedPhone: normalized,
+        phone: normalized,
+        token,
+        message: 'WhatsApp mobile number successfully verified!',
+      };
+    }
+
     return {
       success: false,
       error: 'No active verification code found for this number. Please request a new code.',
@@ -193,7 +247,6 @@ export function verifyOtp(rawPhone, inputCode) {
     };
   }
 
-  const cleanInput = String(inputCode || '').trim();
   if (cleanInput !== record.code) {
     return {
       success: false,
