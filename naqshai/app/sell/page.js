@@ -946,7 +946,7 @@ export default function SellPlotPage() {
 
       if (data.success) {
         markSubmitted();
-        setCurrentStep(4);
+        router.push('/thank-you?type=listing');
       } else {
         setErrorMessage(data.error || 'Failed to submit plot listing. Please try again.');
       }
@@ -1916,31 +1916,6 @@ export default function SellPlotPage() {
                       <span>Submit Listing</span>
                     </>
                   )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: Success View */}
-          {currentStep === 4 && (
-            <div className="py-8 text-center space-y-5">
-              <div className="w-16 h-16 bg-emerald-100 border-2 border-emerald-300 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Listing Submitted for Verification</h2>
-                <p className="text-sm text-slate-600 mt-3 max-w-md mx-auto leading-relaxed">
-                  Your listing is now <strong>under review</strong>. It is not public yet — once our team verifies it, it will be published to the 3D Map. You can track its status any time from My Listings.
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shadow-sm"
-                >
-                  Go to My Listings
                 </button>
               </div>
             </div>

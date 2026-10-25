@@ -443,6 +443,8 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <Link href="/recommend" className="hover:text-slate-600 transition">AI Advisor</Link>
             <Link href="/explore" className="hover:text-slate-600 transition">3D Map</Link>
+            <Link href="/privacy-policy" className="hover:text-slate-600 transition">Privacy</Link>
+            <Link href="/terms-and-conditions" className="hover:text-slate-600 transition">Terms</Link>
           </div>
         </div>
       </footer>
