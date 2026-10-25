@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { calculateAmenityScores } from '@/lib/amenityCalculator';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 export async function GET(request) {
   try {

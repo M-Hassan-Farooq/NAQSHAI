@@ -13,6 +13,8 @@ import UserNav from '@/components/UserNav';
 import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { useFavorites } from '@/context/FavoritesContext';
 import { formatWhatsAppUrl } from '@/lib/formatPlot';
+import { PlotPolygon } from '@/components/explore/PlotPolygon';
+import { availabilityPinDataUri, clusterBubbleDataUri, floodRiskClasses } from '@/components/explore/MapPinIcons';
 import {
   Search,
   ShieldAlert,
@@ -70,82 +72,7 @@ const MAX_AUTO_ZOOM = 18;
 // individual plot polygons take over.
 const POLYGON_MIN_ZOOM = 16;
 
-// Programmatically generated green "availability" pin (SVG data URI — no image asset).
-function availabilityPinDataUri() {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52">' +
-    '<path d="M20 1C9.5 1 1 9.5 1 20c0 13.5 19 31 19 31s19-17.5 19-31C39 9.5 30.5 1 20 1z" fill="#059669" stroke="#ffffff" stroke-width="2.5"/>' +
-    '<circle cx="20" cy="20" r="7.5" fill="#ffffff"/>' +
-    '<circle cx="20" cy="20" r="3.5" fill="#059669"/>' +
-    '</svg>';
-  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
-}
 
-// Green cluster bubble; the plot count is drawn as the marker label on top.
-function clusterBubbleDataUri(size) {
-  const c = size / 2;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
-    `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="#059669" fill-opacity="0.22"/>` +
-    `<circle cx="${c}" cy="${c}" r="${c - 9}" fill="#059669" stroke="#ffffff" stroke-width="3"/>` +
-    '</svg>';
-  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
-}
-
-function floodRiskClasses(value) {
-  const risk = String(value || '').split('(')[0].trim().toLowerCase();
-  if (/\b(high|severe|very high)\b/.test(risk)) {
-    return 'bg-danger-soft text-danger border-danger/20';
-  }
-  if (/\b(elevated|significant)\b/.test(risk)) {
-    return 'bg-orange-50 text-orange-800 border-orange-200';
-  }
-  if (/\b(moderate|medium)\b/.test(risk)) {
-    return 'bg-caution-soft text-caution border-caution/20';
-  }
-  if (/\b(low|minimal)\b/.test(risk)) {
-    return 'bg-action-soft text-action-hover border-action/20';
-  }
-  return 'bg-surface-subtle text-muted border-border';
-}
-
-// One plot boundary polygon. Memoized and owns its OWN hover state, so moving the
-// pointer across the map restyles only THIS polygon instead of bubbling up to
-// re-render the entire Explore view (sidebar list + every other polygon). Because
-// `plot`, `isSelected` and `onSelect` are stable, React.memo also lets unaffected
-// polygons skip re-render when the parent re-renders for unrelated reasons
-// (sidebar search, resize, selection). Hover affects only fillOpacity + zIndex —
-// matching the original inline behaviour exactly.
-const PlotPolygon = React.memo(function PlotPolygon({ plot, isSelected, onSelect }) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const options = useMemo(
-    () => ({
-      strokeColor: isSelected ? '#047857' : '#059669',
-      strokeOpacity: 0.95,
-      strokeWeight: isSelected ? 3 : 2,
-      fillColor: isSelected ? '#059669' : '#10b981',
-      fillOpacity: isSelected ? 0.45 : isHovered ? 0.35 : 0.22,
-      clickable: true,
-      zIndex: isSelected ? 100 : isHovered ? 50 : 1,
-    }),
-    [isSelected, isHovered]
-  );
-
-  const handleClick = useCallback(() => onSelect(plot), [onSelect, plot]);
-  const handleMouseOver = useCallback(() => setIsHovered(true), []);
-  const handleMouseOut = useCallback(() => setIsHovered(false), []);
-
-  return (
-    <Polygon
-      paths={plot.paths}
-      options={options}
-      onClick={handleClick}
-      onMouseOver={handleMouseOver}
-      onMouseOut={handleMouseOut}
-    />
-  );
-});
 
 function ExploreContent() {
   const searchParams = useSearchParams();
