@@ -77,7 +77,7 @@ export async function GET(request) {
           const { data: signed } = await dbAdmin
             .storage
             .from('plot-documents')
-            .createSignedUrls(docEntries.map((d) => d.path), 60 * 60); // valid ~1 hour
+            .createSignedUrls(docEntries.map((d) => d.path), 180); // short-lived signed URLs (~3 minutes) prevent link leakage
           documents = docEntries.map((d, i) => ({
             field: d.field,
             label: d.label,

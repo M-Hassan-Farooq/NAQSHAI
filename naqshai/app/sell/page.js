@@ -600,6 +600,7 @@ export default function SellPlotPage() {
         ...prev,
         phoneVerified: true,
         phoneNumber: data.normalizedPhone || normalized,
+        phoneVerificationToken: data.token || '',
       }));
 
       setOtpState((prev) => ({
@@ -773,9 +774,10 @@ export default function SellPlotPage() {
   const uploadDocument = async (field, file) => {
     setDocError('');
     if (isReadOnly) return; // view-only (submitted/published): never upload documents
-    const isAllowedType = file.type === 'application/pdf' || file.type.startsWith('image/');
+    const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    const isAllowedType = ALLOWED_MIME_TYPES.includes(file.type) && !file.name.toLowerCase().endsWith('.svg');
     if (!isAllowedType) {
-      setDocError('Please choose a PDF or image file for your verification document.');
+      setDocError('Please choose a valid PDF, JPEG, PNG, or WEBP document (SVG and executable formats are prohibited).');
       return;
     }
     if (file.size > 10 * 1024 * 1024) {

@@ -84,7 +84,26 @@ export async function PUT(request, { params }) {
     }
 
     const patch = {};
-    if (body.form_data && typeof body.form_data === 'object') patch.form_data = body.form_data;
+    if (body.form_data && typeof body.form_data === 'object') {
+      const sanitizedFormData = { ...body.form_data };
+      if (sanitizedFormData.uploadedFiles && typeof sanitizedFormData.uploadedFiles === 'object') {
+        const allowedPrefix = `${user.id}/${id}/`;
+        const cleanFiles = {};
+        for (const [fieldKey, fileEntry] of Object.entries(sanitizedFormData.uploadedFiles)) {
+          if (!fileEntry) continue;
+          const p = typeof fileEntry === 'string' ? fileEntry : fileEntry.path;
+          if (!p || typeof p !== 'string') continue;
+          if (p.includes('..') || p.includes('\\')) continue;
+          if (!p.startsWith(allowedPrefix)) {
+            console.warn(`[drafts/put] Blocked path injection attempt: "${p}" does not match prefix "${allowedPrefix}"`);
+            continue;
+          }
+          cleanFiles[fieldKey] = fileEntry;
+        }
+        sanitizedFormData.uploadedFiles = cleanFiles;
+      }
+      patch.form_data = sanitizedFormData;
+    }
     if (body.current_step != null && Number(body.current_step) > 0) patch.current_step = Number(body.current_step);
 
     if (Object.keys(patch).length === 0) {
@@ -123,7 +142,7 @@ export async function DELETE(request, { params }) {
     // Load the current row for ownership + status enforcement.
     const { data: existing, error: fErr } = await db
       .from('listing_drafts')
-      .select('id, user_id, status')
+      .select('id, user_id, status, form_data')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -179,6 +198,24 @@ export async function DELETE(request, { params }) {
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    // Best-effort storage cleanup: erase sensitive uploaded files from private storage bucket
+    try {
+      const uploaded = existing?.form_data?.uploadedFiles || {};
+      const prefix = `${user.id}/${id}/`;
+      const filesToDelete = [];
+      for (const val of Object.values(uploaded)) {
+        const filePath = typeof val === 'string' ? val : val?.path;
+        if (filePath && typeof filePath === 'string' && filePath.startsWith(prefix)) {
+          filesToDelete.push(filePath);
+        }
+      }
+      if (filesToDelete.length > 0) {
+        await getAdminClient().storage.from('plot-documents').remove(filesToDelete);
+      }
+    } catch (cleanupErr) {
+      console.warn('[drafts/delete] Storage document purge notice:', cleanupErr?.message || cleanupErr);
     }
 
     return NextResponse.json({ success: true });

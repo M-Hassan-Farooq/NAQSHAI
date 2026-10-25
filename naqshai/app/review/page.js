@@ -30,9 +30,8 @@ import {
 
 // Operator review console. A single operator unlocks it with the shared passphrase
 // (OPERATOR_PASSPHRASE, a server secret), which is then sent as a bearer token to
-// the operator-gated endpoints. The passphrase lives only in memory + sessionStorage
-// on the operator's own device; it is never baked into the bundle. The service-role
-// key that actually performs the privileged DB work stays entirely server-side.
+// the operator-gated endpoints. For Zero-Trust security, the passphrase lives ONLY
+// in volatile React memory — it is never written to sessionStorage or localStorage.
 
 const PASS_STORAGE_KEY = 'naqshai_operator_passphrase';
 
@@ -150,7 +149,8 @@ export default function ReviewPage() {
       setVerifiedPlots(json.verifiedPlots || []);
       setAuthed(true);
       setPassphrase(pass);
-      try { sessionStorage.setItem(PASS_STORAGE_KEY, pass); } catch (_) {}
+      // Zero-Trust: ensure administrative passphrase never sits in browser storage
+      try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
       return true;
     } catch {
       setError('Network error while loading the review queue.');
@@ -160,21 +160,12 @@ export default function ReviewPage() {
     }
   }, []);
 
-  // On mount, silently resume a session if a passphrase was already accepted in
-  // this tab. The kickoff is deferred out of the effect body so we never call
-  // setState synchronously during commit (which triggers cascading renders).
+  // On mount, initialize gate in volatile memory (never read from persistent storage).
   useEffect(() => {
     document.title = 'Review Console · NAQSHAI';
-    let cancelled = false;
-    let stored = '';
-    try { stored = sessionStorage.getItem(PASS_STORAGE_KEY) || ''; } catch (_) {}
-    const t = setTimeout(async () => {
-      if (cancelled) return;
-      if (stored) await fetchQueue(stored);
-      if (!cancelled) setBooting(false);
-    }, 0);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [fetchQueue]);
+    try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
+    setBooting(false);
+  }, []);
 
   const handleUnlock = async (e) => {
     e.preventDefault();

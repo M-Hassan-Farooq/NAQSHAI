@@ -3,6 +3,7 @@ import { getUserFromRequest, getUserClient, getAdminClient } from '@/lib/authSer
 import { checkPolygonConflict } from '@/lib/polygonOverlap';
 import { verifyAreaMatch } from '@/lib/areaCalculator';
 import { verifyListingDocuments } from '@/lib/aiDocumentVerifier';
+import { verifyVerificationToken } from '@/lib/phoneVerification';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +60,30 @@ export async function POST(request, { params }) {
     if (!seller.fullName || !seller.phoneNumber) {
       return NextResponse.json({ success: false, error: 'Seller full name and phone number are required.' }, { status: 400 });
     }
+    // Server-side phone verification gate
+    if (seller.phoneVerificationToken) {
+      const isTokenValid = verifyVerificationToken(seller.phoneVerificationToken, seller.phoneNumber);
+      if (!isTokenValid && !seller.phoneVerified) {
+        return NextResponse.json({ success: false, error: 'Phone verification token is invalid or expired. Please re-verify via OTP.' }, { status: 400 });
+      }
+    } else if (!seller.phoneVerified && process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ success: false, error: 'Phone verification is required before submitting your listing.' }, { status: 400 });
+    }
+
+    // Storage path containment: prevent cross-tenant IDOR / document sniffing
+    const uploaded = fd.uploadedFiles || {};
+    const allowedPathPrefix = `${user.id}/${id}/`;
+    for (const [key, val] of Object.entries(uploaded)) {
+      if (!val) continue;
+      const p = typeof val === 'string' ? val : val.path;
+      if (p && (!p.startsWith(allowedPathPrefix) || p.includes('..') || p.includes('\\'))) {
+        return NextResponse.json({
+          success: false,
+          error: `Security violation: Attached document "${key}" has an unauthorized storage path.`
+        }, { status: 403 });
+      }
+    }
+
     if (!plot.city || !plot.society || !plot.plotNumber || !plot.pricePkr) {
       return NextResponse.json({ success: false, error: 'City, society, plot number and demand price are required.' }, { status: 400 });
     }
@@ -134,9 +159,16 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Best-effort asynchronous AI document verification
+    // Best-effort asynchronous AI document verification with 5-minute quota throttling
     (async () => {
       try {
+        const lastAuditTime = fd.ai_verified_at ? new Date(fd.ai_verified_at).getTime() : 0;
+        const auditAgeMs = Date.now() - lastAuditTime;
+        // If audited within the last 5 minutes, reuse the existing report to preserve Gemini API quota
+        if (fd.ai_verification_report && auditAgeMs < 5 * 60 * 1000) {
+          return;
+        }
+
         const dbAdmin = getAdminClient();
         const aiVerification = await verifyListingDocuments({ formData: fd, dbAdmin });
         const now = new Date().toISOString();

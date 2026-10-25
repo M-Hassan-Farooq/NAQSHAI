@@ -114,6 +114,8 @@ function extractCandidateDocPaths(formData = {}) {
   const addPath = (path, label) => {
     if (!path || typeof path !== 'string') return;
     const clean = path.trim();
+    // Guard against directory traversal
+    if (clean.includes('..') || clean.includes('\\')) return;
     if (clean && !paths.some((p) => p.path === clean)) {
       paths.push({ path: clean, label: label || 'Document' });
     }

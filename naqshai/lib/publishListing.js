@@ -15,8 +15,11 @@ export function normalizeDocuments(uploadedFiles) {
   for (const key of ['allotmentLetter', 'cnicFront', 'cnicBack']) {
     const v = src[key];
     if (!v) continue;
-    if (typeof v === 'string') out.push(v);
-    else if (v.path) out.push(v.path);
+    out.push({
+      field: key,
+      verified: true,
+      label: key === 'allotmentLetter' ? 'Allotment Document' : (key === 'cnicFront' ? 'CNIC Front' : 'CNIC Back')
+    });
   }
   return out;
 }

@@ -15,11 +15,19 @@ if (!globalStore.__naqshaiOtpStore) {
 }
 const otpStore = globalStore.__naqshaiOtpStore;
 
-const HMAC_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.NEXTAUTH_SECRET || 'naqshai_dual_mode_otp_secret_key_2026';
+function getHmacSecret() {
+  if (process.env.SUPABASE_JWT_SECRET) return process.env.SUPABASE_JWT_SECRET;
+  if (process.env.OPERATOR_PASSPHRASE) return process.env.OPERATOR_PASSPHRASE;
+  if (process.env.NEXTAUTH_SECRET) return process.env.NEXTAUTH_SECRET;
+  if (!globalStore.__naqshaiHmacSecret) {
+    globalStore.__naqshaiHmacSecret = crypto.randomBytes(32).toString('hex');
+  }
+  return globalStore.__naqshaiHmacSecret;
+}
 
 export function createChallengeToken(phone, code, expiresAt) {
   const payload = `${phone}:${code}:${expiresAt}`;
-  const sig = crypto.createHmac('sha256', HMAC_SECRET).update(payload).digest('hex');
+  const sig = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
   return Buffer.from(`${payload}:${sig}`).toString('base64url');
 }
 
@@ -32,8 +40,48 @@ export function verifyChallengeToken(token, phone, inputCode) {
     if (Date.now() > Number(storedExpiresAt)) return false;
     if (storedPhone !== phone) return false;
     if (storedCode !== inputCode) return false;
-    const expectedSig = crypto.createHmac('sha256', HMAC_SECRET).update(`${storedPhone}:${storedCode}:${storedExpiresAt}`).digest('hex');
-    return expectedSig === storedSig;
+    const expectedSig = crypto.createHmac('sha256', getHmacSecret()).update(`${storedPhone}:${storedCode}:${storedExpiresAt}`).digest('hex');
+    const a = Buffer.from(storedSig, 'hex');
+    const b = Buffer.from(expectedSig, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+export function createVerificationToken(phone) {
+  const normalized = normalizePhoneNumber(phone);
+  const ts = Date.now();
+  const payload = `${normalized}_${ts}`;
+  const sig = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  return `pv_${Buffer.from(`${payload}:${sig}`).toString('base64url')}`;
+}
+
+export function verifyVerificationToken(token, expectedPhone) {
+  try {
+    if (!token || typeof token !== 'string' || !token.startsWith('pv_')) return false;
+    const raw = Buffer.from(token.slice(3), 'base64url').toString('utf8');
+    const parts = raw.split(':');
+    if (parts.length !== 2) return false;
+    const [payload, sig] = parts;
+    const [tokenPhone, tokenTs] = payload.split('_');
+    if (!tokenPhone || !tokenTs || !sig) return false;
+
+    // Check 24-hour expiration window
+    const age = Date.now() - Number(tokenTs);
+    if (Number.isNaN(age) || age < 0 || age > 24 * 60 * 60 * 1000) return false;
+
+    // Check phone match
+    const normalizedExpected = normalizePhoneNumber(expectedPhone);
+    if (tokenPhone !== normalizedExpected) return false;
+
+    // Constant-time signature verification
+    const expectedSig = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+    const a = Buffer.from(sig, 'hex');
+    const b = Buffer.from(expectedSig, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
   } catch {
     return false;
   }
@@ -214,7 +262,7 @@ export function verifyOtp(rawPhone, inputCode, challengeToken = null) {
     // If serverless container cold-started or routed to a separate lambda instance on Vercel,
     // verify through the cryptographically HMAC-signed challengeToken:
     if (challengeToken && verifyChallengeToken(challengeToken, normalized, cleanInput)) {
-      const token = `pv_${Buffer.from(`${normalized}_${Date.now()}`).toString('base64url')}`;
+      const token = createVerificationToken(normalized);
       return {
         success: true,
         normalizedPhone: normalized,
@@ -257,7 +305,7 @@ export function verifyOtp(rawPhone, inputCode, challengeToken = null) {
   // Success: clear the used OTP
   otpStore.delete(normalized);
 
-  const token = `pv_${Buffer.from(`${normalized}_${Date.now()}`).toString('base64url')}`;
+  const token = createVerificationToken(normalized);
 
   return {
     success: true,
