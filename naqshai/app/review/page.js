@@ -743,6 +743,7 @@ export default function ReviewPage() {
                         const isPlra = detectedAuthority.includes('PLRA') || detectedAuthority.includes('FARD');
                         const isEstamp = detectedAuthority.includes('ESTAMP') || detectedAuthority.includes('STAMP');
                         const isCda = detectedAuthority.includes('CDA') || detectedAuthority.includes('SOCIETY');
+                        const isRda = detectedAuthority.includes('RDA') || (l.plot?.city || '').toLowerCase().includes('rawalpindi');
 
                         return (
                           <div className="pt-4 border-t border-slate-100 space-y-4">
@@ -954,7 +955,7 @@ export default function ReviewPage() {
                                     </a>
 
                                     <a
-                                      href="https://www.cda.gov.pk/housing/noc.asp"
+                                      href="https://www.cda.gov.pk/housing-schemes"
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition ${
@@ -963,8 +964,22 @@ export default function ReviewPage() {
                                           : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium'
                                       }`}
                                     >
-                                      <span>Verify CDA Record / NOC ↗</span>
+                                      <span>Verify CDA Schemes ↗</span>
                                       {isCda && <span className="text-[9px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">Recommended</span>}
+                                    </a>
+
+                                    <a
+                                      href="https://digital-rda.gop.pk"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition ${
+                                        isRda
+                                          ? 'bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm ring-2 ring-emerald-600/30'
+                                          : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium'
+                                      }`}
+                                    >
+                                      <span>Verify RDA Portal ↗</span>
+                                      {isRda && <span className="text-[9px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">Recommended</span>}
                                     </a>
                                   </div>
                                 </div>

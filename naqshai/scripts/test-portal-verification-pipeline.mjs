@@ -54,7 +54,8 @@ function assert(condition, message) {
 const PORTAL_URLS = {
   PLRA: 'https://punjab-zameen.gov.pk',
   ESTAMP: 'https://estamp.punjab.gov.pk',
-  CDA: 'https://www.cda.gov.pk/housing/noc.asp'
+  CDA: 'https://www.cda.gov.pk/housing-schemes',
+  RDA: 'https://digital-rda.gop.pk'
 };
 
 function resolveRecommendedPortal(authorityType, detectedAuthority) {
@@ -62,6 +63,7 @@ function resolveRecommendedPortal(authorityType, detectedAuthority) {
   if (auth.includes('PLRA') || auth.includes('ZAMEEN')) return 'PLRA';
   if (auth.includes('ESTAMP') || auth.includes('STAMP')) return 'ESTAMP';
   if (auth.includes('CDA')) return 'CDA';
+  if (auth.includes('RDA')) return 'RDA';
   return null;
 }
 
@@ -92,8 +94,14 @@ async function runPipelineTestSuite() {
 
   assert(
     resolveRecommendedPortal('CDA_SLIP', null) === 'CDA' &&
-    PORTAL_URLS[resolveRecommendedPortal('CDA_SLIP', null)] === 'https://www.cda.gov.pk/housing/noc.asp',
-    'CDA_SLIP routes to cda.gov.pk/housing/noc.asp'
+    PORTAL_URLS[resolveRecommendedPortal('CDA_SLIP', null)] === 'https://www.cda.gov.pk/housing-schemes',
+    'CDA_SLIP routes to cda.gov.pk/housing-schemes'
+  );
+
+  assert(
+    resolveRecommendedPortal('RDA_CHALLAN', null) === 'RDA' &&
+    PORTAL_URLS[resolveRecommendedPortal('RDA_CHALLAN', null)] === 'https://digital-rda.gop.pk',
+    'RDA_CHALLAN routes to digital-rda.gop.pk'
   );
 
   assert(

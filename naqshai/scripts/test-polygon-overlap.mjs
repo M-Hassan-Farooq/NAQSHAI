@@ -9,9 +9,32 @@
  * 5. Server-side API submission guard against overlapping coordinates.
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { checkPolygonConflict, isPointInsideAnyPlot, doPolygonsOverlap, isPointInPolygon } from '../lib/polygonOverlap.js';
 
-const API_BASE = 'http://localhost:3000';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env.local if present
+const envPath = path.resolve(__dirname, '../.env.local');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+      const idx = trimmed.indexOf('=');
+      const k = trimmed.slice(0, idx).trim();
+      const v = trimmed.slice(idx + 1).trim();
+      if (!process.env[k]) {
+        process.env[k] = v;
+      }
+    }
+  }
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 async function runTests() {
   console.log('===========================================================');
