@@ -91,7 +91,13 @@ export default function TermsAndConditionsPage() {
 
       <TermsSection title="9. Contact">
         <p>
-          For questions about these terms, contact the NAQSHAI operator through the official contact channel provided with the service or your account.
+          For questions about these terms or the service, contact the NAQSHAI team at{' '}
+          <a
+            href="mailto:team.naqshai@gmail.com"
+            className="font-semibold text-action-hover underline underline-offset-2"
+          >
+            team.naqshai@gmail.com
+          </a>.
         </p>
       </TermsSection>
     </LegalPageLayout>

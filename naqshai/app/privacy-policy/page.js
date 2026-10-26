@@ -76,7 +76,13 @@ export default function PrivacyPolicyPage() {
           You can update profile information through account settings and discard eligible listing drafts through the seller dashboard. You can choose not to provide optional profile information, but some features—such as submitting a listing for verification—require the information and documents requested for that feature.
         </p>
         <p>
-          Depending on the law that applies to you, you may be able to request access to, correction of, or deletion of your personal information. To make a privacy request, contact the NAQSHAI operator through the official contact channel provided with the service or your account. Some information may need to be retained for security, verification, or legal reasons.
+          Depending on the law that applies to you, you may be able to request access to, correction of, or deletion of your personal information. To make a privacy request, contact the NAQSHAI team at{' '}
+          <a
+            href="mailto:team.naqshai@gmail.com"
+            className="font-semibold text-action-hover underline underline-offset-2"
+          >
+            team.naqshai@gmail.com
+          </a>. Some information may need to be retained for security, verification, or legal reasons.
         </p>
       </PolicySection>
 
@@ -86,6 +92,18 @@ export default function PrivacyPolicyPage() {
         </p>
         <p>
           We may update this policy as the service changes. The date at the top of this page indicates when it was last revised; material changes will be communicated through the service where appropriate.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="8. Contact information">
+        <p>
+          If you have questions, comments, or requests regarding this Privacy Policy, your personal information, or our security practices, please contact us directly at{' '}
+          <a
+            href="mailto:team.naqshai@gmail.com"
+            className="font-semibold text-action-hover underline underline-offset-2"
+          >
+            team.naqshai@gmail.com
+          </a>.
         </p>
       </PolicySection>
     </LegalPageLayout>

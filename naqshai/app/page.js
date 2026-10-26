@@ -26,7 +26,8 @@ import {
   ChevronRight,
   ChevronDown,
   User,
-  LogOut
+  LogOut,
+  Mail
 } from 'lucide-react';
 
 export default function Home() {
@@ -421,30 +422,100 @@ export default function Home() {
       </section>
 
       {/* 6. Footer */}
-      <footer className="mt-auto bg-white border-t border-slate-200 py-12 px-4 text-slate-600 text-xs">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
-          <div className="space-y-2 max-w-md">
-            <div className="flex items-center justify-center md:justify-start gap-2">
-              <div className="relative w-7 h-7 overflow-hidden rounded-lg border border-emerald-500/20 shadow-sm">
+      <footer className="mt-auto bg-white border-t border-slate-200 py-12 px-4 sm:px-6 text-slate-600 text-xs">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
+          {/* Brand & Mission */}
+          <div className="md:col-span-1 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="relative w-8 h-8 overflow-hidden rounded-xl border border-emerald-500/20 shadow-xs">
                 <Image alt="NAQSHAI Mascot Logo" className="object-cover" fill src="/Masaod.jpeg"/>
               </div>
-              <span className="font-bold text-sm text-slate-900 tracking-tight">NAQSHAI</span>
+              <span className="font-bold text-base text-slate-900 tracking-tight">NAQSHAI</span>
             </div>
-            <p className="text-slate-500 leading-relaxed">
-              NAQSHAI is a geospatial land intelligence and real estate advisory platform.
+            <p className="text-slate-500 leading-relaxed text-xs">
+              Pakistan&apos;s AI-driven geospatial land intelligence &amp; 3D plot verification platform for Islamabad and Rawalpindi.
             </p>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Verified Plot Due Diligence</span>
+            </div>
           </div>
 
-          {/* Core Technology Stack removed as requested */}
+          {/* Platform Links */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-900">Platform</p>
+            <ul className="space-y-2">
+              <li>
+                <Link href="/explore" className="hover:text-emerald-700 transition">3D Interactive Map</Link>
+              </li>
+              <li>
+                <Link href="/recommend" className="hover:text-emerald-700 transition">AI Plot Advisor</Link>
+              </li>
+              <li>
+                <Link href="/sell" className="hover:text-emerald-700 transition">List Your Plot</Link>
+              </li>
+              <li>
+                <Link href="/favorites" className="hover:text-emerald-700 transition">Saved Favorites</Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Legal & Trust Links */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-900">Legal &amp; Trust</p>
+            <ul className="space-y-2">
+              <li>
+                <Link href="/privacy-policy" className="hover:text-emerald-700 font-medium text-slate-700 transition">
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/terms-and-conditions" className="hover:text-emerald-700 transition">
+                  Terms &amp; Conditions
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacy-policy#cookies" className="hover:text-emerald-700 transition">
+                  Cookie Practices
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Contact Information */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-900">Contact &amp; Support</p>
+            <p className="text-slate-500 leading-relaxed text-xs">
+              Questions about verified listings, privacy, or partnerships? Reach out to our team:
+            </p>
+            <a
+              href="mailto:team.naqshai@gmail.com"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 text-slate-700 text-xs font-medium transition shadow-xs group"
+            >
+              <Mail className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition-transform shrink-0" />
+              <span className="font-mono">team.naqshai@gmail.com</span>
+            </a>
+            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] pt-1">
+              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Islamabad &amp; Rawalpindi, Pakistan</span>
+            </div>
+          </div>
         </div>
 
-        <div className="max-w-7xl mx-auto border-t border-slate-100 mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between text-slate-400 gap-4">
+        {/* Bottom Bar */}
+        <div className="max-w-7xl mx-auto border-t border-slate-100 pt-6 flex flex-col sm:flex-row items-center justify-between text-slate-400 gap-4">
           <p>© 2026 NAQSHAI. All rights reserved.</p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
             <Link href="/recommend" className="hover:text-slate-600 transition">AI Advisor</Link>
             <Link href="/explore" className="hover:text-slate-600 transition">3D Map</Link>
-            <Link href="/privacy-policy" className="hover:text-slate-600 transition">Privacy</Link>
+            <Link href="/privacy-policy" className="hover:text-slate-700 transition font-medium text-slate-500">
+              Privacy Policy
+            </Link>
             <Link href="/terms-and-conditions" className="hover:text-slate-600 transition">Terms</Link>
+            <a href="mailto:team.naqshai@gmail.com" className="hover:text-slate-700 transition flex items-center gap-1">
+              <Mail className="w-3 h-3 text-emerald-600" />
+              <span>Contact</span>
+            </a>
           </div>
         </div>
       </footer>
