@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -26,7 +26,17 @@ import {
   Sparkles,
   Copy,
   Check,
+  MessageSquare,
+  Search,
+  Filter,
+  Coins,
+  Award,
+  Layers,
+  Database,
+  ArrowUpDown,
+  ShieldAlert,
 } from 'lucide-react';
+import VerificationCertificateModal from '@/components/VerificationCertificateModal';
 
 // Operator review console. A single operator unlocks it with the shared passphrase
 // (OPERATOR_PASSPHRASE, a server secret), which is then sent as a bearer token to
@@ -34,6 +44,12 @@ import {
 // in volatile React memory — it is never written to sessionStorage or localStorage.
 
 const PASS_STORAGE_KEY = 'naqshai_operator_passphrase';
+
+const DOC_NAMES = {
+  allotmentLetter: 'Allotment Letter',
+  cnicFront: 'CNIC (Front)',
+  cnicBack: 'CNIC (Back)',
+};
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -54,6 +70,33 @@ function formatPkr(v) {
   const n = Number(v);
   if (!v || Number.isNaN(n)) return v ? `PKR ${v}` : '—';
   return `PKR ${n.toLocaleString('en-US')}`;
+}
+
+function formatValuationSummary(totalPkr) {
+  if (!totalPkr || totalPkr <= 0) return 'PKR 0';
+  if (totalPkr >= 10000000) {
+    const crores = (totalPkr / 10000000).toFixed(2);
+    return `PKR ${crores} Cr`;
+  }
+  if (totalPkr >= 100000) {
+    const lacs = (totalPkr / 100000).toFixed(1);
+    return `PKR ${lacs} Lac`;
+  }
+  return `PKR ${totalPkr.toLocaleString('en-US')}`;
+}
+
+function buildWhatsAppLink(phone, sellerName, plotTitle, society) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  let formatted = digits;
+  if (formatted.startsWith('03')) {
+    formatted = '92' + formatted.slice(1);
+  } else if (formatted.startsWith('3') && formatted.length === 10) {
+    formatted = '92' + formatted;
+  }
+  const cleanSeller = sellerName ? sellerName.trim() : 'Respected Seller';
+  const text = `Assalam-o-Alaikum ${cleanSeller}, this is NAQSHAI Verification Desk regarding your plot "${plotTitle || 'Plot'}" in ${society || 'Islamabad'}. We are auditing your cadastre submission for official verification.`;
+  return `https://wa.me/${formatted}?text=${encodeURIComponent(text)}`;
 }
 
 // Extract clean numeric [{x,y}] screen points (viewBox 0..100, north up) for a
@@ -101,21 +144,32 @@ export default function ReviewPage() {
   const [unlocking, setUnlocking] = useState(false);
   const [gateError, setGateError] = useState('');
 
-  // Queue state
+  // Queue & console state
   const [listings, setListings] = useState([]);
   const [verifiedPlots, setVerifiedPlots] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [stats, setStats] = useState({ rejectedCount: 0, pendingCount: 0, verifiedCount: 0 });
+  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'verified' | 'logs'
   const [expandedListingId, setExpandedListingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Per-card action state
-  const [action, setAction] = useState({ id: null, type: null }); // type: 'approve' | 'reject'
+  const [action, setAction] = useState({ id: null, type: null }); // type: 'approve' | 'reject' | 'remove'
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [notice, setNotice] = useState('');
   const [removalTarget, setRemovalTarget] = useState(null);
   const [verifyingId, setVerifyingId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [copiedHash, setCopiedHash] = useState(null);
+  const [certificateTarget, setCertificateTarget] = useState(null);
+
+  // Search, filter & sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cityFilter, setCityFilter] = useState('ALL');
+  const [verdictFilter, setVerdictFilter] = useState('ALL');
+  const [sortOrder, setSortOrder] = useState('oldest');
 
   // The passphrase we authenticate with lives in a ref-like state that we never
   // render into an input, so it is not echoed back to the screen.
@@ -135,6 +189,7 @@ export default function ReviewPage() {
         setGateError(json.error || 'Security Lockout: Too many failed attempts. Access blocked for 15 minutes.');
         setListings([]);
         setVerifiedPlots([]);
+        setAuditLogs([]);
         return false;
       }
       if (res.status === 403) {
@@ -144,16 +199,24 @@ export default function ReviewPage() {
         setGateError(json.error || 'That passphrase was not accepted.');
         setListings([]);
         setVerifiedPlots([]);
+        setAuditLogs([]);
         return false;
       }
       if (!res.ok || !json.success) {
         setError(json.error || 'Could not load the review queue.');
         setListings([]);
         setVerifiedPlots([]);
+        setAuditLogs([]);
         return false;
       }
       setListings(json.listings || []);
       setVerifiedPlots(json.verifiedPlots || []);
+      setAuditLogs(json.auditLogs || []);
+      setStats(json.stats || {
+        rejectedCount: 0,
+        pendingCount: (json.listings || []).length,
+        verifiedCount: (json.verifiedPlots || []).length,
+      });
       setAuthed(true);
       setPassphrase(pass);
       // Zero-Trust: ensure administrative passphrase never sits in browser storage
@@ -195,9 +258,163 @@ export default function ReviewPage() {
     setPassInput('');
     setListings([]);
     setVerifiedPlots([]);
+    setAuditLogs([]);
+    setStats({ rejectedCount: 0, pendingCount: 0, verifiedCount: 0 });
     setGateError('');
     setNotice('');
+    setCertificateTarget(null);
+    setSearchQuery('');
+    setActiveTab('queue');
   };
+
+  const handleCopyHash = async (hash, logId) => {
+    if (!hash) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(hash);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = hash;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedHash(logId);
+      setTimeout(() => {
+        setCopiedHash((prev) => (prev === logId ? null : prev));
+      }, 2500);
+    } catch (_) {}
+  };
+
+  // KPI Calculations
+  const totalEncryptedDocs = useMemo(() => {
+    let count = 0;
+    for (const l of listings) {
+      for (const d of l.documents || []) {
+        if (d.encrypted) count++;
+      }
+    }
+    return count;
+  }, [listings]);
+
+  const totalValuationPkr = useMemo(() => {
+    return verifiedPlots.reduce((sum, p) => sum + (Number(p.pricePkr) || 0), 0);
+  }, [verifiedPlots]);
+
+  // Filtered Review Queue listings
+  const filteredListings = useMemo(() => {
+    let result = [...listings];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((l) => {
+        const title = (l.title || '').toLowerCase();
+        const seller = (l.seller?.fullName || '').toLowerCase();
+        const phone = (l.seller?.phoneNumber || '').toLowerCase();
+        const society = (l.plot?.society || '').toLowerCase();
+        const city = (l.plot?.city || '').toLowerCase();
+        const plotNum = (l.plot?.plotNumber || '').toLowerCase();
+        return (
+          title.includes(q) ||
+          seller.includes(q) ||
+          phone.includes(q) ||
+          society.includes(q) ||
+          city.includes(q) ||
+          plotNum.includes(q)
+        );
+      });
+    }
+
+    if (cityFilter !== 'ALL') {
+      result = result.filter(
+        (l) => (l.plot?.city || '').toLowerCase() === cityFilter.toLowerCase()
+      );
+    }
+
+    if (verdictFilter === 'AI_VERIFIED') {
+      result = result.filter((l) => {
+        const rep = l.ai_verification_report || l.aiVerification;
+        const score = rep?.confidence_score ?? rep?.confidenceScore ?? 0;
+        return score >= 80;
+      });
+    } else if (verdictFilter === 'NEEDS_AUDIT') {
+      result = result.filter((l) => !l.ai_verification_report && !l.aiVerification);
+    } else if (verdictFilter === 'CONFLICT') {
+      result = result.filter(
+        (l) => !!l.overlapConflict || (l.areaVerification && !l.areaVerification.isValid)
+      );
+    }
+
+    if (sortOrder === 'newest') {
+      result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (sortOrder === 'oldest') {
+      result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    } else if (sortOrder === 'price_desc') {
+      result.sort((a, b) => (Number(b.plot?.pricePkr) || 0) - (Number(a.plot?.pricePkr) || 0));
+    } else if (sortOrder === 'price_asc') {
+      result.sort((a, b) => (Number(a.plot?.pricePkr) || 0) - (Number(b.plot?.pricePkr) || 0));
+    }
+
+    return result;
+  }, [listings, searchQuery, cityFilter, verdictFilter, sortOrder]);
+
+  // Filtered Verified Live Plots
+  const filteredVerifiedPlots = useMemo(() => {
+    let result = [...verifiedPlots];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((p) => {
+        const title = (p.title || '').toLowerCase();
+        const seller = (p.seller?.fullName || '').toLowerCase();
+        const phone = (p.seller?.phoneNumber || '').toLowerCase();
+        const society = (p.society || '').toLowerCase();
+        const city = (p.city || '').toLowerCase();
+        return (
+          title.includes(q) ||
+          seller.includes(q) ||
+          phone.includes(q) ||
+          society.includes(q) ||
+          city.includes(q)
+        );
+      });
+    }
+
+    if (cityFilter !== 'ALL') {
+      result = result.filter(
+        (p) => (p.city || '').toLowerCase() === cityFilter.toLowerCase()
+      );
+    }
+
+    if (sortOrder === 'newest') {
+      result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (sortOrder === 'oldest') {
+      result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    } else if (sortOrder === 'price_desc') {
+      result.sort((a, b) => (Number(b.pricePkr) || 0) - (Number(a.pricePkr) || 0));
+    } else if (sortOrder === 'price_asc') {
+      result.sort((a, b) => (Number(a.pricePkr) || 0) - (Number(b.pricePkr) || 0));
+    }
+
+    return result;
+  }, [verifiedPlots, searchQuery, cityFilter, sortOrder]);
+
+  // Filtered Cryptographic Document Access Logs
+  const filteredAuditLogs = useMemo(() => {
+    if (!searchQuery.trim()) return auditLogs;
+    const q = searchQuery.toLowerCase().trim();
+    return auditLogs.filter((log) => {
+      return (
+        (log.action || '').toLowerCase().includes(q) ||
+        (log.field_name || '').toLowerCase().includes(q) ||
+        (log.file_hash || '').toLowerCase().includes(q) ||
+        (log.actor_role || '').toLowerCase().includes(q) ||
+        (log.ip_address || '').toLowerCase().includes(q) ||
+        (log.draft_id || '').toLowerCase().includes(q)
+      );
+    });
+  }, [auditLogs, searchQuery]);
 
   const handleApprove = async (id) => {
     setNotice('');
@@ -449,17 +666,81 @@ export default function ReviewPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-8">
-        <div className="mb-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
+        {/* Title & Console Description */}
+        <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
             <ShieldCheck className="w-7 h-7 text-emerald-700" />
-            Listings awaiting verification
+            Operator Cadastral Console
           </h1>
-          <p className="text-sm text-slate-600 mt-2 max-w-2xl">
-            Review the seller details, boundary, and documents for each submitted plot. Approving publishes a
-            verified plot to the public 3D map; rejecting returns it to the owner with your note so they can fix and
-            resubmit.
+          <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+            Zero-Trust administrative console. Verify seller titles, inspect encrypted deed vaults, analyze boundary area tolerances, review security logs, and generate official cadastre verification certificates.
           </p>
+        </div>
+
+        {/* Item 1: Platform KPI & Inventory Header Bar */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4 mb-6">
+          {/* KPI 1: Pending Reviews */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Pending Review</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{listings.length}</p>
+              <p className="text-[10px] text-sky-700 font-medium truncate">Awaiting operator</p>
+            </div>
+          </div>
+
+          {/* KPI 2: Verified Live Inventory */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Live Inventory</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{verifiedPlots.length}</p>
+              <p className="text-[10px] text-emerald-700 font-medium truncate">Public 3D map</p>
+            </div>
+          </div>
+
+          {/* KPI 3: Total Verified Valuation */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+              <Coins className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Live Valuation</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight" title={`PKR ${totalValuationPkr.toLocaleString()}`}>
+                {formatValuationSummary(totalValuationPkr)}
+              </p>
+              <p className="text-[10px] text-indigo-700 font-medium truncate">Active cadastre value</p>
+            </div>
+          </div>
+
+          {/* KPI 4: Fraud & Encroachments Blocked */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Blocked / Returned</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{stats.rejectedCount || 0}</p>
+              <p className="text-[10px] text-rose-700 font-medium truncate">Violations prevented</p>
+            </div>
+          </div>
+
+          {/* KPI 5: Encrypted Vault Deeds */}
+          <div className="col-span-2 lg:col-span-1 bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Encrypted Deeds</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{totalEncryptedDocs}</p>
+              <p className="text-[10px] text-teal-700 font-medium truncate">AES-256-GCM vault</p>
+            </div>
+          </div>
         </div>
 
         {notice && (
@@ -485,24 +766,192 @@ export default function ReviewPage() {
           </div>
         )}
 
+        {/* Tab Switcher */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 mb-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab('queue')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition shadow-2xs ${
+              activeTab === 'queue'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Review Queue</span>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-extrabold ${
+              activeTab === 'queue' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {listings.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('verified')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition shadow-2xs ${
+              activeTab === 'verified'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Verified Inventory</span>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-extrabold ${
+              activeTab === 'verified' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {verifiedPlots.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('logs')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition shadow-2xs ${
+              activeTab === 'logs'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            <Database className="w-4 h-4" />
+            <span>Security Audit Logs</span>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-extrabold ${
+              activeTab === 'logs' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {auditLogs.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Item 4: Filter, Sort & Society Search Bar */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-3.5 sm:p-4 mb-6">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={
+                  activeTab === 'logs'
+                    ? 'Search audit logs by hash, IP, document, or role…'
+                    : 'Search by plot title, society, seller name, or phone…'
+                }
+                className="w-full pl-10 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-500 focus:bg-white transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {activeTab !== 'logs' && (
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                {/* City Filter */}
+                <select
+                  value={cityFilter}
+                  onChange={(e) => setCityFilter(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-500"
+                >
+                  <option value="ALL">All Cities</option>
+                  <option value="Islamabad">Islamabad</option>
+                  <option value="Rawalpindi">Rawalpindi</option>
+                </select>
+
+                {/* AI Verdict Filter (for review queue) */}
+                {activeTab === 'queue' && (
+                  <select
+                    value={verdictFilter}
+                    onChange={(e) => setVerdictFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-500"
+                  >
+                    <option value="ALL">All AI Statuses</option>
+                    <option value="AI_VERIFIED">AI Match ≥80%</option>
+                    <option value="NEEDS_AUDIT">Awaiting AI Audit</option>
+                    <option value="CONFLICT">Flagged / Conflicts</option>
+                  </select>
+                )}
+
+                {/* Sort Order */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    className="bg-transparent border-0 text-xs sm:text-sm text-slate-700 font-medium focus:outline-none pr-1"
+                  >
+                    <option value="oldest">Oldest First</option>
+                    <option value="newest">Newest First</option>
+                    <option value="price_desc">Price: High to Low</option>
+                    <option value="price_asc">Price: Low to High</option>
+                  </select>
+                </div>
+
+                {/* Reset button */}
+                {(searchQuery || cityFilter !== 'ALL' || verdictFilter !== 'ALL' || sortOrder !== 'oldest') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setCityFilter('ALL');
+                      setVerdictFilter('ALL');
+                      setSortOrder('oldest');
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-red-600 px-2 py-1 transition"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {loading ? (
           <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 flex items-center justify-center gap-3 text-slate-500 text-sm">
             <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />
-            Loading the review queue…
+            Loading the review console…
           </div>
-        ) : listings.length === 0 ? (
-          <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 text-center">
-            <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-7 h-7" />
+        ) : activeTab === 'queue' ? (
+          listings.length === 0 ? (
+            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 text-center">
+              <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-900">Queue is clear</h2>
+              <p className="text-sm text-slate-600 mt-1.5 max-w-sm mx-auto">
+                There are no listings awaiting verification right now. New submissions will appear here.
+              </p>
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Queue is clear</h2>
-            <p className="text-sm text-slate-600 mt-1.5 max-w-sm mx-auto">
-              There are no listings awaiting verification right now. New submissions will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {listings.map((l) => {
+          ) : filteredListings.length === 0 ? (
+            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 text-center">
+              <div className="w-14 h-14 bg-slate-50 border border-slate-200 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Search className="w-6 h-6" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900">No matching listings found</h2>
+              <p className="text-sm text-slate-500 mt-1">Try adjusting your search terms or filters.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCityFilter('ALL');
+                  setVerdictFilter('ALL');
+                  setSortOrder('oldest');
+                }}
+                className="mt-4 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
+              >
+                Clear all filters
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {filteredListings.map((l) => {
               const svgPoints = polygonToSvgPoints(l.polygon);
               const centroid = polygonCentroid(l.polygon);
               const busy = action.id === l.id;
@@ -565,7 +1014,7 @@ export default function ReviewPage() {
                     <div className="md:col-span-2 space-y-4">
                       <div>
                         <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Seller</p>
-                        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                           <span className="flex items-center gap-1.5 text-slate-700">
                             <User className="w-4 h-4 text-slate-400" />
                             {l.seller.fullName || '—'}
@@ -579,6 +1028,18 @@ export default function ReviewPage() {
                               <Building2 className="w-4 h-4 text-slate-400" />
                               {l.seller.sellerRole}
                             </span>
+                          )}
+                          {l.seller.phoneNumber && (
+                            <a
+                              href={buildWhatsAppLink(l.seller.phoneNumber, l.seller.fullName, l.title, l.plot.society || l.plot.city)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg shadow-xs transition"
+                              title="Open direct WhatsApp conversation with pre-filled inquiry"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>WhatsApp Seller</span>
+                            </a>
                           )}
                         </div>
                       </div>
@@ -1264,85 +1725,279 @@ export default function ReviewPage() {
                 </div>
               );
             })}
+            </div>
+          )
+        ) : activeTab === 'verified' ? (
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-700" />
+                  Verified Plots on Live Cadastre
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Plots currently verified and live on the public 3D geospatial map. Generate official certificates or manage live status.
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full shrink-0">
+                {filteredVerifiedPlots.length} displayed ({verifiedPlots.length} total)
+              </span>
+            </div>
+
+            {verifiedPlots.length === 0 ? (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 text-center text-sm text-slate-500">
+                <div className="w-12 h-12 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-slate-800">No verified plots live on sale</h3>
+                <p className="text-xs text-slate-400 mt-1">When you approve listings from the Review Queue, they appear here.</p>
+              </div>
+            ) : filteredVerifiedPlots.length === 0 ? (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 text-center">
+                <div className="w-12 h-12 bg-slate-50 border border-slate-200 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <Search className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">No verified plots match your search criteria</h3>
+                <p className="text-xs text-slate-500 mt-1">Try adjusting your search terms or city filters.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCityFilter('ALL');
+                    setSortOrder('oldest');
+                  }}
+                  className="mt-4 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredVerifiedPlots.map((plot) => {
+                  const busy = action.id === plot.id && action.type === 'remove';
+                  return (
+                    <article key={plot.id} className="bg-white border border-slate-200 shadow-xs rounded-2xl p-4 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition">
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-slate-900 truncate flex items-center gap-1.5 text-base">
+                              <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
+                              {plot.title}
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {plot.city || '—'} · {plot.society || 'Society not provided'}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border shrink-0 ${
+                            plot.isVerified
+                              ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
+                              : 'text-amber-800 bg-amber-50 border border-amber-200'
+                          }`}>
+                            {plot.isVerified ? '✓ Verified Cadastre' : 'Needs verification'}
+                          </span>
+                        </div>
+
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 pt-3 border-t border-slate-100 text-sm">
+                          <div>
+                            <dt className="text-xs text-slate-400">Demand Price</dt>
+                            <dd className="font-semibold text-slate-800">{formatPkr(plot.pricePkr)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-400">Plot Dimensions</dt>
+                            <dd className="font-medium text-slate-700">{plot.sizeDimensions || '—'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-400">Seller</dt>
+                            <dd className="font-medium text-slate-700 truncate">{plot.seller?.fullName || '—'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-400">Phone</dt>
+                            <dd className="font-medium text-slate-700 truncate">{plot.seller?.phoneNumber || '—'}</dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {/* Card Actions: Certificate Generator + WhatsApp + Remove */}
+                      <div className="flex flex-wrap items-center gap-2 mt-5 pt-3.5 border-t border-slate-100">
+                        {/* Item 6: NAQSHAI Verified Certificate Generator Button */}
+                        <button
+                          type="button"
+                          onClick={() => setCertificateTarget(plot)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-xs rounded-xl shadow-2xs transition"
+                          title="Generate printable/downloadable NAQSHAI Cadastre Certificate"
+                        >
+                          <Award className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Official Certificate</span>
+                        </button>
+
+                        {/* Item 3: 1-Click WhatsApp Seller */}
+                        {plot.seller?.phoneNumber && (
+                          <a
+                            href={buildWhatsAppLink(plot.seller.phoneNumber, plot.seller.fullName, plot.title, plot.society || plot.city)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs rounded-xl shadow-2xs transition shrink-0"
+                            title="Chat with seller on WhatsApp"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">WhatsApp</span>
+                          </a>
+                        )}
+
+                        {/* Remove from sale */}
+                        <button
+                          type="button"
+                          onClick={() => setRemovalTarget(plot)}
+                          disabled={busy}
+                          className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-semibold text-xs rounded-xl transition disabled:opacity-60 shrink-0"
+                          title="Remove from public marketplace"
+                        >
+                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          <span className="hidden sm:inline">Remove</span>
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Item 2: Security & Document Access Logs Tab */
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-700" />
+                  Live Cryptographic Document Access Logs
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time tamper-evident audit trail recording every document upload and decrypted stream download. All files are protected with AES-256-GCM encryption.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  {filteredAuditLogs.length} events logged
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchQueue(passphrase)}
+                  disabled={loading}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium rounded-lg transition flex items-center gap-1"
+                  title="Refresh logs from database"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {filteredAuditLogs.length === 0 ? (
+              <div className="p-10 text-center text-sm text-slate-500">
+                <Lock className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h3 className="font-bold text-slate-800">No document access logs found</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Audit logs are automatically written when sellers upload encrypted deeds or operators decrypt documents during review.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <th className="py-3 px-4">Event Time</th>
+                      <th className="py-3 px-4">Action</th>
+                      <th className="py-3 px-4">Deed / Document</th>
+                      <th className="py-3 px-4">Actor Role</th>
+                      <th className="py-3 px-4">SHA-256 Digest</th>
+                      <th className="py-3 px-4">Source IP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredAuditLogs.map((log) => {
+                      const isUpload = log.action === 'UPLOAD';
+                      const isDownload = log.action === 'DOWNLOAD';
+                      const isCopied = copiedHash === log.id;
+                      const docLabel = DOC_NAMES[log.field_name] || log.field_name || 'Document';
+
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                            <div className="font-semibold text-slate-800">
+                              {timeAgo(log.created_at)}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {log.created_at ? new Date(log.created_at).toLocaleString() : '—'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1 font-bold text-[10px] px-2.5 py-0.5 rounded-full border ${
+                                isUpload
+                                  ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                  : isDownload
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-900 border-amber-300'
+                              }`}
+                            >
+                              {isUpload ? '↑ ENCRYPTED UPLOAD' : isDownload ? '↓ DECRYPT & STREAM' : log.action}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{docLabel}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {log.actor_role || 'operator'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {log.file_hash ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyHash(log.file_hash, log.id)}
+                                title={`Click to copy full SHA-256 hash:\n${log.file_hash}`}
+                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 bg-white border border-slate-200 hover:border-emerald-300 hover:text-emerald-700 px-2 py-1 rounded transition shadow-2xs"
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span className="text-emerald-600 font-bold">Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-slate-400" />
+                                    <span>{log.file_hash.slice(0, 10)}…{log.file_hash.slice(-6)}</span>
+                                  </>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                            {log.ip_address || '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
-        <section className="mt-12">
-          <div className="flex items-end justify-between gap-4 mb-4">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-                <CheckCircle2 className="w-6 h-6 text-emerald-700" />
-                All plots on sale
-              </h2>
-              <p className="text-sm text-slate-600 mt-1">Manage every listing currently visible to buyers. Verification status is shown on each plot.</p>
-            </div>
-            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
-              {verifiedPlots.length} live
-            </span>
-          </div>
-
-          {verifiedPlots.length === 0 ? (
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-8 text-center text-sm text-slate-500">
-              No verified plots are currently on sale.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {verifiedPlots.map((plot) => {
-                const busy = action.id === plot.id && action.type === 'remove';
-                return (
-                  <article key={plot.id} className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-slate-900 truncate flex items-center gap-1.5">
-                          <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
-                          {plot.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {plot.city || '—'} · {plot.society || 'Society not provided'}
-                        </p>
-                      </div>
-                      <span className={`text-[11px] font-semibold px-2 py-1 rounded-full shrink-0 ${plot.isVerified
-                        ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
-                        : 'text-amber-800 bg-amber-50 border border-amber-200'
-                      }`}>
-                        {plot.isVerified ? 'Verified' : 'Needs verification'}
-                      </span>
-                    </div>
-
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 pt-3 border-t border-slate-100 text-sm">
-                      <div>
-                        <dt className="text-xs text-slate-400">Price</dt>
-                        <dd className="font-semibold text-slate-800">{formatPkr(plot.pricePkr)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-400">Size</dt>
-                        <dd className="font-medium text-slate-700">{plot.sizeDimensions || '—'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-400">Seller</dt>
-                        <dd className="font-medium text-slate-700 truncate">{plot.seller.fullName || '—'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-400">Phone</dt>
-                        <dd className="font-medium text-slate-700 truncate">{plot.seller.phoneNumber || '—'}</dd>
-                      </div>
-                    </dl>
-
-                    <button
-                      type="button"
-                      onClick={() => setRemovalTarget(plot)}
-                      disabled={busy}
-                      className="mt-4 w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 font-semibold px-4 py-2 rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-60"
-                    >
-                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      Remove from sale
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        {/* Item 6: NAQSHAI Verified Cadastre Certificate Modal */}
+        {certificateTarget && (
+          <VerificationCertificateModal
+            plot={certificateTarget}
+            onClose={() => setCertificateTarget(null)}
+          />
+        )}
 
         {removalTarget && (
           <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">

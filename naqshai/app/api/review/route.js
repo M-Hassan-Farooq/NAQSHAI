@@ -164,8 +164,41 @@ export async function GET(request) {
       };
     });
 
+    let auditLogs = [];
+    try {
+      const { data: logRows } = await dbAdmin
+        .from('document_access_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (logRows) auditLogs = logRows;
+    } catch (_) {
+      auditLogs = [];
+    }
+
+    let rejectedCount = 0;
+    try {
+      const { count } = await dbAdmin
+        .from('listing_drafts')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'rejected');
+      if (count != null) rejectedCount = count;
+    } catch (_) {
+      rejectedCount = 0;
+    }
+
     return NextResponse.json(
-      { success: true, listings, verifiedPlots },
+      {
+        success: true,
+        listings,
+        verifiedPlots,
+        auditLogs,
+        stats: {
+          rejectedCount,
+          pendingCount: listings.length,
+          verifiedCount: verifiedPlots.length,
+        },
+      },
       {
         headers: {
           'X-Robots-Tag': 'noindex, nofollow, noarchive',
