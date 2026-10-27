@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { calculatePolygonArea, verifyAreaMatch } from './areaCalculator.js';
+import { decryptDocument, isEncryptedDocument } from './documentCipher.js';
 
 export const SUPPORTED_MODELS = [
   'gemini-3.5-flash',
@@ -13,9 +14,23 @@ export const SUPPORTED_MODELS = [
 ];
 
 /**
- * Detect MIME type from file path or fallback
+ * Detect MIME type from file path or buffer magic bytes
  */
-function getMimeType(filePath = '') {
+function getMimeType(filePath = '', buffer = null) {
+  if (buffer && buffer.length >= 4) {
+    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+      return 'application/pdf';
+    }
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+      return 'image/png';
+    }
+    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
+      return 'image/webp';
+    }
+  }
   const ext = String(filePath).split('.').pop()?.toLowerCase();
   switch (ext) {
     case 'pdf':
@@ -43,23 +58,35 @@ async function fetchDocumentPart(dbAdmin, bucketName, filePath) {
       return null;
     }
 
-    let base64Data = '';
+    let rawBuffer = null;
     if (typeof data.arrayBuffer === 'function') {
       const arrayBuffer = await data.arrayBuffer();
-      base64Data = Buffer.from(arrayBuffer).toString('base64');
+      rawBuffer = Buffer.from(arrayBuffer);
     } else if (Buffer.isBuffer(data)) {
-      base64Data = data.toString('base64');
+      rawBuffer = data;
     } else if (data instanceof ArrayBuffer) {
-      base64Data = Buffer.from(data).toString('base64');
+      rawBuffer = Buffer.from(data);
     } else {
-      base64Data = Buffer.from(data).toString('base64');
+      rawBuffer = Buffer.from(data);
     }
-    const mimeType = data.type || getMimeType(filePath);
+
+    // Decrypt AES-256-GCM encrypted payload in memory before AI audit
+    if (rawBuffer && isEncryptedDocument(rawBuffer)) {
+      try {
+        rawBuffer = decryptDocument(rawBuffer);
+      } catch (decErr) {
+        console.warn(`[aiDocumentVerifier] Failed to decrypt document "${filePath}":`, decErr?.message || decErr);
+        return null;
+      }
+    }
+
+    const base64Data = rawBuffer.toString('base64');
+    const detectedMime = getMimeType(filePath, rawBuffer);
 
     return {
       inlineData: {
         data: base64Data,
-        mimeType: mimeType === 'application/octet-stream' ? getMimeType(filePath) : mimeType,
+        mimeType: detectedMime,
       },
     };
   } catch (err) {

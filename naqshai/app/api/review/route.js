@@ -4,6 +4,7 @@ import { draftTitlePreview } from '@/lib/draftProgress';
 import { checkPolygonConflict } from '@/lib/polygonOverlap';
 import { verifyAreaMatch } from '@/lib/areaCalculator';
 import { checkRegulatoryStatus } from '@/lib/regulatoryRegistry';
+import { createDocumentAccessToken } from '@/lib/documentCipher';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,13 +16,6 @@ const DOC_LABELS = {
 
 // GET /api/review — operator-only. Returns every SUBMITTED listing across all users
 // as a review queue, so an operator can inspect and approve/reject them.
-//
-// Owner-scoped RLS makes a cross-user read impossible from a normal user client, so
-// this uses the privileged admin client (service role). That same client is what
-// lets us mint short-lived signed URLs for the private plot-documents bucket, whose
-// owner-scoped storage policy would otherwise hide each file from anyone but its
-// uploader. The service-role key stays server-side; the browser only ever holds the
-// operator passphrase and the temporary signed URLs.
 export async function GET(request) {
   try {
     if (!isOperatorToken(getBearerToken(request))) {
@@ -59,31 +53,36 @@ export async function GET(request) {
         const polygon = Array.isArray(fd.polygonCoordinates) ? fd.polygonCoordinates : [];
         const uploaded = fd.uploadedFiles || {};
 
-        // Collect stored document paths (tolerating the legacy string shape), then
-        // sign them together. A missing/failed signature yields a null url rather
-        // than failing the whole queue.
-        const docEntries = [];
+        // Generate tamper-proof, time-bounded backend download tokens for operators
+        // Documents are decrypted in-memory through /api/documents/download
+        const documents = [];
         for (const field of ['allotmentLetter', 'cnicFront', 'cnicBack']) {
           const v = uploaded[field];
           const path = typeof v === 'string' ? v : v?.path;
           const name = typeof v === 'string' ? v : v?.name;
-          if (path) {
-            docEntries.push({ field, label: DOC_LABELS[field] || field, name: name || DOC_LABELS[field] || field, path });
-          }
-        }
+          const sha256 = typeof v === 'object' ? v?.sha256 : null;
+          const encrypted = typeof v === 'object' ? !!v?.encrypted : false;
 
-        let documents = [];
-        if (docEntries.length) {
-          const { data: signed } = await dbAdmin
-            .storage
-            .from('plot-documents')
-            .createSignedUrls(docEntries.map((d) => d.path), 180); // short-lived signed URLs (~3 minutes) prevent link leakage
-          documents = docEntries.map((d, i) => ({
-            field: d.field,
-            label: d.label,
-            name: d.name,
-            signedUrl: signed?.[i]?.signedUrl || signed?.[i]?.signedURL || null,
-          }));
+          if (path) {
+            const token = createDocumentAccessToken({
+              draftId: row.id,
+              field,
+              isOperator: true,
+              expiresInSeconds: 900, // 15-minute operator review window
+            });
+            const downloadUrl = `/api/documents/download?draftId=${encodeURIComponent(row.id)}&field=${encodeURIComponent(field)}&token=${encodeURIComponent(token)}`;
+
+            documents.push({
+              field,
+              label: DOC_LABELS[field] || field,
+              name: name || DOC_LABELS[field] || field,
+              path,
+              sha256,
+              encrypted,
+              signedUrl: downloadUrl, // maintain signedUrl property name for frontend compatibility
+              downloadUrl,
+            });
+          }
         }
 
         const conflict = checkPolygonConflict(polygon, verifiedRows || []);

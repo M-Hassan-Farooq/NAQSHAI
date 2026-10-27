@@ -43,3 +43,11 @@ next-env.d.ts
 
 # documents & temp artifacts
 *.docx
+*.pptx
+*.ppt
+repomix-output.xml
+
+# scratch & competitor pitch analysis
+scratch/
+competitors/
+Competitiors/

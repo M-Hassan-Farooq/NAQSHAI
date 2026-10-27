@@ -10,6 +10,7 @@ import {
   Heart,
   ChevronDown,
   ChevronUp,
+  FlaskConical,
 } from 'lucide-react';
 import { floodRiskClasses } from '@/components/explore/MapPinIcons';
 
@@ -151,7 +152,14 @@ export default function PlotSidebar({
       </div>
 
       {/* Sidebar Scrollable Plot List */}
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-5">
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
+        {/* Prototype Demonstration Notice */}
+        <div className="p-2.5 bg-amber-50/90 border border-amber-200/90 rounded-xl flex items-start gap-2 text-amber-900 text-[11px] leading-relaxed shadow-2xs">
+          <FlaskConical className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+          <span>
+            <strong className="font-bold text-amber-950">Prototype Notice:</strong> Uploaded plots are verified test subjects for platform evaluation and are <em>not currently for sale</em>.
+          </span>
+        </div>
         {plotsLoading ? (
           <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 space-y-2.5">
             <Loader2 className="w-6 h-6 animate-spin text-emerald-700" />

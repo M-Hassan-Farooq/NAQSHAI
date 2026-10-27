@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Phone,
   MessageSquare,
+  FlaskConical,
 } from 'lucide-react';
 import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { formatWhatsAppUrl } from '@/lib/formatPlot';
@@ -110,6 +111,14 @@ export default function PlotDetailsDrawer({
             </div>
           </div>
         )}
+
+        {/* Prototype Demonstration Disclaimer */}
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed shadow-2xs">
+          <FlaskConical className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-amber-950">Demonstration Test Subject:</span> This plot is displayed strictly for prototype testing &amp; AI evaluation and is <em>not actually for sale</em>.
+          </div>
+        </div>
 
         <section aria-labelledby="selected-plot-title">
           <h2 id="selected-plot-title" className="text-lg font-bold text-ink leading-snug">
@@ -299,7 +308,10 @@ export default function PlotDetailsDrawer({
             <span>Owner contact</span>
             <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
           </summary>
-          <div className="border-t border-border p-3">
+          <div className="border-t border-border p-3 space-y-2.5">
+            <p className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-200/60 rounded-lg p-2 leading-tight">
+              <strong>Notice:</strong> Contact details are simulated test subjects for prototype demonstration.
+            </p>
             {formatWhatsAppUrl(selectedPlot.ownerContact) ? (
               <a
                 href={formatWhatsAppUrl(selectedPlot.ownerContact, `Hi, I am interested in ${selectedPlot.name} listed on NAQSHAI.`)}

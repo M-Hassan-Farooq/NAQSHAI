@@ -28,7 +28,8 @@ import {
     MicOff,
     Volume2,
     VolumeX,
-    AlertCircle
+    AlertCircle,
+    FlaskConical
 } from 'lucide-react';
 import {
     speakText,
@@ -477,6 +478,9 @@ function ChatInterface() {
                                     <span className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-full">
                                         Live Database
                                     </span>
+                                    <span className="text-[9px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                                        Test Subjects
+                                    </span>
                                 </h2>
                                 <p className="text-[11px] text-slate-500">Ask in English, Urdu (اردو), or Roman Urdu</p>
                             </div>
@@ -502,6 +506,16 @@ function ChatInterface() {
                                     {langOption}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+
+                    {/* Prototype Demonstration Notice */}
+                    <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl px-3.5 py-2 flex items-center justify-between gap-2 text-amber-900 text-xs shadow-2xs">
+                        <div className="flex items-center gap-2">
+                            <FlaskConical className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                            <span className="text-[11px] sm:text-xs leading-relaxed">
+                                <strong>Prototype Notice:</strong> Plots recommended from our database are demonstration test subjects for AI evaluation, and are not active commercial sales.
+                            </span>
                         </div>
                     </div>
 

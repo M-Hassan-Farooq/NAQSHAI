@@ -35,6 +35,7 @@ import {
   ClipboardList,
   Scale,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '100%', borderRadius: '0.75rem' };
@@ -795,17 +796,33 @@ export default function SellPlotPage() {
       await saveNow(buildSnapshot(currentStep));
       id = getDraftId();
     }
-    const folder = id || 'unsaved';
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `${uid}/${folder}/${field}-${Date.now()}-${safeName}`;
+    if (!id) {
+      setDocError('Could not initialize listing draft. Please try again.');
+      return;
+    }
 
     setDocUploading((p) => ({ ...p, [field]: true }));
     try {
-      const { error } = await supabase.storage
-        .from('plot-documents')
-        .upload(path, file, { cacheControl: '3600', upsert: true });
-      if (error) throw error;
-      setUploadedFiles((prev) => ({ ...prev, [field]: { path, name: file.name, size: file.size } }));
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('field', field);
+      formData.append('draftId', id);
+
+      const token = session?.access_token || '';
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || 'Document upload failed.');
+      }
+
+      setUploadedFiles((prev) => ({ ...prev, [field]: data.file }));
       setDocError('');
     } catch (err) {
       setDocError(`Could not upload ${file.name}: ${err?.message || 'please try again.'}`);
@@ -1854,9 +1871,20 @@ export default function SellPlotPage() {
                                 Uploading file… please wait
                               </p>
                             ) : file ? (
-                              <div className="mt-2 flex min-w-0 items-center gap-2 text-sm text-action-hover" role="status">
-                                <Check className="h-4 w-4 shrink-0" />
+                              <div className="mt-2 flex flex-wrap min-w-0 items-center gap-2 text-sm text-action-hover" role="status">
+                                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
                                 <span className="truncate font-medium">{file.name}</span>
+                                {file.encrypted && (
+                                  <span className="inline-flex items-center text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.5 rounded" title="Encrypted at rest with AES-256-GCM">
+                                    <Lock className="w-2.5 h-2.5 mr-0.5" />
+                                    AES-256 Encrypted
+                                  </span>
+                                )}
+                                {file.sha256 && (
+                                  <span className="inline-flex items-center text-[10px] bg-slate-100 text-slate-600 font-mono px-1.5 py-0.5 rounded" title={`SHA-256: ${file.sha256}`}>
+                                    # {file.sha256.slice(0, 8)}…
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFile(field)}

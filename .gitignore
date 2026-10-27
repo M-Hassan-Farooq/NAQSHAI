@@ -29,3 +29,9 @@ yarn-error.log*
 
 # Vercel
 .vercel
+# Competitor Decks and Scratch
+Competitiors/
+competitors/
+scratch/
+*.pptx
+repomix-output.xml
