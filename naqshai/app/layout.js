@@ -4,6 +4,7 @@ import { ProfileProvider } from "@/context/ProfileContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import FavoriteSyncNotice from "@/components/FavoriteSyncNotice";
 import CookieNotice from "@/components/CookieNotice";
+import SiteAnalyticsTracker from "@/components/SiteAnalyticsTracker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,6 +28,7 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased scroll-smooth`}
     >
       <body className="bg-page text-ink antialiased min-h-full flex flex-col">
+        <SiteAnalyticsTracker />
         <ProfileProvider>
           <FavoritesProvider>
             <FavoriteSyncNotice />

@@ -35,6 +35,13 @@ import {
   Database,
   ArrowUpDown,
   ShieldAlert,
+  Users,
+  TrendingUp,
+  QrCode,
+  Smartphone,
+  Laptop,
+  Globe,
+  Calendar,
 } from 'lucide-react';
 import VerificationCertificateModal from '@/components/VerificationCertificateModal';
 
@@ -148,8 +155,21 @@ export default function ReviewPage() {
   const [listings, setListings] = useState([]);
   const [verifiedPlots, setVerifiedPlots] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [visitorAnalytics, setVisitorAnalytics] = useState({
+    totalVisitors: 0,
+    totalPageviews: 0,
+    totalQrScans: 0,
+    liveVisitorsNow: 0,
+    todayVisitors: 0,
+    todayPageviews: 0,
+    deviceBreakdown: { mobile: 0, desktop: 0, tablet: 0 },
+    topPages: [],
+    topSources: [],
+    dailyTrend: [],
+    recentVisits: [],
+  });
   const [stats, setStats] = useState({ rejectedCount: 0, pendingCount: 0, verifiedCount: 0 });
-  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'verified' | 'logs'
+  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'verified' | 'logs' | 'analytics'
   const [expandedListingId, setExpandedListingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -212,6 +232,9 @@ export default function ReviewPage() {
       setListings(json.listings || []);
       setVerifiedPlots(json.verifiedPlots || []);
       setAuditLogs(json.auditLogs || []);
+      if (json.visitorAnalytics) {
+        setVisitorAnalytics(json.visitorAnalytics);
+      }
       setStats(json.stats || {
         rejectedCount: 0,
         pendingCount: (json.listings || []).length,
@@ -259,6 +282,19 @@ export default function ReviewPage() {
     setListings([]);
     setVerifiedPlots([]);
     setAuditLogs([]);
+    setVisitorAnalytics({
+      totalVisitors: 0,
+      totalPageviews: 0,
+      totalQrScans: 0,
+      liveVisitorsNow: 0,
+      todayVisitors: 0,
+      todayPageviews: 0,
+      deviceBreakdown: { mobile: 0, desktop: 0, tablet: 0 },
+      topPages: [],
+      topSources: [],
+      dailyTrend: [],
+      recentVisits: [],
+    });
     setStats({ rejectedCount: 0, pendingCount: 0, verifiedCount: 0 });
     setGateError('');
     setNotice('');
@@ -679,66 +715,79 @@ export default function ReviewPage() {
         </div>
 
         {/* Item 1: Platform KPI & Inventory Header Bar */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4 mb-6">
+        {/* Platform KPI & Inventory Header Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-3.5 mb-6">
           {/* KPI 1: Pending Reviews */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center shrink-0">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Pending Review</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{listings.length}</p>
-              <p className="text-[10px] text-sky-700 font-medium truncate">Awaiting operator</p>
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">Pending</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{listings.length}</p>
+              <p className="text-[10px] text-sky-700 font-medium truncate">Awaiting review</p>
             </div>
           </div>
 
           {/* KPI 2: Verified Live Inventory */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Live Inventory</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{verifiedPlots.length}</p>
-              <p className="text-[10px] text-emerald-700 font-medium truncate">Public 3D map</p>
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">Inventory</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{verifiedPlots.length}</p>
+              <p className="text-[10px] text-emerald-700 font-medium truncate">Live on 3D map</p>
             </div>
           </div>
 
           {/* KPI 3: Total Verified Valuation */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
               <Coins className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Live Valuation</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight" title={`PKR ${totalValuationPkr.toLocaleString()}`}>
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">Valuation</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight" title={`PKR ${totalValuationPkr.toLocaleString()}`}>
                 {formatValuationSummary(totalValuationPkr)}
               </p>
-              <p className="text-[10px] text-indigo-700 font-medium truncate">Active cadastre value</p>
+              <p className="text-[10px] text-indigo-700 font-medium truncate">Cadastre value</p>
             </div>
           </div>
 
-          {/* KPI 4: Fraud & Encroachments Blocked */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center shrink-0">
-              <ShieldAlert className="w-5 h-5" />
+          {/* KPI 4: Total Visitors All-Time */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+              <Users className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Blocked / Returned</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{stats.rejectedCount || 0}</p>
-              <p className="text-[10px] text-rose-700 font-medium truncate">Violations prevented</p>
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">All-Time Visitors</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{visitorAnalytics.totalVisitors.toLocaleString()}</p>
+              <p className="text-[10px] text-emerald-700 font-medium truncate">{visitorAnalytics.totalPageviews} total views</p>
             </div>
           </div>
 
-          {/* KPI 5: Encrypted Vault Deeds */}
-          <div className="col-span-2 lg:col-span-1 bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0">
+          {/* KPI 5: Panaflex QR Scans */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shrink-0">
+              <QrCode className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">QR Banner Scans</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{visitorAnalytics.totalQrScans.toLocaleString()}</p>
+              <p className="text-[10px] text-amber-700 font-medium truncate">{visitorAnalytics.liveVisitorsNow} live online</p>
+            </div>
+          </div>
+
+          {/* KPI 6: Encrypted Vault Deeds */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0">
               <Lock className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Encrypted Deeds</p>
-              <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{totalEncryptedDocs}</p>
-              <p className="text-[10px] text-teal-700 font-medium truncate">AES-256-GCM vault</p>
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">Encrypted Deeds</p>
+              <p className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{totalEncryptedDocs}</p>
+              <p className="text-[10px] text-teal-700 font-medium truncate">AES-256 vault</p>
             </div>
           </div>
         </div>
@@ -821,9 +870,31 @@ export default function ReviewPage() {
               {auditLogs.length}
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('analytics')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition shadow-2xs ${
+              activeTab === 'analytics'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            <span>Visitor Analytics</span>
+            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-extrabold flex items-center gap-1.5 ${
+              activeTab === 'analytics' ? 'bg-emerald-800 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+            }`}>
+              {visitorAnalytics.liveVisitorsNow > 0 && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+              )}
+              <span>{visitorAnalytics.totalVisitors.toLocaleString()} Visitors</span>
+            </span>
+          </button>
         </div>
 
-        {/* Item 4: Filter, Sort & Society Search Bar */}
+        {/* Filter, Sort & Society Search Bar (Visible for Queue, Verified, and Logs) */}
+        {activeTab !== 'analytics' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-3.5 sm:p-4 mb-6">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
             {/* Search Input */}
@@ -912,6 +983,7 @@ export default function ReviewPage() {
             )}
           </div>
         </div>
+        )}
 
         {loading ? (
           <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 flex items-center justify-center gap-3 text-slate-500 text-sm">
@@ -1862,7 +1934,7 @@ export default function ReviewPage() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'logs' ? (
           /* Item 2: Security & Document Access Logs Tab */
           <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1988,6 +2060,436 @@ export default function ReviewPage() {
                 </table>
               </div>
             )}
+          </div>
+        ) : (
+          /* Visitor Analytics Dashboard */
+          <div className="space-y-6">
+            {/* Analytics Header */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-700" />
+                  Citizen Traffic &amp; QR Cadastre Intelligence
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Permanent real-time analytics engine tracking citizen engagement, physical Panaflex QR banner scans, and active map visitors.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0">
+                {visitorAnalytics.liveVisitorsNow > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    <span>{visitorAnalytics.liveVisitorsNow} Online Now</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                    <span>0 Online (Past 5m)</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fetchQueue(passphrase)}
+                  disabled={loading}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-60"
+                  title="Refresh live visitor telemetry"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh Telemetry</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Primary Analytics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: All-Time Unique Visitors */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">All-Time Visitors</span>
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    {visitorAnalytics.totalVisitors.toLocaleString()}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {visitorAnalytics.totalPageviews.toLocaleString()} total pageviews recorded
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 2: Panaflex Banner QR Scans */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Panaflex QR Scans</span>
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center">
+                    <QrCode className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    {visitorAnalytics.totalQrScans.toLocaleString()}
+                  </div>
+                  <p className="text-xs text-amber-700 font-semibold mt-1">
+                    {visitorAnalytics.totalVisitors > 0
+                      ? `${Math.round((visitorAnalytics.totalQrScans / visitorAnalytics.totalVisitors) * 100)}% of citizen acquisition`
+                      : 'Physical banner campaign'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Today's Citizens & Views */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Today&apos;s Traffic</span>
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    {visitorAnalytics.todayVisitors.toLocaleString()}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {visitorAnalytics.todayPageviews.toLocaleString()} views recorded today
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 4: Live Citizens Online */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Active Citizens</span>
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>{visitorAnalytics.liveVisitorsNow.toLocaleString()}</span>
+                    {visitorAnalytics.liveVisitorsNow > 0 && (
+                      <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        Live
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Active within the last 5 minutes
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Mid Grid: 7-Day Trend & Acquisition Channels */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 7-Day Trend Chart (2 Cols) */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-xs p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">7-Day Traffic &amp; QR Banner Trend</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Daily breakdown of unique citizens, total page impressions, and physical QR scans.</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-600">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-emerald-600 inline-block" />
+                      Pageviews
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-emerald-400 inline-block" />
+                      Visitors
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-amber-500 inline-block" />
+                      QR Scans
+                    </span>
+                  </div>
+                </div>
+
+                {visitorAnalytics.dailyTrend.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    No trend data recorded yet.
+                  </div>
+                ) : (
+                  <div>
+                    {(() => {
+                      const maxDaily = Math.max(
+                        1,
+                        ...visitorAnalytics.dailyTrend.map((d) =>
+                          Math.max(d.pageviews || 0, d.visitors || 0, d.qrScans || 0)
+                        )
+                      );
+                      return (
+                        <div className="grid grid-cols-7 gap-2 sm:gap-3 items-end h-44 pt-4 pb-2 px-1">
+                          {visitorAnalytics.dailyTrend.map((d) => {
+                            const pvH = Math.max(6, Math.round(((d.pageviews || 0) / maxDaily) * 100));
+                            const vH = Math.max(6, Math.round(((d.visitors || 0) / maxDaily) * 100));
+                            const qrH = (d.qrScans || 0) > 0 ? Math.max(6, Math.round((d.qrScans / maxDaily) * 100)) : 0;
+                            const dayName = new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+
+                            return (
+                              <div key={d.date} className="flex flex-col items-center h-full justify-end group">
+                                <div className="text-[10px] font-bold text-slate-400 mb-1.5 opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                                  {d.pageviews} views
+                                </div>
+                                <div className="w-full flex items-end justify-center gap-1 h-32 px-1">
+                                  {/* Pageviews bar */}
+                                  <div
+                                    className="w-2 sm:w-3 bg-emerald-600 rounded-t-xs transition-all hover:bg-emerald-700"
+                                    style={{ height: `${pvH}%` }}
+                                    title={`${d.date}: ${d.pageviews} pageviews`}
+                                  />
+                                  {/* Visitors bar */}
+                                  <div
+                                    className="w-2 sm:w-3 bg-emerald-400 rounded-t-xs transition-all hover:bg-emerald-500"
+                                    style={{ height: `${vH}%` }}
+                                    title={`${d.date}: ${d.visitors} unique visitors`}
+                                  />
+                                  {/* QR Scans bar */}
+                                  {qrH > 0 ? (
+                                    <div
+                                      className="w-2 sm:w-3 bg-amber-500 rounded-t-xs transition-all hover:bg-amber-600"
+                                      style={{ height: `${qrH}%` }}
+                                      title={`${d.date}: ${d.qrScans} QR scans`}
+                                    />
+                                  ) : (
+                                    <div className="w-2 sm:w-3 h-1 bg-slate-200 rounded-t-xs" />
+                                  )}
+                                </div>
+                                <div className="mt-2 text-center">
+                                  <div className="text-[11px] font-bold text-slate-700">{dayName}</div>
+                                  <div className="text-[9px] text-slate-400">{d.date.slice(5)}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              {/* Acquisition Sources & Devices (1 Col) */}
+              <div className="space-y-6">
+                {/* Traffic Acquisition Sources */}
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-1">Acquisition Channels</h3>
+                  <p className="text-xs text-slate-500 mb-4">How citizens discover the NAQSHAI platform.</p>
+
+                  <div className="space-y-3">
+                    {visitorAnalytics.topSources.length === 0 ? (
+                      <p className="text-xs text-slate-400">No acquisition channels logged yet.</p>
+                    ) : (
+                      visitorAnalytics.topSources.map((s) => {
+                        const isQr = s.source === 'panaflex_qr';
+                        const isWhatsapp = s.source === 'whatsapp';
+                        const pct = visitorAnalytics.totalPageviews > 0
+                          ? Math.round((s.count / visitorAnalytics.totalPageviews) * 100)
+                          : 0;
+                        const label =
+                          s.source === 'panaflex_qr'
+                            ? 'Panaflex Banner QR'
+                            : s.source === 'whatsapp'
+                            ? 'WhatsApp Direct Share'
+                            : s.source === 'google'
+                            ? 'Google Organic Search'
+                            : s.source === 'social'
+                            ? 'Social Media'
+                            : s.source === 'direct'
+                            ? 'Direct / Bookmarks'
+                            : s.source;
+
+                        return (
+                          <div key={s.source} className="text-xs">
+                            <div className="flex items-center justify-between font-medium mb-1">
+                              <span className="flex items-center gap-1.5 text-slate-800">
+                                {isQr ? (
+                                  <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                                ) : isWhatsapp ? (
+                                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Globe className="w-3.5 h-3.5 text-slate-400" />
+                                )}
+                                <span className={isQr ? 'font-bold text-amber-900' : ''}>{label}</span>
+                              </span>
+                              <span className="text-slate-500 font-mono">
+                                {s.count} ({pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-2 rounded-full transition-all ${
+                                  isQr ? 'bg-amber-500' : isWhatsapp ? 'bg-emerald-600' : 'bg-slate-400'
+                                }`}
+                                style={{ width: `${Math.max(4, pct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Device Breakdown */}
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5">
+                  <h3 className="text-sm font-bold text-slate-900 mb-1">Citizen Device Platforms</h3>
+                  <p className="text-xs text-slate-500 mb-4">Hardware platforms used to inspect the cadastre.</p>
+
+                  {(() => {
+                    const devTotal =
+                      (visitorAnalytics.deviceBreakdown.mobile || 0) +
+                      (visitorAnalytics.deviceBreakdown.desktop || 0) +
+                      (visitorAnalytics.deviceBreakdown.tablet || 0) || 1;
+                    const mobPct = Math.round(((visitorAnalytics.deviceBreakdown.mobile || 0) / devTotal) * 100);
+                    const dskPct = Math.round(((visitorAnalytics.deviceBreakdown.desktop || 0) / devTotal) * 100);
+                    const tabPct = 100 - mobPct - dskPct;
+
+                    return (
+                      <div>
+                        <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-slate-100">
+                          <div className="bg-emerald-600 h-full" style={{ width: `${mobPct}%` }} title={`Mobile: ${mobPct}%`} />
+                          <div className="bg-sky-600 h-full" style={{ width: `${dskPct}%` }} title={`Desktop: ${dskPct}%`} />
+                          <div className="bg-indigo-500 h-full" style={{ width: `${tabPct > 0 ? tabPct : 0}%` }} title={`Tablet: ${tabPct}%`} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            <Smartphone className="w-4 h-4 text-emerald-700 mx-auto mb-1" />
+                            <div className="font-bold text-slate-900">{visitorAnalytics.deviceBreakdown.mobile || 0}</div>
+                            <div className="text-[10px] text-slate-500">Mobile ({mobPct}%)</div>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            <Laptop className="w-4 h-4 text-sky-700 mx-auto mb-1" />
+                            <div className="font-bold text-slate-900">{visitorAnalytics.deviceBreakdown.desktop || 0}</div>
+                            <div className="text-[10px] text-slate-500">Desktop ({dskPct}%)</div>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            <Smartphone className="w-4 h-4 text-indigo-700 mx-auto mb-1" />
+                            <div className="font-bold text-slate-900">{visitorAnalytics.deviceBreakdown.tablet || 0}</div>
+                            <div className="text-[10px] text-slate-500">Tablet</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Row: Top Pages & Real-Time Live Visits Stream */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Top Pages (1 Col) */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5">
+                <h3 className="text-sm font-bold text-slate-900 mb-1">Most Visited Pages</h3>
+                <p className="text-xs text-slate-500 mb-4">Top URLs requested by visiting citizens.</p>
+
+                <div className="space-y-2.5">
+                  {visitorAnalytics.topPages.length === 0 ? (
+                    <p className="text-xs text-slate-400">No page views recorded yet.</p>
+                  ) : (
+                    visitorAnalytics.topPages.map((p, idx) => (
+                      <div
+                        key={p.path}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px] shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="font-mono text-slate-800 font-medium truncate">
+                            {p.path === '/' ? '/ (3D Cadastre Map)' : p.path}
+                          </span>
+                        </div>
+                        <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px] shrink-0">
+                          {p.count} views
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Real-Time Live Event Stream (2 Cols) */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Live Citizen Access Stream</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Real-time incoming page loads, banner QR scans, and referral events.</p>
+                  </div>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    Latest {visitorAnalytics.recentVisits.length} events
+                  </span>
+                </div>
+
+                {visitorAnalytics.recentVisits.length === 0 ? (
+                  <div className="p-10 text-center text-xs text-slate-400">
+                    No visitor events logged yet. Open the site or scan the banner QR code to see live activity.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          <th className="py-2.5 px-3">Time</th>
+                          <th className="py-2.5 px-3">Acquisition Source</th>
+                          <th className="py-2.5 px-3">Device &amp; Browser</th>
+                          <th className="py-2.5 px-3">Page Visited</th>
+                          <th className="py-2.5 px-3">Citizen ID</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visitorAnalytics.recentVisits.map((v) => {
+                          const isQr = v.source === 'panaflex_qr';
+                          const isWhatsapp = v.source === 'whatsapp';
+
+                          return (
+                            <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
+                                <span className="font-semibold text-slate-800">{timeAgo(v.created_at)}</span>
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                    isQr
+                                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                      : isWhatsapp
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  {isQr && <QrCode className="w-3 h-3 text-amber-600" />}
+                                  {isWhatsapp && <MessageSquare className="w-3 h-3 text-emerald-600" />}
+                                  <span>{isQr ? 'Panaflex Banner QR' : isWhatsapp ? 'WhatsApp' : v.source || 'Direct'}</span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
+                                <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                                  {v.device_type === 'mobile' ? (
+                                    <Smartphone className="w-3 h-3 text-emerald-700" />
+                                  ) : (
+                                    <Laptop className="w-3 h-3 text-sky-700" />
+                                  )}
+                                  <span className="capitalize">{v.device_type || 'Desktop'}</span>
+                                  <span className="text-slate-400">· {v.browser || 'Browser'}</span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap font-mono text-[11px] text-slate-700">
+                                {v.page_path || '/'}
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap font-mono text-[11px] text-slate-500">
+                                {v.visitor_id ? `${v.visitor_id.slice(0, 8)}…` : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

@@ -187,16 +187,135 @@ export async function GET(request) {
       rejectedCount = 0;
     }
 
+    let visitorAnalytics = {
+      totalVisitors: 0,
+      totalPageviews: 0,
+      totalQrScans: 0,
+      liveVisitorsNow: 0,
+      todayVisitors: 0,
+      todayPageviews: 0,
+      deviceBreakdown: { mobile: 0, desktop: 0, tablet: 0 },
+      topPages: [],
+      topSources: [],
+      dailyTrend: [],
+      recentVisits: [],
+    };
+
+    try {
+      const { data: visits } = await dbAdmin
+        .from('site_visits')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      if (visits && visits.length > 0) {
+        const allVisitorIds = new Set();
+        const liveVisitorIds = new Set();
+        const todayVisitorIds = new Set();
+        let todayPageviews = 0;
+        let qrScans = 0;
+        const deviceCounts = { mobile: 0, desktop: 0, tablet: 0 };
+        const pageCounts = {};
+        const sourceCounts = {};
+        const dailyMap = {};
+
+        const now = Date.now();
+        const fiveMinAgo = now - 5 * 60 * 1000;
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(now - i * 86400000).toISOString().slice(0, 10);
+          dailyMap[d] = { date: d, pageviews: 0, visitors: new Set(), qrScans: 0 };
+        }
+
+        for (const v of visits) {
+          allVisitorIds.add(v.visitor_id);
+
+          const vTime = new Date(v.created_at).getTime();
+          const vDateStr = new Date(v.created_at).toISOString().slice(0, 10);
+
+          if (vTime >= fiveMinAgo) {
+            liveVisitorIds.add(v.visitor_id);
+          }
+
+          if (vDateStr === todayStr) {
+            todayVisitorIds.add(v.visitor_id);
+            todayPageviews++;
+          }
+
+          if (v.source === 'panaflex_qr') {
+            qrScans++;
+          }
+
+          const dev = v.device_type === 'mobile' ? 'mobile' : v.device_type === 'tablet' ? 'tablet' : 'desktop';
+          deviceCounts[dev] = (deviceCounts[dev] || 0) + 1;
+
+          const p = v.page_path || '/';
+          pageCounts[p] = (pageCounts[p] || 0) + 1;
+
+          const s = v.source || 'direct';
+          sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+
+          if (dailyMap[vDateStr]) {
+            dailyMap[vDateStr].pageviews++;
+            dailyMap[vDateStr].visitors.add(v.visitor_id);
+            if (v.source === 'panaflex_qr') {
+              dailyMap[vDateStr].qrScans++;
+            }
+          }
+        }
+
+        let totalCount = visits.length;
+        try {
+          const { count } = await dbAdmin
+            .from('site_visits')
+            .select('id', { count: 'exact', head: true });
+          if (count != null && count > totalCount) totalCount = count;
+        } catch (_) {}
+
+        visitorAnalytics = {
+          totalVisitors: allVisitorIds.size,
+          totalPageviews: totalCount,
+          totalQrScans: qrScans,
+          liveVisitorsNow: liveVisitorIds.size,
+          todayVisitors: todayVisitorIds.size,
+          todayPageviews,
+          deviceBreakdown: deviceCounts,
+          topPages: Object.entries(pageCounts)
+            .map(([path, count]) => ({ path, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5),
+          topSources: Object.entries(sourceCounts)
+            .map(([source, count]) => ({ source, count }))
+            .sort((a, b) => b.count - a.count),
+          dailyTrend: Object.values(dailyMap).map((d) => ({
+            date: d.date,
+            pageviews: d.pageviews,
+            visitors: d.visitors.size,
+            qrScans: d.qrScans,
+          })),
+          recentVisits: visits.slice(0, 25),
+        };
+      }
+    } catch (_) {
+      // Graceful fallback if table is fresh
+    }
+
     return NextResponse.json(
       {
         success: true,
         listings,
         verifiedPlots,
         auditLogs,
+        visitorAnalytics,
         stats: {
           rejectedCount,
           pendingCount: listings.length,
           verifiedCount: verifiedPlots.length,
+          totalVisitors: visitorAnalytics.totalVisitors,
+          totalPageviews: visitorAnalytics.totalPageviews,
+          totalQrScans: visitorAnalytics.totalQrScans,
+          liveVisitorsNow: visitorAnalytics.liveVisitorsNow,
         },
       },
       {
