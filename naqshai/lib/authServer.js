@@ -132,7 +132,8 @@ export function getBearerToken(request) {
  * actually configured AND the presented token matches it exactly.
  */
 export function isServiceRoleToken(token) {
-  return !!serviceKey && !!token && timingSafeEqual(token, serviceKey);
+  const currentKey = process.env.SUPABASE_SERVICE_ROLE_KEY || serviceKey;
+  return !!currentKey && !!token && timingSafeEqual(token, currentKey);
 }
 
 /**
@@ -153,5 +154,6 @@ export function isServiceRoleToken(token) {
  */
 export function isOperatorToken(token) {
   if (isServiceRoleToken(token)) return true;
-  return !!operatorPassphrase && !!token && timingSafeEqual(token, operatorPassphrase);
+  const currentPass = process.env.OPERATOR_PASSPHRASE || operatorPassphrase;
+  return !!currentPass && !!token && timingSafeEqual(token, currentPass);
 }

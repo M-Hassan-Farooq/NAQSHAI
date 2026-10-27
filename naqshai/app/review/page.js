@@ -128,17 +128,24 @@ export default function ReviewPage() {
       const res = await fetch('/api/review', {
         headers: { Authorization: `Bearer ${pass}` },
       });
-      if (res.status === 403) {
-        // Bad/expired passphrase — drop back to the gate.
-        try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 429) {
         setAuthed(false);
         setPassphrase('');
-        setGateError('That passphrase was not accepted.');
+        setGateError(json.error || 'Security Lockout: Too many failed attempts. Access blocked for 15 minutes.');
         setListings([]);
         setVerifiedPlots([]);
         return false;
       }
-      const json = await res.json().catch(() => ({}));
+      if (res.status === 403) {
+        // Bad/expired passphrase — drop back to the gate.
+        setAuthed(false);
+        setPassphrase('');
+        setGateError(json.error || 'That passphrase was not accepted.');
+        setListings([]);
+        setVerifiedPlots([]);
+        return false;
+      }
       if (!res.ok || !json.success) {
         setError(json.error || 'Could not load the review queue.');
         setListings([]);

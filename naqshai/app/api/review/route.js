@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getBearerToken, isOperatorToken, getAdminClient } from '@/lib/authServer';
+import { getAdminClient } from '@/lib/authServer';
+import { verifyOperatorRequest } from '@/lib/operatorRateLimiter';
 import { draftTitlePreview } from '@/lib/draftProgress';
 import { checkPolygonConflict } from '@/lib/polygonOverlap';
 import { verifyAreaMatch } from '@/lib/areaCalculator';
@@ -15,11 +16,26 @@ const DOC_LABELS = {
 };
 
 // GET /api/review — operator-only. Returns every SUBMITTED listing across all users
-// as a review queue, so an operator can inspect and approve/reject them.
+// Protected by IP rate limiting (5 attempts / 15-minute lockout) and constant-time token comparison.
 export async function GET(request) {
   try {
-    if (!isOperatorToken(getBearerToken(request))) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    const auth = verifyOperatorRequest(request);
+    if (!auth.authorized) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: auth.error,
+          remainingAttempts: auth.remainingAttempts,
+          lockoutSeconds: auth.lockoutSeconds,
+        },
+        {
+          status: auth.status,
+          headers: {
+            'X-Robots-Tag': 'noindex, nofollow, noarchive',
+            'Cache-Control': 'no-store, private',
+          },
+        }
+      );
     }
 
     const dbAdmin = getAdminClient();
@@ -148,7 +164,15 @@ export async function GET(request) {
       };
     });
 
-    return NextResponse.json({ success: true, listings, verifiedPlots });
+    return NextResponse.json(
+      { success: true, listings, verifiedPlots },
+      {
+        headers: {
+          'X-Robots-Tag': 'noindex, nofollow, noarchive',
+          'Cache-Control': 'no-store, private',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json({ success: false, error: err?.message || 'Internal Server Error' }, { status: 500 });
   }
