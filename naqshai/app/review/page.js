@@ -206,6 +206,7 @@ export default function ReviewPage() {
       if (res.status === 429) {
         setAuthed(false);
         setPassphrase('');
+        try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
         setGateError(json.error || 'Security Lockout: Too many failed attempts. Access blocked for 15 minutes.');
         setListings([]);
         setVerifiedPlots([]);
@@ -216,6 +217,7 @@ export default function ReviewPage() {
         // Bad/expired passphrase — drop back to the gate.
         setAuthed(false);
         setPassphrase('');
+        try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
         setGateError(json.error || 'That passphrase was not accepted.');
         setListings([]);
         setVerifiedPlots([]);
@@ -242,8 +244,8 @@ export default function ReviewPage() {
       });
       setAuthed(true);
       setPassphrase(pass);
-      // Zero-Trust: ensure administrative passphrase never sits in browser storage
-      try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
+      // Persist in tab-scoped sessionStorage so page refresh (F5) retains the operator session
+      try { sessionStorage.setItem(PASS_STORAGE_KEY, pass); } catch (_) {}
       return true;
     } catch {
       setError('Network error while loading the review queue.');
@@ -253,12 +255,17 @@ export default function ReviewPage() {
     }
   }, []);
 
-  // On mount, initialize gate in volatile memory (never read from persistent storage).
+  // On mount, restore active tab-scoped session if present
   useEffect(() => {
     document.title = 'Review Console · NAQSHAI';
-    try { sessionStorage.removeItem(PASS_STORAGE_KEY); } catch (_) {}
+    try {
+      const saved = sessionStorage.getItem(PASS_STORAGE_KEY);
+      if (saved) {
+        fetchQueue(saved);
+      }
+    } catch (_) {}
     setBooting(false);
-  }, []);
+  }, [fetchQueue]);
 
   const handleUnlock = async (e) => {
     e.preventDefault();
