@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:pipeline": "node scripts/test-portal-verification-pipeline.mjs",
-    "test:security": "node scripts/test-csp-and-headers.mjs"
+    "test:security": "node scripts/test-csp-and-headers.mjs",
+    "docs:security": "node scripts/build-security-pdf.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",

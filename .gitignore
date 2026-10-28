@@ -35,3 +35,9 @@ competitors/
 scratch/
 *.pptx
 repomix-output.xml
+
+# Documentation & PDFs (do not push)
+documentation/
+Documentation/
+NAQSHAI/documentation/
+*.pdf
