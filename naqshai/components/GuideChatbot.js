@@ -318,7 +318,7 @@ export default function GuideChatbot() {
 
     // 2. Query /api/chat with Gemini for custom questions (with automatic retry)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
     try {
       const chatPayload = newMessages.map((m) => ({

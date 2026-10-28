@@ -68,6 +68,7 @@ flowchart TD
 | **Network Circuit-Breaker** | `resilientFetch` traps `ERR_CONNECTION_RESET` and temporary drops with a 15-second cooldown. | [lib/supabaseClient.js](file:///d:/Uni/Work/Coding/Vibe%20Coding/Bano-Qabil%20AI%20Hackathon/naqshai/NAQSHAI/lib/supabaseClient.js#L54-L90) | Protects client from connection reset spam and UI freezing. |
 | **Strict AI Schema Enforcement** | Gemini Vision output constrained to deterministic JSON schema with typed boolean checks and flags. | [lib/aiDocumentVerifier.js](file:///d:/Uni/Work/Coding/Vibe%20Coding/Bano-Qabil%20AI%20Hackathon/naqshai/NAQSHAI/lib/aiDocumentVerifier.js#L248-L290) | Neutralizes prompt injection inside uploaded document PDFs/images. |
 | **Multi-Model Fallback Chain** | 8-tier automatic model fallback (`gemini-2.5-flash` → `gemini-3.5-flash` → `gemini-3.6-flash`, etc.). | [lib/aiDocumentVerifier.js](file:///d:/Uni/Work/Coding/Vibe%20Coding/Bano-Qabil%20AI%20Hackathon/naqshai/NAQSHAI/lib/aiDocumentVerifier.js#L4-L13) | Prevents verification downtime during Google GenAI demand spikes (HTTP 503/429). |
+| **Strict CSP & Browser Perimeter** | Enforces Content-Security-Policy, HSTS (2-yr preload), `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, and Hardware isolation. | [next.config.mjs](file:///d:/Uni/Work/Coding/Vibe%20Coding/Bano-Qabil%20AI%20Hackathon/naqshai/NAQSHAI/next.config.mjs) | Eliminates Clickjacking, Cross-Site Scripting (XSS), MIME-sniffing, and server fingerprinting (`poweredByHeader: false`). |
 
 ---
 
@@ -174,18 +175,21 @@ flowchart TD
 
 ## 5. Automated Test Suite Verification
 
-Every security assertion in this dossier is verified by **157 automated tests** (100% passing):
+Every security assertion in this dossier is verified by **193 automated tests** (100% passing):
 
 ```powershell
 # 1. End-to-end pipeline verification (Authority, Reverse Portals, Geodesic Area, Schema, Security Gates)
 npm run test:pipeline        # 41 / 41 PASS (100%)
 
-# 2. Comprehensive OTP & Telephony Security (Normalization, Rate Limiting, Brute Force, Expiration)
-node scripts/test-otp-verification.mjs   # 77 / 77 PASS (100%)
+# 2. Comprehensive OTP & Telephony Security (Normalization, Zero Wire Leak, Terminal Log, Brute Force)
+node scripts/test-otp-verification.mjs   # 79 / 79 PASS (100%)
 
 # 3. Seller Portal & Cadastral Conflict Suite (Draft Progress, Boundaries, Multi-Model Fallbacks)
 node scripts/test-seller-portal.mjs      # 36 / 36 PASS (100%)
 
-# 4. AI Document Verifier Edge Cases (Empty Docs, Storage Failure Handling, API Key Verification)
+# 4. Content Security Policy (CSP) & Perimeter Defense (Directives, HSTS, XFO, Permissions, COOP)
+npm run test:security        # 34 / 34 PASS (100%)
+
+# 5. AI Document Verifier Edge Cases (Empty Docs, Storage Failure Handling, API Key Verification)
 node scripts/test-ai-verification.mjs    # 3 / 3 PASS (100%)
 ```

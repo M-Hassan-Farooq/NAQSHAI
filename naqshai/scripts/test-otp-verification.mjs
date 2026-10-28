@@ -20,7 +20,8 @@ import {
   normalizePhoneNumber,
   isValidPhone,
   sendOtp,
-  verifyOtp
+  verifyOtp,
+  getStoredOtpCode
 } from '../lib/phoneVerification.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -132,8 +133,10 @@ async function runOtpTestSuite() {
 
   assert(sendResA.success === true, 'sendOtp succeeds for valid number');
   assert(sendResA.normalizedPhone === '+923109988771', 'sendOtp returns normalized phone');
-  assert(typeof sendResA.demoOtp === 'string' && sendResA.demoOtp.length === 6, 'Generated OTP code is 6 characters');
-  assert(/^\d{6}$/.test(sendResA.demoOtp), 'Generated OTP consists purely of 6 digits');
+  const storedCodeA = getStoredOtpCode(testPhoneA);
+  assert(typeof storedCodeA === 'string' && storedCodeA.length === 6, 'Generated OTP code is 6 characters in server store');
+  assert(/^\d{6}$/.test(storedCodeA), 'Generated OTP consists purely of 6 digits');
+  assert(sendResA.demoOtp === undefined, 'sendOtp does NOT expose demoOtp in response (Option 1 Terminal Security)');
   assert(sendResA.isDemoMode === true || sendResA.isDemoMode === false, 'isDemoMode boolean flag is present');
   assert(typeof sendResA.message === 'string' && sendResA.message.length > 0, 'User-friendly message returned');
 
@@ -187,7 +190,7 @@ async function runOtpTestSuite() {
   );
 
   // Whitespace resilience: trailing or leading spaces in user input
-  const generatedCodeA = sendResA.demoOtp;
+  const generatedCodeA = getStoredOtpCode(testPhoneA);
   const whitespaceCodeRes = verifyOtp(testPhoneA, `  ${generatedCodeA}  `);
   assert(whitespaceCodeRes.success === true, 'Verification succeeds with whitespace padded input code');
   assert(whitespaceCodeRes.phone === '+923109988771', 'Response contains verified normalized phone');
@@ -209,6 +212,7 @@ async function runOtpTestSuite() {
   const testPhoneC = '03157778899';
   const sendResC = await sendOtp(testPhoneC);
   assert(sendResC.success === true, 'Setup phone C for brute force testing');
+  const codeC = getStoredOtpCode(testPhoneC);
 
   // Submit wrong code 5 times
   for (let i = 1; i <= 5; i++) {
@@ -226,7 +230,7 @@ async function runOtpTestSuite() {
   );
 
   // Even the correct code is now invalid because the record was burned
-  const burnedRes = verifyOtp(testPhoneC, sendResC.demoOtp);
+  const burnedRes = verifyOtp(testPhoneC, codeC);
   assert(burnedRes.success === false, 'Compromised OTP record was completely purged from memory store');
 
   // -------------------------------------------------------------------------
@@ -236,6 +240,7 @@ async function runOtpTestSuite() {
   const testPhoneD = '03184443322';
   const sendResD = await sendOtp(testPhoneD);
   const normalizedD = sendResD.normalizedPhone;
+  const codeD = getStoredOtpCode(testPhoneD);
 
   // Direct access to internal singleton store to simulate time-travel expiration
   const store = globalThis.__naqshaiOtpStore;
@@ -246,7 +251,7 @@ async function runOtpTestSuite() {
   const recordD = store.get(normalizedD);
   recordD.expiresAt = Date.now() - 1000; // 1 second ago
 
-  const expiredRes = verifyOtp(testPhoneD, sendResD.demoOtp);
+  const expiredRes = verifyOtp(testPhoneD, codeD);
   assert(expiredRes.success === false, 'Expired OTP rejected upon verification');
   assert(
     expiredRes.error.toLowerCase().includes('expired'),
@@ -264,7 +269,7 @@ async function runOtpTestSuite() {
   
   if (!hasTwilio) {
     assert(sendResA.isDemoMode === true, 'Correctly auto-selected demo mode in local/hackathon environment');
-    assert(typeof sendResA.demoOtp === 'string', 'demoOtp provided for seamless judging & testing without SMS toll');
+    assert(sendResA.demoOtp === undefined, 'demoOtp is NOT exposed in response (Option 1 Terminal Security)');
   }
 
   // -------------------------------------------------------------------------
@@ -280,6 +285,7 @@ async function runOtpTestSuite() {
         return { status: 400, body: { success: false, error: 'Mobile phone number is required.' } };
       }
       const result = await sendOtp(phone);
+      delete result.demoOtp;
       return { status: 200, body: result };
     } catch (err) {
       return { status: 400, body: { success: false, error: err.message || 'Failed to send OTP code.' } };
@@ -321,6 +327,7 @@ async function runOtpTestSuite() {
   assert(routeSendSuccess.status === 200, 'POST /api/auth/phone/send-otp returns 200 on success');
   assert(routeSendSuccess.body.success === true, 'Returns success: true');
   assert(routeSendSuccess.body.normalizedPhone === '+923201122334', 'Returns normalized phone');
+  assert(routeSendSuccess.body.demoOtp === undefined, 'Route response does NOT leak demoOtp to client');
 
   // Route 4: Missing code in verify-otp
   const routeVerifyMissingCode = await routeVerifyOtp({ phone: testPhoneE });
@@ -332,7 +339,7 @@ async function runOtpTestSuite() {
   assert(routeVerifyWrongCode.body.success === false, 'Returns success: false');
 
   // Route 6: Valid code in verify-otp
-  const validCode = routeSendSuccess.body.demoOtp;
+  const validCode = getStoredOtpCode(testPhoneE);
   const routeVerifySuccess = await routeVerifyOtp({ phone: testPhoneE, code: validCode });
   assert(routeVerifySuccess.status === 200, 'POST /api/auth/phone/verify-otp returns 200 on valid code');
   assert(routeVerifySuccess.body.success === true, 'Returns success: true');

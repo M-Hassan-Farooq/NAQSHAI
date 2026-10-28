@@ -28,7 +28,7 @@ function parseBrowser(userAgent) {
 
 function resolveSource(querySource, referrer) {
   const q = (querySource || '').toLowerCase();
-  if (q.includes('panaflex') || q.includes('qr') || q.includes('banner')) {
+  if (q.includes('panaflex') || q.includes('qr') || q.includes('banner') || q.includes('me-qr')) {
     return 'panaflex_qr';
   }
   if (q.includes('whatsapp') || q.includes('wa')) {
@@ -39,6 +39,9 @@ function resolveSource(querySource, referrer) {
   }
 
   const ref = (referrer || '').toLowerCase();
+  if (ref.includes('me-qr') || ref.includes('meqr') || ref.includes('qr-code') || ref.includes('qrcode')) {
+    return 'panaflex_qr';
+  }
   if (ref.includes('whatsapp') || ref.includes('wa.me')) return 'whatsapp';
   if (ref.includes('google.')) return 'google';
   if (ref.includes('facebook.') || ref.includes('instagram.') || ref.includes('t.co')) return 'social';
@@ -83,20 +86,24 @@ export async function POST(request) {
     const browser = parseBrowser(ua);
     const source = resolveSource(rawQuerySource, rawReferrer);
 
-    const dbAdmin = getAdminClient();
-    if (dbAdmin && dbAdmin.from) {
-      await dbAdmin.from('site_visits').insert({
-        visitor_id: visitorId,
-        session_id: sessionId,
-        page_path: pagePath,
-        referrer: rawReferrer,
-        source,
-        device_type: deviceType,
-        browser,
-      }).catch((err) => {
-        // Graceful non-blocking error logging
-        console.warn('[SiteAnalytics] Warning inserting visit:', err?.message || err);
-      });
+    try {
+      const dbAdmin = getAdminClient();
+      if (dbAdmin && dbAdmin.from) {
+        const { error: insertErr } = await dbAdmin.from('site_visits').insert({
+          visitor_id: visitorId,
+          session_id: sessionId,
+          page_path: pagePath,
+          referrer: rawReferrer,
+          source,
+          device_type: deviceType,
+          browser,
+        });
+        if (insertErr) {
+          console.warn('[SiteAnalytics] Warning inserting visit:', insertErr.message);
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[SiteAnalytics] Database error inserting visit:', dbErr?.message || dbErr);
     }
 
     return NextResponse.json(

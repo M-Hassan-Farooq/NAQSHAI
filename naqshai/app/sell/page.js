@@ -197,12 +197,6 @@ function PhoneVerificationModal({
     inputRefs.current[targetIdx]?.focus();
   };
 
-  const handleAutoFillAndVerify = async () => {
-    const code = otpState.demoCode || '123456';
-    setOtpState((prev) => ({ ...prev, code, error: '' }));
-    await onVerify(code);
-  };
-
   if (!isOpen) return null;
 
   const isFull = (otpState.code || '').length === 6;
@@ -239,38 +233,19 @@ function PhoneVerificationModal({
           </p>
         </div>
 
-        {/* Demo Mode Notice Banner */}
+        {/* Verification Notice Banner */}
         {otpState.isDemoMode ? (
-          <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-left space-y-2">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-left space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                Hackathon Demo Mode
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+                Local Development Mode
               </span>
-              <span className="text-[10px] text-amber-700 font-medium">Twilio SMS unconfigured</span>
+              <span className="text-[10px] text-slate-500 font-medium">Terminal Inspection</span>
             </div>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              Real SMS gateway is not configured on this server. Your test OTP code is:
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              SMS gateway is in local mode. The 6-digit OTP code has been securely logged to the <strong>server terminal</strong>. Enter the code below to verify.
             </p>
-            <div className="flex items-center justify-between gap-2 bg-white/90 border border-amber-300 rounded-xl px-3 py-1.5">
-              <span className="text-xs text-slate-600 font-medium">Demo Code:</span>
-              <span className="font-mono font-extrabold text-base tracking-widest text-emerald-700">
-                {otpState.demoCode || '123456'}
-              </span>
-              <button
-                type="button"
-                onClick={handleAutoFillAndVerify}
-                disabled={otpState.verifying}
-                className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-              >
-                {otpState.verifying ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3 h-3 text-emerald-600" />
-                )}
-                <span>⚡ Auto-Fill & Verify</span>
-              </button>
-            </div>
           </div>
         ) : (
           <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 text-center text-xs text-emerald-900">
@@ -560,12 +535,12 @@ export default function SellPlotPage() {
         ...prev,
         isOpen: true,
         sending: false,
-        cooldown: data.isDemoMode ? 0 : 60,
+        cooldown: data.isDemoMode ? 10 : 60,
         isDemoMode: !!data.isDemoMode,
-        demoCode: data.demoOtp || '',
+        demoCode: '',
         challengeToken: data.challengeToken || '',
         successMessage: data.isDemoMode
-          ? `Demo code: ${data.demoOtp} (Enter this code to verify)`
+          ? 'Verification code logged to server terminal (dev mode).'
           : 'Verification code sent to your phone via SMS.',
       }));
     } catch (err) {

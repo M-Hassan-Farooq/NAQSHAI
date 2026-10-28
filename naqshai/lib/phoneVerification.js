@@ -143,9 +143,18 @@ function cleanupExpired() {
 }
 
 /**
- * Generates and stores a 6-digit OTP for the given phone number.
+ * Returns the currently stored OTP code for a phone number (used for internal tests and backend verification).
  */
-export async function sendOtp(rawPhone) {
+export function getStoredOtpCode(rawPhone) {
+  const normalized = normalizePhoneNumber(rawPhone);
+  return otpStore.get(normalized)?.code || null;
+}
+
+/**
+ * Generates and stores a 6-digit OTP for the given phone number.
+ * In development / demo mode, the code is securely logged to the server terminal only.
+ */
+export async function sendOtp(rawPhone, options = {}) {
   cleanupExpired();
 
   const normalized = normalizePhoneNumber(rawPhone);
@@ -165,9 +174,8 @@ export async function sendOtp(rawPhone) {
     throw new Error(`Please wait ${remaining} seconds before requesting a new code.`);
   }
 
-  // Generate 6-digit OTP (e.g. 100000 - 999999)
-  // For easy hackathon demo, you can use 123456 or random digits
-  const code = process.env.TWILIO_ACCOUNT_SID ? String(Math.floor(100000 + Math.random() * 900000)) : '123456';
+  // Generate cryptographically random 6-digit OTP (e.g. 100000 - 999999) every time
+  const code = String(crypto.randomInt(100000, 1000000));
   const expiresAt = now + 5 * 60 * 1000; // 5 minutes validity
 
   otpStore.set(normalized, {
@@ -176,6 +184,13 @@ export async function sendOtp(rawPhone) {
     attempts: 0,
     lastSentAt: now,
   });
+
+  // Secure Terminal Logging (Option 1): Code is visible in server terminal only, NOT to the client
+  if (isDemo) {
+    console.log(
+      `\x1b[36m[SMS OTP TERMINAL]\x1b[0m Verification code for \x1b[1m${normalized}\x1b[0m is: \x1b[1m\x1b[32m${code}\x1b[0m (Valid for 5 mins - Check terminal)`
+    );
+  }
 
   // Check if Twilio SMS is configured
   const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
@@ -205,14 +220,17 @@ export async function sendOtp(rawPhone) {
         const errorData = await res.json().catch(() => ({}));
         console.warn('[Twilio SMS Error]:', errorData);
         // Fallback to demo mode if Twilio account has expired/trial restrictions
-        return {
+        const fallbackRes = {
           success: true,
           normalizedPhone: normalized,
           isDemoMode: true,
-          demoOtp: code,
           challengeToken,
-          message: `SMS gateway error. Switched to demo mode: code is ${code}`,
+          message: 'SMS gateway error. Code securely logged to server terminal.',
         };
+        if (options.includeTestCode) {
+          fallbackRes.demoOtp = code;
+        }
+        return fallbackRes;
       }
 
       return {
@@ -225,27 +243,33 @@ export async function sendOtp(rawPhone) {
     } catch (err) {
       console.warn('[Twilio Dispatch Exception]:', err);
       const challengeToken = createChallengeToken(normalized, code, expiresAt);
-      return {
+      const errRes = {
         success: true,
         normalizedPhone: normalized,
         isDemoMode: true,
-        demoOtp: code,
         challengeToken,
-        message: `Network error reaching SMS gateway. Demo code: ${code}`,
+        message: 'Network error reaching SMS gateway. Code logged to server terminal.',
       };
+      if (options.includeTestCode) {
+        errRes.demoOtp = code;
+      }
+      return errRes;
     }
   }
 
-  // Hackathon Smart Demo Mode
+  // Hackathon Smart Demo Mode: Code logged to terminal, omitted from client response
   const challengeToken = createChallengeToken(normalized, code, expiresAt);
-  return {
+  const demoResult = {
     success: true,
     normalizedPhone: normalized,
     isDemoMode: true,
-    demoOtp: code,
     challengeToken,
-    message: `Verification code generated: ${code}`,
+    message: 'Verification code logged to server terminal (SMS gateway in dev mode).',
   };
+  if (options.includeTestCode) {
+    demoResult.demoOtp = code;
+  }
+  return demoResult;
 }
 
 /**

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:pipeline": "node scripts/test-portal-verification-pipeline.mjs"
+    "test:pipeline": "node scripts/test-portal-verification-pipeline.mjs",
+    "test:security": "node scripts/test-csp-and-headers.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",

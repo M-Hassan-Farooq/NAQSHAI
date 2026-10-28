@@ -3,15 +3,22 @@ import { createClient } from '@supabase/supabase-js';
 import { embedText } from '@/lib/plotEmbedding';
 import { computeEnvironmentalMetrics } from '@/lib/environmentalMetrics';
 import { checkRegulatoryStatus } from '@/lib/regulatoryRegistry';
+import {
+  isCasualGreeting,
+  runCadastralAndPriceAgent,
+  runRegulatoryAndLegalAgent,
+  runEnvironmentalAndTerrainAgent,
+  synthesizeMultiAgentBrief
+} from '@/lib/multiAgentAdvisor';
 
 export const runtime = 'nodejs';
 
-// Active, modern Gemini models list with multi-model fallback priority.
+// Active, modern Gemini models list with multi-model fallback priority (fast lite models prioritized first to avoid timeout).
 const SUPPORTED_GEMINI_MODELS = [
-  'gemini-3.5-flash',
-  'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-flash-lite-latest',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
   'gemini-flash-latest',
   'gemini-3.7-flash',
   'gemini-3.8-flash'
@@ -218,14 +225,15 @@ async function executeSearchPlots(ai, db, args) {
     .filter(Boolean)
     .join(' ');
 
-  // 1. Gather all candidates (vector search + full active inventory)
-  const vectorMatches = db && searchTerms
-    ? await withTimeout(searchVectorPlots(ai, db, searchTerms), 8000, []).catch(() => [])
-    : [];
-
-  const dbInventory = db
-    ? await withTimeout(fetchActiveDatabaseInventory(db), 8000, []).catch(() => [])
-    : [];
+  // 1. Gather all candidates in parallel (vector search + full active inventory)
+  const [vectorMatches, dbInventory] = await Promise.all([
+    db && searchTerms
+      ? withTimeout(searchVectorPlots(ai, db, searchTerms), 5000, []).catch(() => [])
+      : Promise.resolve([]),
+    db
+      ? withTimeout(fetchActiveDatabaseInventory(db), 5000, []).catch(() => [])
+      : Promise.resolve([])
+  ]);
 
   const seen = new Set();
   const allCandidates = [];
@@ -588,7 +596,75 @@ Return JSON with 'reply' and 'recommendedPlots': [].`;
       baseSystemInstruction += `\n\nLANGUAGE DIRECTIVE: ${LANG_INSTRUCTIONS[language]}`;
     }
 
-    // Format conversation history for Gemini
+    function streamResponse(text) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          const chunkSize = 64;
+          for (let i = 0; i < text.length; i += chunkSize) {
+            controller.enqueue(encoder.encode(text.slice(i, i + chunkSize)));
+          }
+          controller.close();
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'Cache-Control': 'no-cache, no-transform'
+        }
+      });
+    }
+
+    const latestUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+
+    // Fast Casual Greeting Handler (< 50ms response, zero LLM overhead)
+    if (!isGuide && mode !== 'guide' && isCasualGreeting(latestUserMessage)) {
+      const greetingReply = language === 'UR'
+        ? 'وعلیکم السلام! میں نقشاء اے آئی ایڈوائزر ہوں۔ اسلام آباد اور راولپنڈی میں پلاٹ، ریگولیٹری کلیئرنس اور مارکیٹ قیمت کے بارے میں کیا جاننا چاہتے ہیں؟'
+        : language === 'RO'
+        ? 'Walaikum Assalam! Main NAQSHAI AI Advisor hoon. Islamabad aur Rawalpindi mein plots, CDA/RDA legal verification, ya market rate ke baaray mein poochain!'
+        : 'Hello! I am NAQSHAI AI Advisor. How can I assist you today with property intelligence, CDA/RDA regulatory verification, or market valuations across Islamabad and Rawalpindi?';
+
+      const generatedText = JSON.stringify({
+        reply: greetingReply,
+        recommendedPlots: []
+      });
+
+      return streamResponse(generatedText);
+    }
+
+    // AUTONOMOUS MULTI-AGENT SWARM PIPELINE (Parallel Specialist Subagents)
+    if (!isGuide && mode !== 'guide' && latestUserMessage.length > 20) {
+      try {
+        console.log('[api/chat] 🚀 Initiating Autonomous Multi-Agent Swarm for query...');
+        const [cadastralData, regulatoryData, environmentalData] = await Promise.all([
+          runCadastralAndPriceAgent({ ai, db, userMessage: latestUserMessage }),
+          runRegulatoryAndLegalAgent({ ai, userMessage: latestUserMessage }),
+          runEnvironmentalAndTerrainAgent({ ai, userMessage: latestUserMessage })
+        ]);
+
+        const synthesized = await synthesizeMultiAgentBrief({
+          ai,
+          userMessage: latestUserMessage,
+          conversationHistory: messages,
+          cadastralData,
+          regulatoryData,
+          environmentalData,
+          language
+        });
+
+        if (synthesized && synthesized.reply) {
+          const generatedText = JSON.stringify(synthesized);
+          return streamResponse(generatedText);
+        }
+      } catch (swarmErr) {
+        console.warn('[api/chat] Multi-Agent Swarm notice, falling back to monolithic loop:', swarmErr?.message || swarmErr);
+      }
+    }
+
+    // Format conversation history for Gemini fallback
     const contents = messages.map((msg) => {
       const role = msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user';
       const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -614,7 +690,7 @@ Return JSON with 'reply' and 'recommendedPlots': [].`;
           }
         });
 
-        const initialRes = await withTimeout(initialPromise, 15000, null);
+        const initialRes = await withTimeout(initialPromise, 28000, null);
         if (!initialRes) continue;
 
         const candidate = initialRes.candidates?.[0];
@@ -670,7 +746,7 @@ Return JSON with 'reply' and 'recommendedPlots': [].`;
             }
           });
 
-          const followUpRes = await withTimeout(followUpPromise, 15000, null);
+          const followUpRes = await withTimeout(followUpPromise, 28000, null);
           if (followUpRes && followUpRes.text) {
             generatedText = followUpRes.text;
             break;
@@ -728,25 +804,7 @@ Return JSON with 'reply' and 'recommendedPlots': [].`;
       }
     } catch (_) {}
 
-    // Stream progressive response to client
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        const chunkSize = 64;
-        for (let i = 0; i < generatedText.length; i += chunkSize) {
-          controller.enqueue(encoder.encode(generatedText.slice(i, i + chunkSize)));
-        }
-        controller.close();
-      }
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
-        'Cache-Control': 'no-cache, no-transform'
-      }
-    });
+    return streamResponse(generatedText);
   } catch (err) {
     console.error('[api/chat] Handled error in chat API:', err?.message || err);
     return new Response(

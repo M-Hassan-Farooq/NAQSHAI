@@ -15,7 +15,8 @@ import {
   normalizePhoneNumber,
   isValidPhone,
   sendOtp,
-  verifyOtp
+  verifyOtp,
+  getStoredOtpCode
 } from '../lib/phoneVerification.js';
 import { computeDraftProgress, draftTitlePreview } from '../lib/draftProgress.js';
 import { parseClaimedArea, verifyAreaMatch } from '../lib/areaCalculator.js';
@@ -84,7 +85,7 @@ async function runSellerPortalTestSuite() {
   const sendRes = await sendOtp(testPhone);
   assert(sendRes.success === true, 'sendOtp returns success: true');
   assert(sendRes.normalizedPhone === '+923331112233', 'sendOtp returns normalized phone');
-  const generatedCode = sendRes.demoOtp || '123456';
+  const generatedCode = getStoredOtpCode(testPhone) || '123456';
   assert(typeof generatedCode === 'string' && generatedCode.length === 6, 'Generated OTP is 6 digits');
 
   // 2b. Rate-limiting check

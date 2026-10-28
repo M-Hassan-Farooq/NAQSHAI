@@ -14,6 +14,8 @@ export async function POST(req) {
     }
 
     const result = await sendOtp(phone);
+    // Defense-in-depth: Ensure OTP code is never exposed in client HTTP responses
+    delete result.demoOtp;
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(
