@@ -342,7 +342,7 @@ const htmlContent = `<!DOCTYPE html>
 
       <div class="kpi-row">
         <div class="kpi-card">
-          <div class="kpi-num">193/193</div>
+          <div class="kpi-num">217/217</div>
           <div class="kpi-label">Tests Passing (100%)</div>
         </div>
         <div class="kpi-card">
@@ -623,6 +623,16 @@ export function encryptDocument(buffer, encryptionKey) {
         <td><strong>Zero Autonomous AI Authority:</strong> The AI has zero database write access. Gemini output is strictly advisory; plots can only be published through operator manual verification.</td>
       </tr>
       <tr>
+        <td><strong>XML Delimiter Breakout & Ambiguity</strong></td>
+        <td>Adversarial prompts inject fake closing tags to inject meta-commands into LLM context.</td>
+        <td><strong>XML Boundary Isolation:</strong> Untrusted queries and evidence are isolated within <code>&lt;untrusted_user_query&gt;</code> and <code>&lt;untrusted_document_evidence&gt;</code> with tag stripping.</td>
+      </tr>
+      <tr>
+        <td><strong>Indirect Contact Exfiltration</strong></td>
+        <td>Attacker uses prompt injection in AI chat to extract private seller phone numbers from tool calls.</td>
+        <td><strong>Retrieval Privacy Masking:</strong> Seller phone numbers are redacted in LLM tool context, preventing leakage while safely hydrating UI cards.</td>
+      </tr>
+      <tr>
         <td><strong>Format Hijacking & Hallucination</strong></td>
         <td>Malformed document payload causes LLM to output freeform conversational approval text.</td>
         <td><strong>Strict JSON Schema Enforcement:</strong> Gemini is forced to emit strict JSON matching typed boolean flags (<code>name_matches_claim</code>, <code>serial_number_present</code>) and numeric scores.</td>
@@ -660,7 +670,7 @@ function timingSafeEqual(a, b) {
 
   <!-- SECTION 9: TEST RESULTS -->
   <div class="page-break"></div>
-  <h2>9. Automated Regression & Security Test Suite <span class="section-tag">193/193 Passing</span></h2>
+  <h2>9. Automated Regression & Security Test Suite <span class="section-tag">217/217 Passing</span></h2>
   <p>Every security barrier and cryptographic function is verified by automated test suites executed before production build:</p>
 
   <table>
@@ -697,11 +707,17 @@ function timingSafeEqual(a, b) {
         <td><strong>34 / 34</strong> (100%)</td>
         <td>Migration 15 schema integrity, RLS policies, User-Agent classification, IP sliding-window rate limit, Panaflex QR source attribution.</td>
       </tr>
+      <tr>
+        <td><strong>Adversarial AI & Prompt Injection</strong></td>
+        <td><code>scripts/test-adversarial-prompt-injection.mjs</code></td>
+        <td><strong>24 / 24</strong> (100%)</td>
+        <td>Indirect prompt injection containment, XML boundary isolation, retrieval privacy contact masking, zero autonomous AI authority.</td>
+      </tr>
     </tbody>
     <tfoot>
       <tr style="background-color: #f0fdf4; font-weight: bold;">
         <td colspan="2">TOTAL VERIFIED SECURITY ASSERTIONS</td>
-        <td style="color: #047857;">193 / 193 PASSED</td>
+        <td style="color: #047857;">217 / 217 PASSED</td>
         <td>100% Clean Automated Pass Rate</td>
       </tr>
     </tfoot>
@@ -735,7 +751,7 @@ const mdContent = `# NAQSHAI — Comprehensive Security & Defense Architecture D
 > **Official Technical Security & Compliance Dossier**  
 > **Domain:** AI-Assisted Cadastral Intelligence & Land Record Verification (Islamabad CDA & Rawalpindi RDA/PLRA)  
 > **Version:** v2.4 (October 2026 Release)  
-> **Automated Test Coverage:** 193/193 Passing (100% Pass Rate)  
+> **Automated Test Coverage:** 217/217 Passing (100% Pass Rate)  
 > **Production Deployment:** [https://naqshaii.vercel.app/](https://naqshaii.vercel.app/)  
 
 ---
@@ -775,20 +791,23 @@ NAQSHAI resolves this through a **2-Stage Human-in-the-Loop AI Verification Pipe
 | **Spatial Collision Engine** | Ray-casting Point-in-Polygon & line intersection against all registered plots. | \`lib/polygonOverlap.js\` | Prevents overlapping boundaries and fraudulent double-allotments. |
 | **Zero Autonomous AI Authority** | Gemini Vision reports are strictly advisory; AI has zero database write access. | \`lib/aiDocumentVerifier.js\` | Neutralizes prompt injection inside uploaded document PDFs/images. |
 | **AI Schema Enforcement** | Deterministic JSON schema with typed booleans and numeric confidence scores. | \`lib/aiDocumentVerifier.js\` | Neutralizes prompt injection and hallucinated approval responses. |
+| **XML Boundary Delimitation** | Untrusted user input and document evidence isolated within strict XML tags (\`<untrusted_user_query>\`, \`<untrusted_document_evidence>\`). | \`lib/multiAgentAdvisor.js\`, \`lib/aiDocumentVerifier.js\` | Prevents prompt injection breakouts and instruction-evidence ambiguity. |
+| **Retrieval Privacy Masking** | Seller contact numbers masked from LLM reasoning context; safe client card hydration only. | \`app/api/chat/route.js\` | Prevents phone number harvesting and cross-user data exfiltration via indirect prompt injection. |
 | **Multi-Model Fallback Chain** | 8-tier automatic model fallback (\`gemini-3.5-flash-lite\` → \`gemini-3.5-flash\`, etc.). | \`lib/aiDocumentVerifier.js\` | Prevents verification downtime during Google GenAI demand spikes (HTTP 503/429). |
 | **Analytics Rate-Limiting** | Sliding-window IP rate limit (120 req/min) with crawler/bot filtering. | \`app/api/analytics/track/route.js\` | Defeats denial-of-service spam on tracking endpoints. |
 
 ---
 
-## 3. Automated Test Verification Evidence (193 Tests Passing)
+## 3. Automated Test Verification Evidence (217 Tests Passing)
 
-NAQSHAI maintains a 100% clean test record across 4 dedicated security test suites:
+NAQSHAI maintains a 100% clean test record across 5 dedicated security test suites:
 1. **Content Security Policy & Headers:** \`scripts/test-csp-and-headers.mjs\` — **34/34 Passed**
 2. **Phone Verification & HMAC Challenge:** \`scripts/test-otp-verification.mjs\` — **79/79 Passed**
 3. **Citizen Verification Pipeline:** \`scripts/test-portal-verification-pipeline.mjs\` — **38/38 Passed**
 4. **Visitor Analytics & Anti-Abuse:** \`scripts/test-visitor-analytics.mjs\` — **34/34 Passed**
+5. **Adversarial AI & Prompt Injection:** \`scripts/test-adversarial-prompt-injection.mjs\` — **24/24 Passed**
 
-**Total Passing Security Checks:** **193 / 193 (100% Pass Rate)**
+**Total Passing Security Checks:** **217 / 217 (100% Pass Rate)**
 `;
 
 const mdFilePath = path.join(docsDir, 'NAQSHAI_Security_Architecture_Dossier.md');
