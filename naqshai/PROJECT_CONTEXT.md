@@ -112,11 +112,13 @@ flowchart TD
 * **Purpose:** Prevents double-allotment and boundary conflict fraud by verifying that a newly submitted polygon does not overlap with any previously approved or registered parcel.
 * **Mathematics:** Implements the **Ray-Casting Algorithm** (Jordan Curve Theorem) to determine point-in-polygon containment and line-segment bounding-box intersection.
 
-### 4.3 Environmental & Disaster Risk Engine (`lib/environmentalMetrics.js`)
-* **Purpose:** Evaluates hydrological and noise hazards for Islamabad and Rawalpindi plots based on coordinate centroids:
-  * **Monsoon Flood Risk:** Computes radial proximity to Rawalpindi's **Lai Nullah** catchment corridor and CDA seasonal flood channels. Assigns risk tier (`Low`, `Moderate`, `High`) and setback requirements.
-  * **Geospatial Noise Level (dB):** Calculates ambient noise score (45–85 dB) based on proximity to major arterials (Islamabad Expressway, Kashmir Highway / Srinagar Highway, GT Road, Murree Road).
-  * **Elevation & Topography:** Computes terrain slope and foundation excavation hazard (*bhrati zameen* / filled land).
+### 4.3 Infrastructure, Terrain & Connectivity Analysis (`lib/multiAgentAdvisor.js`)
+* **Purpose:** Evaluates urban connectivity, utility infrastructure readiness, and location access for Islamabad and Rawalpindi plots based on verified municipal geography:
+  * **Arterial Highway Corridors:** Computes travel times and access to major twin-city arteries (Islamabad Expressway, Kashmir Highway / Srinagar Highway, GT Road, Rawalpindi Ring Road).
+  * **Civic Infrastructure Readiness:** Cross-checks sector-level utility availability (SNGPL Sui Gas connections, IESCO electric grid, CDA municipal water supply pipelines).
+  * **Commercial Hub & Markaz Proximity:** Evaluates walking and vehicular access to sector commercial markazes, Metro Bus transit stations, and civic amenities.
+  * **Engineering Elevation & Topography:** Evaluates terrain elevation profiles and foundation excavation suitability.
+  * **Strategic Decommissioning of Speculative Heuristics:** In initial early prototypes, radial heuristic scores for flood setback and traffic noise decibels were evaluated (`lib/environmentalMetrics.js`). Because non-discrete radial heuristics lack precision at the parcel level, they were intentionally deprecated from the user-facing UI and AI conversational constraints to safeguard platform credibility, while retaining underlying database column compatibility.
 
 ### 4.4 Regulatory & Authority Clearance Registry (`lib/regulatoryRegistry.js`)
 * **Curated Regulatory Knowledge Base:** Official gazetted datasets covering:
@@ -183,7 +185,7 @@ flowchart TD
 
     Dispatcher --> Agent1["Agent 1: Cadastral & Price Specialist<br/>(gemini-3.5-flash-lite)<br/>Calculates PKR/Marla & Budget Feasibility"]
     Dispatcher --> Agent2["Agent 2: Legal & Regulatory Specialist<br/>(gemini-3.5-flash-lite)<br/>Checks CDA/RDA NOC & LOP Status"]
-    Dispatcher --> Agent3["Agent 3: Environmental Specialist<br/>(gemini-3.5-flash-lite)<br/>Checks Lai Nullah Flooding & Noise dB"]
+    Dispatcher --> Agent3["Agent 3: Infrastructure Specialist<br/>(gemini-3.5-flash-lite)<br/>Highway Access & Civic Utilities"]
 
     Agent1 --> Synthesizer["Chief Synthesizer Agent<br/>(gemini-3.5-flash)<br/>Deep Trade-off Analysis & Multilingual Voice"]
     Agent2 --> Synthesizer
@@ -243,7 +245,7 @@ naqshai/
 │   ├── authServer.js                    # Server-side auth & timingSafeEqual constant-time matching
 │   ├── multiAgentAdvisor.js             # Autonomous Multi-Agent Swarm (Workers + Synthesizer)
 │   ├── aiDocumentVerifier.js            # Gemini Vision OCR deed analysis (Stage 1 HITL)
-│   ├── environmentalMetrics.js          # Lai Nullah monsoon flood risk & noise level calculations
+│   ├── environmentalMetrics.js          # Sector elevation & terrain calculation utilities
 │   ├── regulatoryRegistry.js            # CDA Zone 1-5, RDA NOC & illegal society gazette datasets
 │   ├── phoneVerification.js             # E.164 phone normalization & CSPRNG OTP challenge generator
 │   ├── operatorRateLimiter.js           # Sliding-window IP lockout engine for /review
@@ -291,8 +293,8 @@ naqshai/
   * `category` (`text`): `residential`, `commercial`, `agricultural`.
   * `is_verified` (`boolean`): True only after human compliance officer approval.
   * `verification_badge` (`text`): `CDA Verified`, `RDA Approved`, `PLRA Fard Verified`.
-  * `flood_risk` (`text`): `Low`, `Moderate`, `High`.
-  * `noise_level` (`numeric`): Ambient decibel score (dB).
+  * `flood_risk` (`text`): Legacy column retained for database schema compatibility.
+  * `noise_level` (`numeric`): Legacy column retained for database schema compatibility.
   * `amenity_scores` (`jsonb`): Proximity metrics (schools, hospitals, commercial, parks).
   * `embedding` (`vector(768)`): Semantic embedding for pgvector cosine matching.
 
@@ -337,7 +339,7 @@ All UI components in NAQSHAI adhere to the **Refined Architectural Light** desig
 │ (Moderate / NOC)  │ (Conditional Review / Pending Land Clearance)      │
 ├───────────────────┼────────────────────────────────────────────────────┤
 │ Danger Badges     │ bg-rose-50 text-rose-800 border-rose-200           │
-│ (Illegal / Flood) │ (Unapproved Society / Encroachment Risk / High)    │
+│ (Illegal/Encroach)│ (Unapproved Society / Encroachment Risk)           │
 └───────────────────┴────────────────────────────────────────────────────┘
 ```
 

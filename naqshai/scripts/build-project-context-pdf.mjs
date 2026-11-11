@@ -562,12 +562,13 @@ const htmlContent = `<!DOCTYPE html>
   <h3>4.2 Spatial Overlap & Boundary Collision Engine (<code>lib/polygonOverlap.js</code>)</h3>
   <p>Implements the <strong>Ray-Casting Algorithm</strong> (Jordan Curve Theorem) to prevent overlapping boundaries and double allotments. Every submitted plot is tested against existing registered polygons; if an intersection is detected, the draft submission is blocked.</p>
 
-  <h3>4.3 Environmental & Disaster Risk Engine (<code>lib/environmentalMetrics.js</code>)</h3>
-  <p>Evaluates hydrological and noise hazards for Islamabad and Rawalpindi plots based on coordinate centroids:</p>
+  <h3>4.3 Infrastructure, Terrain & Connectivity Analysis (<code>lib/multiAgentAdvisor.js</code>)</h3>
+  <p>Evaluates ground connectivity, utility infrastructure, and location access for Islamabad and Rawalpindi plots based on verified municipal geography:</p>
   <ul>
-    <li><strong>Monsoon Flood Risk:</strong> Computes radial proximity to Rawalpindi's <strong>Lai Nullah</strong> catchment corridor and CDA seasonal flood channels, assigning risk tiers (<code>Low</code>, <code>Moderate</code>, <code>High</code>) and setback warnings.</li>
-    <li><strong>Geospatial Noise Level (dB):</strong> Calculates ambient noise score (45–85 dB) based on proximity to major arterials (Islamabad Expressway, Srinagar Highway, GT Road, Murree Road).</li>
-    <li><strong>Elevation & Topography:</strong> Computes terrain slope and foundation excavation hazards (<em>bhrati zameen</em> / filled land).</li>
+    <li><strong>Arterial Highway Corridors:</strong> Evaluates direct access and travel corridors to major twin-city arteries (Islamabad Expressway, Kashmir / Srinagar Highway, GT Road, Rawalpindi Ring Road).</li>
+    <li><strong>Civic Utility Readiness:</strong> Verifies sector-level utility connections (SNGPL Sui Gas network, IESCO electric grid, CDA municipal water supply pipelines).</li>
+    <li><strong>Commercial Hub & Markaz Proximity:</strong> Evaluates walking and vehicular access to sector commercial markazes, Metro Bus transit stations, and civic amenities.</li>
+    <li><strong>Engineering Elevation & Topography:</strong> Evaluates terrain elevation profiles and foundation excavation suitability.</li>
   </ul>
 
   <h3>4.4 Regulatory & Authority Clearance Registry (<code>lib/regulatoryRegistry.js</code>)</h3>
@@ -642,7 +643,7 @@ const htmlContent = `<!DOCTYPE html>
     <ul style="margin-top: 4px; margin-left: 16px;">
       <li><strong>Agent 1: Cadastral & Valuation Specialist (<code>gemini-3.5-flash-lite</code>):</strong> Analyzes budget feasibility, calculates exact price per Marla, and identifies target sector corridors (< 800ms).</li>
       <li><strong>Agent 2: Legal & Regulatory Specialist (<code>gemini-3.5-flash-lite</code>):</strong> Evaluates society NOC status, CDA master plan zoning, and title registry requirements.</li>
-      <li><strong>Agent 3: Environmental & Terrain Specialist (<code>gemini-3.5-flash-lite</code>):</strong> Checks Lai Nullah flood proximity, ambient noise levels (dB), and soil stability.</li>
+      <li><strong>Agent 3: Infrastructure & Location Specialist (<code>gemini-3.5-flash-lite</code>):</strong> Evaluates arterial highway access, civic utility connectivity (gas, electricity, water), and Markaz proximity.</li>
       <li><strong>Chief Synthesizer (<code>gemini-3.5-flash</code>):</strong> Merges specialist findings into a cohesive, structured advisory with fluid multilingual output (English, Nastaliq Urdu, and Roman Urdu).</li>
     </ul>
   </div>
@@ -676,7 +677,7 @@ const htmlContent = `<!DOCTYPE html>
 │   ├── authServer.js                    # Server-side auth & timingSafeEqual constant-time matching
 │   ├── multiAgentAdvisor.js             # Autonomous Multi-Agent Swarm (Workers + Synthesizer)
 │   ├── aiDocumentVerifier.js            # Gemini Vision OCR deed analysis (Stage 1 HITL)
-│   ├── environmentalMetrics.js          # Lai Nullah monsoon flood risk & noise level calculations
+│   ├── environmentalMetrics.js          # Sector elevation & terrain calculation utilities
 │   └── regulatoryRegistry.js            # CDA Zone 1-5, RDA NOC & illegal society gazette datasets
 └── supabase/migrations/                 # 15 PostgreSQL migration scripts (01 to 15)</pre>
 

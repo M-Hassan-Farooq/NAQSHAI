@@ -12,7 +12,6 @@ import {
   ChevronUp,
   FlaskConical,
 } from 'lucide-react';
-import { floodRiskClasses } from '@/components/explore/MapPinIcons';
 
 /**
  * Collapsible & resizable left-hand sidebar containing:
@@ -198,24 +197,6 @@ export default function PlotSidebar({
               <div className="space-y-2.5">
                 {cityPlots.map((plot) => {
                   const isSelected = selectedPlot?.id === plot.id;
-                  const floodVal = plot.details?.floodRisk || '';
-                  const noiseVal = plot.details?.noiseLevel || '';
-                  const elevVal = plot.details?.elevation || '';
-
-                  const isPendingValue = (val) => {
-                    if (!val || typeof val !== 'string') return true;
-                    const lower = val.trim().toLowerCase();
-                    return lower === '' || lower.includes('pending') || lower === 'n/a';
-                  };
-
-                  const isFloodPending = isPendingValue(floodVal);
-                  const isNoisePending = isPendingValue(noiseVal);
-                  const isElevPending = isPendingValue(elevVal);
-
-                  const noiseLower = noiseVal.toLowerCase();
-                  const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
-                  const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
-
                   const isExpanded = expandedPlotIds.has(plot.id);
 
                   return (
@@ -307,40 +288,6 @@ export default function PlotSidebar({
                             {plot.details?.category && (
                               <span className="text-[10px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
                                 {plot.details.category}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Environmental & Risk Badges */}
-                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                            {!isFloodPending && (
-                              <span
-                                className={`px-2 py-0.5 rounded border font-medium ${floodRiskClasses(floodVal)}`}
-                              >
-                                Flood: {floodVal}
-                              </span>
-                            )}
-                            {!isNoisePending && (
-                              <span
-                                className={`px-2 py-0.5 rounded border font-medium ${
-                                  isHighNoise
-                                    ? 'bg-red-50 text-red-800 border-red-200'
-                                    : isQuietNoise
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    : 'bg-amber-50 text-amber-800 border-amber-200'
-                                }`}
-                              >
-                                Noise: {noiseVal}
-                              </span>
-                            )}
-                            {!isElevPending && (
-                              <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                Elevation: {elevVal}
-                              </span>
-                            )}
-                            {isFloodPending && isNoisePending && isElevPending && (
-                              <span className="font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                Survey Pending
                               </span>
                             )}
                           </div>

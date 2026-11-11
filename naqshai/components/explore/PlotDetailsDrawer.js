@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { formatWhatsAppUrl } from '@/lib/formatPlot';
-import { floodRiskClasses } from '@/components/explore/MapPinIcons';
 
 /**
  * Slide-out inspector drawer presenting comprehensive plot intelligence:
@@ -162,69 +161,6 @@ export default function PlotDetailsDrawer({
             </div>
           </dl>
         </details>
-
-        {/* Environmental indicators */}
-        {(() => {
-          const floodVal = selectedPlot.details?.floodRisk || '';
-          const noiseVal = selectedPlot.details?.noiseLevel || '';
-          const elevVal = selectedPlot.details?.elevation || '';
-
-          const isPendingValue = (val) => {
-            if (!val || typeof val !== 'string') return true;
-            const lower = val.trim().toLowerCase();
-            return lower === '' || lower.includes('pending') || lower === 'n/a';
-          };
-
-          const isFloodPending = isPendingValue(floodVal);
-          const isNoisePending = isPendingValue(noiseVal);
-          const isElevPending = isPendingValue(elevVal);
-          const allPending = isFloodPending && isNoisePending && isElevPending;
-
-          const noiseLower = noiseVal.toLowerCase();
-          const isQuietNoise = noiseLower.includes('quiet') || noiseLower.includes('low') || noiseLower.includes('45 db');
-          const isHighNoise = noiseLower.includes('high') || noiseLower.includes('78 db');
-
-          return (
-            <details className="group rounded-card border border-border">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-sm font-semibold text-ink ui-focus-ring [&::-webkit-details-marker]:hidden">
-                <span>Environmental indicators</span>
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="space-y-2 border-t border-border p-3">
-                <p className="text-xs text-muted">Screening information only; not a site inspection or safety guarantee.</p>
-                {allPending ? (
-                  <div className="rounded-card border border-border bg-surface-subtle px-3 py-2.5 text-sm text-muted">
-                    No environmental indicators are available for this listing.
-                  </div>
-                ) : (
-                  <dl className="divide-y divide-border rounded-card border-y border-border text-sm">
-                    {!isFloodPending && (
-                      <div className="flex justify-between gap-4 py-2.5">
-                        <dt className="text-muted">Flood indicator</dt>
-                        <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${floodRiskClasses(floodVal)}`}>{floodVal}</dd>
-                      </div>
-                    )}
-                    {!isNoisePending && (
-                      <div className="flex justify-between gap-4 py-2.5">
-                        <dt className="text-muted">Noise indicator</dt>
-                        <dd className={`inline-flex max-w-[65%] rounded-control border px-2 py-1 text-right text-xs font-medium ${isHighNoise ? 'bg-danger-soft text-danger border-danger/20' : isQuietNoise ? 'bg-action-soft text-action-hover border-action/20' : 'bg-caution-soft text-caution border-caution/20'}`}>{noiseVal}</dd>
-                      </div>
-                    )}
-                    {!isElevPending && (
-                      <div className="flex justify-between gap-4 py-2.5">
-                        <dt className="text-muted">Elevation</dt>
-                        <dd className="inline-flex max-w-[65%] rounded-control border border-border bg-surface-subtle px-2 py-1 text-right text-xs font-medium text-ink">{elevVal}</dd>
-                      </div>
-                    )}
-                  </dl>
-                )}
-                <p className="text-xs text-muted">
-                  Source and assessment date are not provided in the public plot data.
-                </p>
-              </div>
-            </details>
-          );
-        })()}
 
         {/* Society-level regulatory registry lookup */}
         {selectedPlot.regulatory && (

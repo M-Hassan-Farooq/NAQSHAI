@@ -104,9 +104,6 @@ async function searchVectorPlots(ai, db, queryText) {
             price: formatPkr(row.price_pkr),
             pricePkr: Number(row.price_pkr) || 0,
             category: row.category || 'Residential',
-            floodRisk: (!row.flood_risk || row.flood_risk.includes('Pending') || row.flood_risk === 'Low Hazard') ? env.floodRisk : row.flood_risk,
-            noiseLevel: (!row.noise_level || row.noise_level.includes('Pending') || row.noise_level === 'Low (Quiet Zone)') ? env.noiseLevel : row.noise_level,
-            elevationProfile: (!row.elevation_profile || row.elevation_profile.includes('Pending')) ? env.elevationProfile : row.elevation_profile,
             regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
             regulatoryWarning: regulatory.warning || null,
             isVerified: !!row.is_verified
@@ -189,9 +186,6 @@ async function fetchActiveDatabaseInventory(db, targetPlotCode) {
         price: formatPkr(row.price_pkr),
         pricePkr: Number(row.price_pkr) || 0,
         category: row.category || 'Residential',
-        floodRisk: isPending(row.flood_risk, 'low hazard') ? env.floodRisk : row.flood_risk,
-        noiseLevel: isPending(row.noise_level, 'low (quiet zone)') ? env.noiseLevel : row.noise_level,
-        elevationProfile: isPending(row.elevation_profile, 'pending survey') ? env.elevationProfile : row.elevation_profile,
         regulatoryStatus: `${regulatory.badgeText} - ${regulatory.statusLabel} (${regulatory.nocNumber})`,
         regulatoryWarning: regulatory.warning || null,
         sellerName: seller?.full_name || '',
@@ -225,7 +219,6 @@ async function executeSearchPlots(ai, db, args) {
     minPricePkr,
     sizeNumMarla,
     category,
-    floodRiskPreference,
     verifiedOnly
   } = args || {};
 
@@ -303,14 +296,6 @@ async function executeSearchPlots(ai, db, args) {
     if (category) {
       const pCat = (plot.category || '').toLowerCase();
       if (!pCat.includes(category.toLowerCase())) {
-        return false;
-      }
-    }
-
-    // Flood Risk
-    if (floodRiskPreference && /(low|safe|minimal)/i.test(floodRiskPreference)) {
-      const flood = (plot.floodRisk || '').toLowerCase();
-      if (flood.includes('high') || (!flood.includes('low') && !flood.includes('safe') && !flood.includes('minimal'))) {
         return false;
       }
     }
@@ -457,10 +442,6 @@ const chatTools = [
               type: Type.STRING,
               description: 'Residential, Commercial, or Farmhouse.'
             },
-            floodRiskPreference: {
-              type: Type.STRING,
-              description: 'Preferred flood risk: low or safe.'
-            },
             verifiedOnly: {
               type: Type.BOOLEAN,
               description: 'Whether user requested only verified listings.'
@@ -470,7 +451,7 @@ const chatTools = [
       },
       {
         name: 'getPlotDetails',
-        description: 'Retrieve detailed information, elevation profile, and risk assessment for a specific plot code or ID (e.g. Plot-98A, 101, B17-402).',
+        description: 'Retrieve detailed information, regulatory clearance, and pricing for a specific plot code or ID (e.g. Plot-98A, 101, B17-402).',
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -484,7 +465,7 @@ const chatTools = [
       },
       {
         name: 'getMarketIntelligence',
-        description: 'Retrieve real estate intelligence, CDA/RDA regulations, monsoon flood risk profiles, or price benchmarks for Islamabad & Rawalpindi.',
+        description: 'Retrieve real estate intelligence, CDA/RDA regulations, development status, or price benchmarks for Islamabad & Rawalpindi.',
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -494,7 +475,7 @@ const chatTools = [
             },
             topic: {
               type: Type.STRING,
-              description: 'Topic such as pricing, flood risk, or investment yield.'
+              description: 'Topic such as pricing, regulatory status, or investment yield.'
             }
           }
         }
@@ -590,8 +571,6 @@ You MUST format your final response strictly as a JSON object matching this sche
       "city": "City",
       "size": "Plot Size",
       "price": "Formatted Price",
-      "floodRisk": "Low / Moderate / High Hazard",
-      "noiseLevel": "Quiet Zone / Low",
       "regulatoryStatus": "e.g. CDA Sector (Zone 1) or CDA Approved"
     }
   ]
@@ -815,7 +794,7 @@ Return JSON with 'reply' and 'recommendedPlots': [].`;
       generatedText = JSON.stringify({
         reply: safePlots.length > 0
           ? 'Here are top verified plots currently available in our live database inventory across Islamabad and Rawalpindi.'
-          : 'I can assist you with verified plot intelligence, CDA/RDA regulations, and flood risk analysis across Islamabad & Rawalpindi. Please ask about any sector or budget!',
+          : 'I can assist you with verified plot intelligence, CDA/RDA regulations, and market analysis across Islamabad & Rawalpindi. Please ask about any sector or budget!',
         recommendedPlots: safePlots
       });
     }

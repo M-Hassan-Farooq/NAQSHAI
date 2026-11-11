@@ -14,7 +14,7 @@ import AmenityScoreCard from '@/components/AmenityScoreCard';
 import { useFavorites } from '@/context/FavoritesContext';
 import { formatWhatsAppUrl } from '@/lib/formatPlot';
 import { PlotPolygon } from '@/components/explore/PlotPolygon';
-import { availabilityPinDataUri, clusterBubbleDataUri, floodRiskClasses } from '@/components/explore/MapPinIcons';
+import { availabilityPinDataUri, clusterBubbleDataUri } from '@/components/explore/MapPinIcons';
 import PlotSidebar from '@/components/explore/PlotSidebar';
 import PlotDetailsDrawer from '@/components/explore/PlotDetailsDrawer';
 import {
@@ -792,8 +792,7 @@ function ExploreContent() {
         (plot.id || '').toLowerCase().includes(q) ||
         (plot.city || '').toLowerCase().includes(q) ||
         (plot.price || '').toLowerCase().includes(q) ||
-        (plot.details?.size || '').toLowerCase().includes(q) ||
-        (plot.details?.floodRisk || '').toLowerCase().includes(q)
+        (plot.details?.size || '').toLowerCase().includes(q)
       );
     });
   }, [plots, activeCityFilter, sidebarSearchQuery]);

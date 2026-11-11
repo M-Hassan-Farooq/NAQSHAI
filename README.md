@@ -36,7 +36,7 @@ NAQSHAI replaces naive classifieds pins with mathematical, spatial, and institut
 2. **Ray-Casting Collision Engine:** Detects and blocks boundary overlap conflicts against registered parcels using the Jordan Curve theorem.
 3. **AES-256-GCM Deed Vault:** Encrypts citizen ownership deeds at rest with authenticated 128-bit tags, signed ephemeral access tokens, and immutable audit logging.
 4. **2-Stage Human-in-the-Loop (HITL) Verification:** Gemini Vision performs passive, advisory OCR analysis (0 database write authority), while human compliance officers use 1-click citizen-mediated deep links to verify government records past CAPTCHAs in under 10 seconds.
-5. **Autonomous Multi-Agent Swarm:** Parallelized subagents (Cadastral & Price, Legal & Regulatory, Environmental & Terrain) feed a Chief Synthesizer for multilingual real estate advisory in English, Nastaliq Urdu, and Roman Urdu.
+5. **Autonomous Multi-Agent Swarm:** Parallelized subagents (Cadastral & Price, Legal & Regulatory, Infrastructure & Location) feed a Chief Synthesizer for multilingual real estate advisory in English, Nastaliq Urdu, and Roman Urdu.
 
 ---
 
@@ -104,7 +104,7 @@ NAQSHAI replaces naive classifieds pins with mathematical, spatial, and institut
 
 ### 1. 🗺️ 3D Cadastral Map Explorer (`/explore`)
 * **Polygon Geometry Over Pins:** Properties are rendered as surveyed boundaries on Google Maps satellite imagery, not deceptive static point markers.
-* **Property Inspector Drawer:** Displays declared vs calculated area, elevation, noise score (dB), monsoon flood risk, and amenity ratings.
+* **Property Inspector Drawer:** Displays declared vs calculated area, elevation profile, and neighborhood amenity scores.
 * **Street View 360:** Instant panoramic ground verification.
 
 ### 2. 🛡️ 2-Stage Verification & Operator Console (`/review`)
@@ -118,7 +118,7 @@ NAQSHAI replaces naive classifieds pins with mathematical, spatial, and institut
 ### 3. 🤖 Autonomous Multi-Agent Real Estate Swarm (`/recommend` & `/api/chat`)
 * **Cadastral & Price Specialist (`gemini-3.5-flash-lite`):** Evaluates budget feasibility in PKR Crore/Lakh and calculates price per Marla.
 * **Legal & Regulatory Specialist (`gemini-3.5-flash-lite`):** Cross-checks CDA Zone 1–5 master plan zoning, RDA NOC status, and gazetted unapproved schemes.
-* **Environmental & Terrain Specialist (`gemini-3.5-flash-lite`):** Computes radial distance to Rawalpindi's Lai Nullah flood corridor, slope hazards (*bhrati zameen*), and traffic noise.
+* **Infrastructure & Location Specialist (`gemini-3.5-flash-lite`):** Evaluates urban connectivity, arterial highway access (Islamabad Expressway, Kashmir Highway, Ring Road), Markaz proximity, and utility readiness (SNGPL Gas, IESCO Electricity, CDA Water Supply).
 * **Chief Synthesizer (`gemini-3.5-flash`):** Synthesizes specialist reports into a cohesive executive verdict with fluid multilingual output in **English**, **Nastaliq Urdu**, and **Roman Urdu**.
 
 ### 4. 🔐 Zero-Trust Security & Deed Vault (`lib/documentCipher.js`)
@@ -255,7 +255,7 @@ NAQSHAI/
 │   ├── authServer.js                    # Server-side auth & timingSafeEqual constant-time matching
 │   ├── multiAgentAdvisor.js             # Autonomous Multi-Agent Swarm (Workers + Synthesizer)
 │   ├── aiDocumentVerifier.js            # Gemini Vision OCR deed analysis (Stage 1 HITL)
-│   ├── environmentalMetrics.js          # Lai Nullah monsoon flood risk & noise level calculations
+│   ├── environmentalMetrics.js          # Sector elevation & terrain calculation utilities
 │   └── regulatoryRegistry.js            # CDA Zone 1-5, RDA NOC & illegal society gazette datasets
 ├── supabase/migrations/                 # 15 PostgreSQL migration scripts (01 to 15)
 ├── scripts/                             # Automated test suites & executive documentation compilers
